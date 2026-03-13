@@ -8,10 +8,10 @@ export const handler = async function(event, context) {
     
     const requestBody = JSON.parse(event.body);
     
-    // Fallback to claude-3-5-sonnet-20241022 or the requested model if standard
-    let model = requestBody.model || "claude-3-5-sonnet-20241022";
-    if (model === "claude-sonnet-4-6") {
-       model = "claude-3-5-sonnet-20241022";
+    // Fallback to claude-sonnet-4-6 or the requested model if standard
+    let model = requestBody.model || "claude-sonnet-4-6";
+    if (model === "claude-3-5-sonnet-20241022" || model === "claude-3-5-sonnet-20240620") {
+       model = "claude-sonnet-4-6";
     }
 
     requestBody.model = model;
