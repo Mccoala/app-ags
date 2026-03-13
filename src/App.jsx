@@ -149,14 +149,14 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             </div>}
             <div className="space-y-4">
                 <div><label className="text-xs font-semibold uppercase tracking-wide text-gray-400">Usuário</label>
-                    <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="admin" className="w-full
+                    <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Seu usuário" autoComplete="off" name="usuario_ags_unique" className="w-full
                     mt-1 px-4 py-3 rounded-xl border outline-none text-sm bg-gray-800 border-gray-700 text-white
                     placeholder-gray-500 focus:border-orange-500"/>
                 </div>
                 <div><label className="text-xs font-semibold uppercase tracking-wide text-gray-400">Senha</label>
                     <div className="relative mt-1">
                         <input type={show?"text":"password"} value={pw} onChange={e=>setPw(e.target.value)}
-                        onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="••••••" className="w-full px-4 py-3 pr-12
+                        onKeyDown={e=>e.key==="Enter"&&handle()} placeholder="••••••" autoComplete="new-password" name="senha_ags_unique" className="w-full px-4 py-3 pr-12
                         rounded-xl border outline-none text-sm bg-gray-800 border-gray-700 text-white
                         placeholder-gray-500 focus:border-orange-500"/>
                         <button onClick={()=>setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2
@@ -1117,16 +1117,18 @@ function FinalizationTab({ data, setData, dark, user }) {
   const sorted=sortProdRows(finRows);
   const activeF=sorted.filter(r=>!r.done);
   const doneF=sorted.filter(r=>r.done);
-  const delayed=activeF.filter(r=>daysLeft(r.deadline)<0);
+  const delayed=activeF.filter(r=>r.deadline && daysLeft(r.deadline)<0);
   const [filterStatus,setFilterStatus]=useState("todos");
+  const [obsOpenIds,setObsOpenIds]=useState(new Set());
+  const toggleObs = (id) => { const next = new Set(obsOpenIds); if (next.has(id)) next.delete(id); else next.add(id); setObsOpenIds(next); };
 
   const finWorkers=data.team.filter(t=>t.role==="Finalizador"&&t.status==="ativo");
 
   const filteredRows=filterStatus==="todos"?sorted
-    :filterStatus==="atrasados"?activeF.filter(r=>daysLeft(r.deadline)<0)
+    :filterStatus==="atrasados"?activeF.filter(r=>r.deadline && daysLeft(r.deadline)<0)
     :filterStatus==="concluidos"?doneF
-    :filterStatus==="urgente"?activeF.filter(r=>{ const d=daysLeft(r.deadline); return r.priority||(d>=0&&d<=3); })
-    :activeF.filter(r=>!r.priority&&daysLeft(r.deadline)>3);
+    :filterStatus==="urgente"?activeF.filter(r=>{ if(!r.deadline) return r.priority; const d=daysLeft(r.deadline); return r.priority||(d>=0&&d<=3); })
+    :activeF.filter(r=>!r.priority&&(!r.deadline || daysLeft(r.deadline)>3));
 
   const startEdit=()=>{ setSavedState(JSON.parse(JSON.stringify(data))); setEditMode(true); };
   const cancelEdit=()=>{ if(savedState){setData(savedState);saveData(savedState);} setEditMode(false);setSavedState(null); };
@@ -1173,7 +1175,7 @@ function FinalizationTab({ data, setData, dark, user }) {
         <div className="flex gap-1.5 flex-wrap">
           {[["todos","Todos"],["urgente","Urgente"],["atrasados","Atrasados"],["ok","No prazo"],["concluidos","Concluídos"]].map(([v,l])=>(
             <button key={v} onClick={()=>setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus===v?"text-white":dark?"bg-gray-800 text-gray-400":"bg-gray-100 text-gray-600"}`} style={filterStatus===v?{background:"linear-gradient(135deg,#f97316,#eab308)"}:{}}>
-              {l}{" "}<span className="opacity-70">{v==="todos"?`(${sorted.length})`:v==="atrasados"?`(${delayed.length})`:v==="concluidos"?`(${doneF.length})`:v==="urgente"?`(${activeF.filter(r=>{const d=daysLeft(r.deadline);return r.priority||(d>=0&&d<=3);}).length})`:""}</span>
+              {l}{" "}<span className="opacity-70">{v==="todos"?`(${sorted.length})`:v==="atrasados"?`(${delayed.length})`:v==="concluidos"?`(${doneF.length})`:v==="urgente"?`(${activeF.filter(r=>{ if(!r.deadline) return r.priority; const d=daysLeft(r.deadline); return r.priority||(d>=0&&d<=3);}).length})`:""}</span>
             </button>
           ))}
         </div>
@@ -1185,11 +1187,12 @@ function FinalizationTab({ data, setData, dark, user }) {
       {/* ── SCROLLABLE CARDS ── */}
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{minHeight:0}}>
         {filteredRows.map((row,i)=>{
-          const s=statusBadge(row.deadline,row.done);
+          const s=statusBadge(row.deadline||"",row.done);
           const pct=row.finalizer?100:0;
-          const progressColor=row.done?"#22c55e":daysLeft(row.deadline)<0?"#ef4444":"#f97316";
+          const progressColor=row.done?"#22c55e":(!row.deadline||daysLeft(row.deadline)>=0)?"#f97316":"#ef4444";
           const hasObs=row.observations&&row.observations.trim().length>0;
-          const [obsOpen,setObsOpen]=useState(false);
+          const hasImg=row.images&&row.images.length>0;
+          const obsOpen=obsOpenIds.has(row._itemId);
           return (
             <div key={`${row._itemId}-${i}`} className={`rounded-xl border overflow-hidden ${dark?"bg-gray-900 border-gray-800":"bg-white border-gray-200"} ${row.done?"opacity-70":""}`}>
               <div className="flex items-start justify-between p-4 gap-3">
@@ -1210,22 +1213,24 @@ function FinalizationTab({ data, setData, dark, user }) {
                     <div className={`font-black text-base ${dark?"text-white":"text-gray-900"}`}>{row.toy}</div>
                     <div className={`text-xs mt-0.5 ${dark?"text-gray-400":"text-gray-500"}`}>{row.clientName} · {row.seller||"—"} · {row.voltage}</div>
                     {(row.colors||[]).length>0&&<div className="flex gap-1 mt-1">{(row.colors||[]).map(c=><span key={c} className="w-4 h-4 rounded-full" style={{background:COLOR_MAP[c]||"#888"}} title={c}/>)}</div>}
-                    {(hasObs||row.image)&&(
-                      <button onClick={()=>setObsOpen(!obsOpen)} className={`mt-2 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${obsOpen?dark?"bg-orange-500/20 text-orange-400 border border-orange-500/30":"bg-orange-100 text-orange-700":dark?"bg-gray-800 text-gray-300 border border-gray-700":"bg-gray-100 text-gray-600 border border-gray-200"}`}>
-                        {obsOpen?<ChevronUp size={16}/>:<ChevronDown size={16}/>}{hasObs&&row.image?"📋 Obs + Foto":hasObs?"📋 Observações":"🖼️ Foto"}
+                    {(hasObs||hasImg)&&(
+                      <button onClick={()=>toggleObs(row._itemId)} className={`mt-2 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${obsOpen?dark?"bg-orange-500/20 text-orange-400 border border-orange-500/30":"bg-orange-100 text-orange-700":dark?"bg-gray-800 text-gray-300 border border-gray-700":"bg-gray-100 text-gray-600 border border-gray-200"}`}>
+                        {obsOpen?<ChevronUp size={16}/>:<ChevronDown size={16}/>}{hasObs&&hasImg?"📋 Obs + Fotos":hasObs?"📋 Observações":"🖼️ Fotos"}
                       </button>
                     )}
                     {obsOpen&&(
-                      <div className={`mt-3 p-4 rounded-xl border ${dark?"bg-gray-800 border-gray-700":"bg-gray-50 border-gray-200"}`}>
-                        <div className="flex gap-4">
-                          {hasObs&&<div className="flex-1"><p className={`text-sm ${dark?"text-gray-200":"text-gray-700"}`}>{row.observations}</p></div>}
-                          {row.image&&(
-                            <div className="flex-shrink-0 cursor-pointer relative group" onClick={()=>setLightbox(row.image)}>
-                              <img src={row.image} alt="" className="w-28 h-28 rounded-xl object-cover border-2 border-gray-600"/>
-                              <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white"/></div>
+                      <div className={`mt-3 p-4 rounded-xl border flex flex-col gap-3 ${dark?"bg-gray-800 border-gray-700":"bg-gray-50 border-gray-200"}`}>
+                        {hasObs&&<div><p className={`text-sm ${dark?"text-gray-200":"text-gray-700"}`}>{row.observations}</p></div>}
+                        {hasImg&&(
+                            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                {row.images.map((imgUrl, imgIdx) => (
+                                    <div key={imgIdx} className="flex-shrink-0 cursor-pointer relative group" onClick={()=>setLightbox(imgUrl)}>
+                                        <img src={imgUrl} alt="" className="w-28 h-28 rounded-xl object-cover border-2 border-gray-600"/>
+                                        <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white"/></div>
+                                    </div>
+                                ))}
                             </div>
-                          )}
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
