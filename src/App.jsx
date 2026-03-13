@@ -6,6 +6,7 @@ ChevronRight, Star, Flag, Layers, Settings, Shield, Scissors, Shirt, Wrench, Ham
 DollarSign, Calendar, RefreshCw, ZoomIn } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Area,
 AreaChart, PieChart, Pie } from "recharts";
+import logoImg from "./assets/logo.png";
 
 // ─── PERMISSIONS ─────────────────────────────────────────────────────────────
 // tabs each role can see: "orders","production","finalization","dashboard","clients","team"
@@ -123,7 +124,7 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
     function AppLogo({ collapsed=false, className="" }) {
     return (
     <div className={`flex items-center gap-2 ${className}`}>
-        <img src="/src/assets/logo.png" alt="AGS Brinquedos" className={`object-contain flex-shrink-0 ${collapsed?"h-8 w-8":"h-12 w-auto"}`} />
+        <img src={logoImg} alt="AGS Brinquedos" className={`object-contain flex-shrink-0 ${collapsed?"h-8 w-8":"h-12 w-auto"}`} />
     </div>
     );
     }
@@ -168,8 +169,6 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                 <button onClick={handle} className="w-full py-3 rounded-xl font-bold text-white text-sm"
                     style={{background:"linear-gradient(135deg,#f97316,#eab308)"}}>Entrar</button>
             </div>
-            <p className="text-xs text-center mt-4 text-gray-500">Admin: <strong
-                    className="text-gray-400">admin</strong> / <strong className="text-gray-400">ags</strong></p>
         </div>
     </div>
     );
