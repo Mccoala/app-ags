@@ -8,9 +8,9 @@ export const handler = async function(event, context) {
     
     const requestBody = JSON.parse(event.body);
     
-    // Fallback to claude-sonnet-4-6 or the requested model if standard
+    // Fallback to claude-sonnet-4-6
     let model = requestBody.model || "claude-sonnet-4-6";
-    if (model === "claude-3-5-sonnet-20241022" || model === "claude-3-5-sonnet-20240620") {
+    if (model.includes("claude-3-5") || model.includes("claude-sonnet-3.5")) {
        model = "claude-sonnet-4-6";
     }
 
