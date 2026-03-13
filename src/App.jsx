@@ -49,27 +49,27 @@ orders: [
 { id:"PED-001", clientName:"Festa Kids LTDA", voltage:"110V", deadline:"2026-03-15", seller:"Luan", totalPrice:3700,
 status:"producao", createdAt:"2026-02-20", priority:false,
 items:[
-{ itemId:"PED-001-1", toy:"Piscina de Bolinhas XL", colors:["Azul","Amarelo","Vermelho"], price:1800, observations:"Logo da empresa na lateral", image:null, isMotor:false },
-{ itemId:"PED-001-2", toy:"Escorregador Inflável 4m", colors:["Azul","Verde"], price:1900, observations:"Reforço nas laterais", image:null, isMotor:false },
+{ itemId:"PED-001-1", toy:"Piscina de Bolinhas XL", colors:["Azul","Amarelo","Vermelho"], price:1800, observations:"Logo da empresa na lateral", images:[], isMotor:false },
+{ itemId:"PED-001-2", toy:"Escorregador Inflável 4m", colors:["Azul","Verde"], price:1900, observations:"Reforço nas laterais", images:[], isMotor:false },
 ]},
 { id:"PED-002", clientName:"Parque Alegria", voltage:"220V", deadline:"2026-03-25", seller:"Emerson", totalPrice:2200,
 status:"producao", createdAt:"2026-02-28", priority:false,
 items:[{ itemId:"PED-002-1", toy:"Castelo Inflável Medieval", colors:["Roxo","Dourado"], price:2200,
-observations:"Bandeirolas nas torres", image:null, isMotor:false }]},
+observations:"Bandeirolas nas torres", images:[], isMotor:false }]},
 { id:"PED-003", clientName:"Festa Kids LTDA", voltage:"110V", deadline:"2026-04-10", seller:"Luan", totalPrice:5600,
 status:"aguardando", createdAt:"2026-03-01", priority:false,
 items:[
-{ itemId:"PED-003-1", toy:"Tobogã Inflável Duplo", colors:["Verde","Azul"], price:2800, observations:"", image:null,
+{ itemId:"PED-003-1", toy:"Tobogã Inflável Duplo", colors:["Verde","Azul"], price:2800, observations:"", images:[],
 isMotor:false },
 { itemId:"PED-003-2", toy:"Pula-Pula Temático", colors:["Amarelo","Vermelho"], price:1600, observations:"Tema circo",
-image:null, isMotor:false },
-{ itemId:"PED-003-3", toy:"Gira-Gira Inflável", colors:["Rosa","Roxo"], price:1200, observations:"", image:null,
+images:[], isMotor:false },
+{ itemId:"PED-003-3", toy:"Gira-Gira Inflável", colors:["Rosa","Roxo"], price:1200, observations:"", images:[],
 isMotor:false },
 ]},
 { id:"PED-004", clientName:"Festa Kids LTDA", voltage:"110V", deadline:"2026-02-28", seller:"Sidnei", totalPrice:1900,
 status:"concluido", createdAt:"2026-02-01", priority:false,
 items:[{ itemId:"PED-004-1", toy:"Gira-Gira Inflável", colors:["Rosa","Branco"], price:1900, observations:"Urgente",
-image:null, isMotor:false }]},
+images:[], isMotor:false }]},
 ],
 production: [
 { itemId:"PED-001-1", orderId:"PED-001", cutter:"Carlos Lima", tailor:"Maria Costa", prep:"Ana Souza", assembler:"",
@@ -120,27 +120,10 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
     }
 
     // ─── LOGO ─────────────────────────────────────────────────────────────────────
-    function AgsTobogan({ size=32 }) {
+    function AppLogo({ collapsed=false, className="" }) {
     return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
-        <rect x="2" y="20" width="28" height="6" rx="3" fill="#60a5fa" opacity="0.9" />
-        <path d="M4 20 Q8 6 20 8 L24 8 Q14 8 10 20Z" fill="#f97316" opacity="0.9" />
-        <rect x="20" y="6" width="5" height="14" rx="2.5" fill="#f97316" />
-        <circle cx="26" cy="23" r="3" fill="#fbbf24" />
-        <circle cx="6" cy="23" r="2" fill="#fbbf24" />
-    </svg>
-    );
-    }
-    function AppLogo({ collapsed=false }) {
-    return (
-    <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:"linear-gradient(135deg,#1e293b,#334155)"}}>
-            <AgsTobogan size={24} />
-        </div>
-        {!collapsed && <span className="font-black text-sm tracking-tight leading-none"><span
-                style={{color:"#ef4444"}}>A</span><span style={{color:"#22c55e"}}>G</span><span
-                style={{color:"#3b82f6"}}>S</span>{" "}<span style={{color:"#ef4444"}}>BRINQUEDOS</span></span>}
+    <div className={`flex items-center gap-2 ${className}`}>
+        <img src="/src/assets/logo.png" alt="AGS Brinquedos" className={`object-contain flex-shrink-0 ${collapsed?"h-8 w-8":"h-12 w-auto"}`} />
     </div>
     );
     }
@@ -156,13 +139,9 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
     <div className="min-h-screen flex items-center justify-center" style={{background:"linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)"}}>
         <div className="w-full max-w-md p-8 rounded-2xl shadow-2xl border bg-gray-900 border-gray-800">
             <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-4"
-                    style={{background:"linear-gradient(135deg,#1e293b,#334155)"}}>
-                    <AgsTobogan size={48} />
+                <div className="flex justify-center mb-6">
+                    <AppLogo collapsed={false} className="h-20" />
                 </div>
-                <h1 className="text-2xl font-black tracking-tight text-white mb-1"><span
-                        style={{color:"#ef4444"}}>A</span><span style={{color:"#22c55e"}}>G</span><span
-                        style={{color:"#3b82f6"}}>S</span>{" "}<span style={{color:"#ef4444"}}>BRINQUEDOS</span></h1>
                 <p className="text-sm text-gray-400">Sistema de Gestão</p>
             </div>
             {err&&<div className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm">{err}
@@ -216,18 +195,28 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
 
     // ─── EDIT ORDER MODAL ────────────────────────────────────────────────────────
     function EditOrderModal({ order, data, setData, dark, onClose }) {
-    const emptyItem={itemId:"",toy:"",colors:"",price:"",observations:"",image:null,isMotor:false};
+    const emptyItem={itemId:"",toy:"",colors:"",price:"",observations:"",images:[],isMotor:false};
     const [form,setForm]=useState({ clientName:order.clientName||"", voltage:order.voltage||"110V",
     deadline:order.deadline||"", seller:order.seller||"", status:order.status||"aguardando",
-    items:order.items?order.items.map(it=>({...it,colors:Array.isArray(it.colors)?it.colors.join(","):it.colors})):[{...emptyItem}] });
+    items:order.items?order.items.map(it=>({...it,images:it.images||[],colors:Array.isArray(it.colors)?it.colors.join(","):it.colors})):[{...emptyItem}] });
     const ic=`w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark?"bg-gray-800 border-gray-700 text-white focus:border-orange-500":"bg-gray-50 border-gray-200 text-gray-900 focus:border-orange-400"}`;
     const lc=`block text-xs font-semibold uppercase tracking-wide mb-1 ${dark?"text-gray-400":"text-gray-500"}`;
     const upd=(idx,f,v)=>{ const a=[...form.items]; a[idx]={...a[idx],[f]:v}; setForm({...form,items:a}); };
     const
-    addIt=()=>setForm({...form,items:[...form.items,{itemId:`${order.id}-${form.items.length+1}`,toy:"",colors:"",price:"",observations:"",image:null,isMotor:false}]});
+    addIt=()=>setForm({...form,items:[...form.items,{itemId:`${order.id}-${form.items.length+1}`,toy:"",colors:"",price:"",observations:"",images:[],isMotor:false}]});
     const remIt=(idx)=>{ if(form.items.length===1)return; setForm({...form,items:form.items.filter((_,i)=>i!==idx)}); };
     const hImg=(idx,e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
-    r.onload=()=>upd(idx,"image",r.result); r.readAsDataURL(f); };
+    r.onload=()=>{
+        const a=[...form.items];
+        a[idx].images = [...(a[idx].images||[]), r.result];
+        setForm({...form,items:a});
+    }; 
+    r.readAsDataURL(f); };
+    const remImg=(idx, imgIdx)=>{
+        const a=[...form.items];
+        a[idx].images = a[idx].images.filter((_, i) => i !== imgIdx);
+        setForm({...form,items:a});
+    };
     const save=()=>{
     const nd={...data}; const oi=nd.orders.findIndex(o=>o.id===order.id); if(oi<0)return; const
         si=form.items.map((it,i)=>({...it,itemId:it.itemId||`${order.id}-${i+1}`,colors:typeof
@@ -321,17 +310,19 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                                             value={item.observations}
                                             onChange={e=>upd(idx,"observations",e.target.value)} className={ic}/></div>
                                     {!item.isMotor&&(
-                                    <div className="col-span-2"><label className={lc}>Imagem (opcional)</label>
-                                        {item.image?<div className="flex items-center gap-3"><img src={item.image}
-                                                alt=""
-                                                className="w-16 h-16 rounded-lg object-cover border border-gray-600" /><button
-                                                onClick={()=>upd(idx,"image",null)} className="text-xs
-                                                text-red-400">Remover</button></div>
-                                        :<label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg
-                                            border text-xs font-semibold ${dark?"border-gray-600 text-gray-400":"border-gray-300 text-gray-500"}`}>
-                                            <Image size={14} />Foto<input type="file" accept="image/*"
-                                                className="hidden" onChange={e=>hImg(idx,e)}/>
-                                        </label>}
+                                    <div className="col-span-2"><label className={lc}>Imagens</label>
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            {(item.images||[]).map((imgUrl, imgIdx) => (
+                                                <div key={imgIdx} className="relative group">
+                                                    <img src={imgUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-600" />
+                                                    <button onClick={()=>remImg(idx, imgIdx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"><X size={12}/></button>
+                                                </div>
+                                            ))}
+                                            <label className={`flex flex-col items-center justify-center w-16 h-16 cursor-pointer rounded-lg border-2 border-dashed ${dark?"border-gray-600 text-gray-400 hover:border-orange-500":"border-gray-300 text-gray-500 hover:border-orange-400"}`}>
+                                                <Plus size={16} /><span className="text-[10px] font-bold mt-1">Add</span>
+                                                <input type="file" accept="image/*" className="hidden" onChange={e=>hImg(idx,e)}/>
+                                            </label>
+                                        </div>
                                     </div>
                                     )}
                                 </div>
@@ -366,7 +357,7 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
         [extItems,setExtItems]=useState([]); const [extImages,setExtImages]=useState({});
         const [search,setSearch]=useState(""); const [showForm,setShowForm]=useState(false);
         const
-        [manualItems,setManualItems]=useState([{toy:"",colors:"",price:"",observations:"",image:null,isMotor:false}]);
+        [manualItems,setManualItems]=useState([{toy:"",colors:"",price:"",observations:"",images:[],isMotor:false}]);
         const [manualHeader,setManualHeader]=useState({clientName:"",voltage:"110V",deadline:"",seller:""});
         const [selectMode,setSelectMode]=useState(false); const [selected,setSelected]=useState(new Set()); const
         [editingOrder,setEditingOrder]=useState(null); const [confirmDelete,setConfirmDelete]=useState(false);
@@ -395,14 +386,19 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             // update client totals
             delIds.forEach(oid=>{ const o=orders.find(x=>x.id===oid); if(o){ const
             ci=nd.clients.findIndex(c=>c.name===o.clientName);
-            if(ci>=0){nd.clients[ci].totalSpent=Math.max(0,(nd.clients[ci].totalSpent||0)-(o.totalPrice||0));
-            nd.clients[ci].totalOrders=Math.max(0,(nd.clients[ci].totalOrders||0)-1);} } });
+            if(ci>=0&&o.totalPrice){
+                nd.clients[ci].totalSpent=Math.max(0,(nd.clients[ci].totalSpent||0)-(o.totalPrice||0));
+                nd.clients[ci].totalOrders=Math.max(0,(nd.clients[ci].totalOrders||0)-1);
+                if (nd.clients[ci].totalOrders===0) {
+                    nd.clients = nd.clients.filter((_, idx)=>idx!==ci);
+                }
+            } } });
             setData(nd);saveData(nd);setSelected(new Set());setSelectMode(false);setConfirmDelete(false);
             };
 
             const handlePdf=(e)=>{ const f=e.target.files[0]; if(!f)return; setPdfName(f.name); const r=new
             FileReader(); r.onload=()=>setPdfData(r.result.split(",")[1]); r.readAsDataURL(f); };
-            const hExtImg=(idx,e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+            const setExtImagesUpload=(idx,e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
             r.onload=()=>setExtImages(p=>({...p,[idx]:r.result})); r.readAsDataURL(f); };
 
             const callAI=async()=>{
@@ -447,8 +443,7 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             const p=JSON.parse(raw);
             setExtracted(p);
             setExtHeader({orderNumber:p.orderNumber||"",clientName:p.clientName||"",voltage:p.voltage||"110V",deadline:p.deadline||"",seller:p.seller||""});
-            setExtItems((p.items||[]).map(it=>({...it,colors:Array.isArray(it.colors)?it.colors.join(","):(it.colors||"")})));
-            setExtImages({});
+            setExtItems((p.items||[]).map(it=>({...it,images:[],colors:Array.isArray(it.colors)?it.colors.join(","):(it.colors||"")})));
             } catch(err) { console.error("Extraction error:", err); setExtracted({error:err.message || "Não foi possível extrair os dados."}); }
             setLoading(false);
             };
@@ -457,7 +452,7 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             const nd={...data}; const rawNum=extHeader.orderNumber?.trim(); const
             newId=rawNum||`PED-${String(nd.orders.length+1).padStart(3,"0")}`;
             const items=extItems.map((it,i)=>({itemId:`${newId}-${i+1}`,toy:it.toy,colors:typeof
-            it.colors==="string"?it.colors.split(",").map(c=>c.trim()).filter(Boolean):it.colors,price:Number(it.price)||0,observations:it.observations||"",image:extImages[i]||null,isMotor:!!it.isMotor}));
+            it.colors==="string"?it.colors.split(",").map(c=>c.trim()).filter(Boolean):it.colors,price:Number(it.price)||0,observations:it.observations||"",images:it.images||[],isMotor:!!it.isMotor}));
             const total=items.reduce((a,b)=>a+b.price,0);
             nd.orders.push({id:newId,clientName:extHeader.clientName,voltage:extHeader.voltage,deadline:extHeader.deadline,seller:extHeader.seller,totalPrice:total,status:"aguardando",createdAt:TODAY_STR,priority:false,items});
             items.filter(it=>!it.isMotor).forEach(it=>nd.production.push({itemId:it.itemId,orderId:newId,cutter:"",tailor:"",prep:"",assembler:"",cutDone:false,tailorDone:false,prepDone:false,assembleDone:false,done:false}));
@@ -465,13 +460,13 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             if(ci>=0){nd.clients[ci].totalOrders=(nd.clients[ci].totalOrders||0)+1;nd.clients[ci].totalSpent=(nd.clients[ci].totalSpent||0)+total;}
             else
             nd.clients.push({id:Date.now(),name:extHeader.clientName,city:"",phone:"",email:"",totalOrders:1,totalSpent:total});
-            setData(nd);saveData(nd);setText("");setPdfData(null);setPdfName("");setExtracted(null);setExtItems([]);setExtHeader({});setExtImages({});setView("list");
+            setData(nd);saveData(nd);setText("");setPdfData(null);setPdfName("");setExtracted(null);setExtItems([]);setExtHeader({});setView("list");
             };
 
             const addManual=()=>{
             const nd={...data}; const newId=`PED-${String(nd.orders.length+1).padStart(3,"0")}`;
             const
-            items=manualItems.map((it,i)=>({itemId:`${newId}-${i+1}`,toy:it.toy,colors:it.colors.split(",").map(c=>c.trim()).filter(Boolean),price:Number(it.price)||0,observations:it.observations,image:it.image||null,isMotor:!!it.isMotor}));
+            items=manualItems.map((it,i)=>({itemId:`${newId}-${i+1}`,toy:it.toy,colors:it.colors.split(",").map(c=>c.trim()).filter(Boolean),price:Number(it.price)||0,observations:it.observations,images:it.images||[],isMotor:!!it.isMotor}));
             const total=items.reduce((a,b)=>a+b.price,0);
             nd.orders.push({id:newId,...manualHeader,totalPrice:total,status:"aguardando",createdAt:TODAY_STR,priority:false,items});
             items.filter(it=>!it.isMotor).forEach(it=>nd.production.push({itemId:it.itemId,orderId:newId,cutter:"",tailor:"",prep:"",assembler:"",cutDone:false,tailorDone:false,prepDone:false,assembleDone:false,done:false}));
@@ -479,13 +474,37 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
             if(ci>=0){nd.clients[ci].totalOrders=(nd.clients[ci].totalOrders||0)+1;nd.clients[ci].totalSpent=(nd.clients[ci].totalSpent||0)+total;}
             else
             if(manualHeader.clientName)nd.clients.push({id:Date.now(),name:manualHeader.clientName,city:"",phone:"",email:"",totalOrders:1,totalSpent:total});
-            setData(nd);saveData(nd);setShowForm(false);setManualItems([{toy:"",colors:"",price:"",observations:"",image:null,isMotor:false}]);setManualHeader({clientName:"",voltage:"110V",deadline:"",seller:""});
+            setData(nd);saveData(nd);setShowForm(false);setManualItems([{toy:"",colors:"",price:"",observations:"",images:[],isMotor:false}]);setManualHeader({clientName:"",voltage:"110V",deadline:"",seller:""});
             };
 
             const updExt=(idx,f,v)=>{ const a=[...extItems]; a[idx]={...a[idx],[f]:v}; setExtItems(a); };
             const updMan=(idx,f,v)=>{ const a=[...manualItems]; a[idx]={...a[idx],[f]:v}; setManualItems(a); };
+            
             const hManImg=(idx,e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
-            r.onload=()=>updMan(idx,"image",r.result); r.readAsDataURL(f); };
+            r.onload=()=>{
+                const a=[...manualItems];
+                a[idx].images = [...(a[idx].images||[]), r.result];
+                setManualItems(a);
+            }; 
+            r.readAsDataURL(f); };
+            const remManImg=(idx, imgIdx)=>{
+                const a=[...manualItems];
+                a[idx].images = a[idx].images.filter((_, i) => i !== imgIdx);
+                setManualItems(a);
+            };
+
+            const uploadExtImg=(idx,e)=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+            r.onload=()=>{
+                const a=[...extItems];
+                a[idx].images = [...(a[idx].images||[]), r.result];
+                setExtItems(a);
+            }; 
+            r.readAsDataURL(f); };
+            const remExtImg=(idx, imgIdx)=>{
+                const a=[...extItems];
+                a[idx].images = a[idx].images.filter((_, i) => i !== imgIdx);
+                setExtItems(a);
+            };
 
             const ic=`w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark?"bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-orange-500":"bg-gray-50 border-gray-200 text-gray-900 focus:border-orange-400"}`;
             const lc=`block text-xs font-semibold uppercase tracking-wide mb-1 ${dark?"text-gray-400":"text-gray-500"}`;
@@ -592,7 +611,7 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                         </div>
                         <div className="flex items-center justify-between mb-3"><span className={`text-sm font-black
                                 ${dark?"text-white":"text-gray-900"}`}>Itens</span><button
-                                onClick={()=>setManualItems([...manualItems,{toy:"",colors:"",price:"",observations:"",image:null,isMotor:false}])}
+                                onClick={()=>setManualItems([...manualItems,{toy:"",colors:"",price:"",observations:"",images:[],isMotor:false}])}
                                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
                                 style={{background:"linear-gradient(135deg,#f97316,#eab308)"}}>
                                 <Plus size={13} />Adicionar
@@ -629,16 +648,19 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                                             value={item.observations}
                                             onChange={e=>updMan(idx,"observations",e.target.value)} className={ic}/>
                                     </div>
-                                    {!item.isMotor&&(<div className="md:col-span-4"><label className={lc}>Imagem</label>
-                                        {item.image?<div className="flex gap-3"><img src={item.image} alt=""
-                                                className="w-16 h-16 rounded-lg object-cover border border-gray-600" /><button
-                                                onClick={()=>updMan(idx,"image",null)} className="text-xs
-                                                text-red-400">Remover</button></div>
-                                        :<label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg
-                                            border text-xs font-semibold ${dark?"border-gray-600 text-gray-400":"border-gray-300 text-gray-500"}`}>
-                                            <Image size={14} />Foto<input type="file" accept="image/*"
-                                                className="hidden" onChange={e=>hManImg(idx,e)}/>
-                                        </label>}
+                                    {!item.isMotor&&(<div className="md:col-span-4"><label className={lc}>Imagens</label>
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            {(item.images||[]).map((imgUrl, imgIdx) => (
+                                                <div key={imgIdx} className="relative group">
+                                                    <img src={imgUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-600" />
+                                                    <button onClick={()=>remManImg(idx, imgIdx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"><X size={12}/></button>
+                                                </div>
+                                            ))}
+                                            <label className={`flex flex-col items-center justify-center w-16 h-16 cursor-pointer rounded-lg border-2 border-dashed ${dark?"border-gray-600 text-gray-400 hover:border-orange-500":"border-gray-300 text-gray-500 hover:border-orange-400"}`}>
+                                                <Plus size={16} /><span className="text-[10px] font-bold mt-1">Add</span>
+                                                <input type="file" accept="image/*" className="hidden" onChange={e=>hManImg(idx,e)}/>
+                                            </label>
+                                        </div>
                                     </div>)}
                                 </div>
                             </div>
@@ -701,9 +723,19 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                       {!it.isMotor&&<div><label className={lc}>Cores</label><input value={it.colors} onChange={e=>updExt(idx,"colors",e.target.value)} className={ic}/></div>}
                       <div><label className={lc}>Valor R$</label><input type="number" value={it.price} onChange={e=>updExt(idx,"price",e.target.value)} className={ic}/></div>
                       <div className="col-span-2"><label className={lc}>Observações</label><input value={it.observations} onChange={e=>updExt(idx,"observations",e.target.value)} className={ic}/></div>
-                      {!it.isMotor&&(<div className="col-span-2"><label className={lc}>Imagem</label>
-                        {extImages[idx]?<div className="flex gap-3"><img src={extImages[idx]} alt="" className="w-14 h-14 rounded-lg object-cover border border-gray-600"/><button onClick={()=>setExtImages(p=>({...p,[idx]:null}))} className="text-xs text-red-400">Remover</button></div>
-                        :<label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border text-xs font-semibold ${dark?"border-gray-600 text-gray-400":"border-gray-300 text-gray-500"}`}><Image size={13}/>Foto<input type="file" accept="image/*" className="hidden" onChange={e=>hExtImg(idx,e)}/></label>}
+                      {!it.isMotor&&(<div className="col-span-2"><label className={lc}>Imagens</label>
+                        <div className="flex flex-wrap items-center gap-3">
+                            {(it.images||[]).map((imgUrl, imgIdx) => (
+                                <div key={imgIdx} className="relative group">
+                                    <img src={imgUrl} alt="" className="w-14 h-14 rounded-lg object-cover border border-gray-600" />
+                                    <button onClick={()=>remExtImg(idx, imgIdx)} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"><X size={10}/></button>
+                                </div>
+                            ))}
+                            <label className={`flex flex-col items-center justify-center w-14 h-14 cursor-pointer rounded-lg border-2 border-dashed ${dark?"border-gray-600 text-gray-400 hover:border-orange-500":"border-gray-300 text-gray-500 hover:border-orange-400"}`}>
+                                <Plus size={14} /><span className="text-[9px] font-bold mt-1">Add</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={e=>hExtImg(idx,e)}/>
+                            </label>
+                        </div>
                       </div>)}
                     </div>
                   </div>
@@ -751,7 +783,11 @@ if (d < 0) return { label:`${Math.abs(d)}d atrasado`, color:"bg-red-500/20 text-
                   {(o.items||[]).map((item,idx)=>(
                     <div key={item.itemId} className={`flex items-start justify-between px-4 py-2.5 gap-3 ${idx<(o.items.length-1)?`border-b ${dark?"border-gray-800":"border-gray-100"}`:""}`}>
                       <div className="flex items-start gap-2">
-                        {item.image&&<img src={item.image} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 border border-gray-600"/>}
+                        {item.images&&item.images.length>0&&(
+                            <div className="flex gap-1 overflow-x-auto max-w-32 snap-x hide-scrollbar">
+                                {item.images.map((img,i)=><img key={i} src={img} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 border border-gray-600 snap-center"/>)}
+                            </div>
+                        )}
                         <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-black ${item.isMotor?"bg-blue-500/20 text-blue-400":dark?"bg-gray-800 text-gray-400":"bg-gray-100 text-gray-500"}`}>{item.isMotor?"M":idx+1}</div>
                         <div>
                           <div className="flex items-center gap-1.5"><span className={`text-sm font-semibold ${dark?"text-gray-200":"text-gray-800"}`}>{item.toy}</span>{item.isMotor&&<span className="text-xs px-1.5 py-0.5 rounded font-bold bg-blue-500/20 text-blue-400">{o.voltage}</span>}</div>
@@ -796,7 +832,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const s=statusBadge(row.deadline,row.done);
   const progressColor=row.done?"#22c55e":dl<0?"#ef4444":dl<=3?"#f59e0b":"#f97316";
   const hasObs=row.observations&&row.observations.trim().length>0;
-  const hasImg=!!row.image;
+  const hasImg=row.images&&row.images.length>0;
   const isMulti=row._isMulti;
 
   const StageRow=({label,worker,wList,field,icon:Icon})=>(
@@ -848,10 +884,14 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
                   {hasObs&&<div className="flex-1 min-w-0"><div className={`text-xs font-bold uppercase mb-2 ${dark?"text-gray-400":"text-gray-500"}`}>Observações</div><p className={`text-sm leading-relaxed ${dark?"text-gray-200":"text-gray-700"}`}>{row.observations}</p></div>}
                   {hasImg&&(
                     <div className="flex-shrink-0">
-                      {hasObs&&<div className={`text-xs font-bold uppercase mb-2 ${dark?"text-gray-400":"text-gray-500"}`}>Imagem</div>}
-                      <div className="relative group cursor-pointer" onClick={()=>setLightbox(row.image)}>
-                        <img src={row.image} alt="" className="w-28 h-28 rounded-xl object-cover border-2 border-gray-600"/>
-                        <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white"/></div>
+                      {hasObs&&<div className={`text-xs font-bold uppercase mb-2 ${dark?"text-gray-400":"text-gray-500"}`}>Imagens</div>}
+                      <div className="flex flex-wrap gap-2">
+                          {row.images.map((imgUrl, imgIdx) => (
+                              <div key={imgIdx} className="relative group cursor-pointer" onClick={()=>setLightbox(imgUrl)}>
+                                <img src={imgUrl} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-600"/>
+                                <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white"/></div>
+                              </div>
+                          ))}
                       </div>
                     </div>
                   )}
@@ -876,7 +916,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
       <div className={`h-1.5 ${dark?"bg-gray-800":"bg-gray-100"}`}>
         <div className="h-full rounded-full transition-all duration-500" style={{width:`${pct}%`,background:row.done?"#22c55e":dl<0?"linear-gradient(90deg,#ef4444,#f97316)":"linear-gradient(90deg,#f97316,#eab308)"}}/>
       </div>
-      <div className={`p-4 grid grid-cols-2 md:grid-cols-4 gap-4 border-t ${dark?"border-gray-800 bg-gray-900/60":"border-gray-100 bg-gray-50/60"}`}>
+      <div className={`p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border-t ${dark?"border-gray-800 bg-gray-900/60":"border-gray-100 bg-gray-50/60"}`}>
         <StageRow label="Corte" worker={row.cutter} wList={workers.corte} field="cutter"/>
         <StageRow label="Costura" worker={row.tailor} wList={workers.costura} field="tailor"/>
         <StageRow label="Preparação" worker={row.prep} wList={workers.prep} field="prep"/>
@@ -1079,8 +1119,15 @@ function FinalizationTab({ data, setData, dark, user }) {
   const activeF=sorted.filter(r=>!r.done);
   const doneF=sorted.filter(r=>r.done);
   const delayed=activeF.filter(r=>daysLeft(r.deadline)<0);
+  const [filterStatus,setFilterStatus]=useState("todos");
 
   const finWorkers=data.team.filter(t=>t.role==="Finalizador"&&t.status==="ativo");
+
+  const filteredRows=filterStatus==="todos"?sorted
+    :filterStatus==="atrasados"?activeF.filter(r=>daysLeft(r.deadline)<0)
+    :filterStatus==="concluidos"?doneF
+    :filterStatus==="urgente"?activeF.filter(r=>{ const d=daysLeft(r.deadline); return r.priority||(d>=0&&d<=3); })
+    :activeF.filter(r=>!r.priority&&daysLeft(r.deadline)>3);
 
   const startEdit=()=>{ setSavedState(JSON.parse(JSON.stringify(data))); setEditMode(true); };
   const cancelEdit=()=>{ if(savedState){setData(savedState);saveData(savedState);} setEditMode(false);setSavedState(null); };
@@ -1124,14 +1171,21 @@ function FinalizationTab({ data, setData, dark, user }) {
             </div>
           ))}
         </div>
-        {editMode&&<div className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-amber-500/10 border-amber-500/30 text-amber-400":"bg-amber-50 border-amber-200 text-amber-700"}`}>✏️ Modo edição ativo.</div>}
-        {!editMode&&canEdit&&<div className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-gray-800/60 border-gray-700 text-gray-400":"bg-gray-100 border-gray-200 text-gray-500"}`}>🔒 Modo leitura — clique em Editar.</div>}
-        {!canEdit&&<div className={`text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-blue-500/10 border-blue-500/30 text-blue-400":"bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
+        <div className="flex gap-1.5 flex-wrap">
+          {[["todos","Todos"],["urgente","Urgente"],["atrasados","Atrasados"],["ok","No prazo"],["concluidos","Concluídos"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus===v?"text-white":dark?"bg-gray-800 text-gray-400":"bg-gray-100 text-gray-600"}`} style={filterStatus===v?{background:"linear-gradient(135deg,#f97316,#eab308)"}:{}}>
+              {l}{" "}<span className="opacity-70">{v==="todos"?`(${sorted.length})`:v==="atrasados"?`(${delayed.length})`:v==="concluidos"?`(${doneF.length})`:v==="urgente"?`(${activeF.filter(r=>{const d=daysLeft(r.deadline);return r.priority||(d>=0&&d<=3);}).length})`:""}</span>
+            </button>
+          ))}
+        </div>
+        {editMode&&<div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-amber-500/10 border-amber-500/30 text-amber-400":"bg-amber-50 border-amber-200 text-amber-700"}`}>✏️ Modo edição ativo.</div>}
+        {!editMode&&canEdit&&<div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-gray-800/60 border-gray-700 text-gray-400":"bg-gray-100 border-gray-200 text-gray-500"}`}>🔒 Modo leitura — clique em Editar.</div>}
+        {!canEdit&&<div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark?"bg-blue-500/10 border-blue-500/30 text-blue-400":"bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
       </div>
 
       {/* ── SCROLLABLE CARDS ── */}
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{minHeight:0}}>
-        {sorted.map((row,i)=>{
+        {filteredRows.map((row,i)=>{
           const s=statusBadge(row.deadline,row.done);
           const pct=row.finalizer?100:0;
           const progressColor=row.done?"#22c55e":daysLeft(row.deadline)<0?"#ef4444":"#f97316";
@@ -1348,20 +1402,26 @@ function DashboardTab({ data, dark }) {
         </Card>
       </div>
 
-      {/* ── ETAPAS DA PRODUÇÃO ── */}
+      {/* ── CALENDÁRIO MENSIAL DE VENDAS ── */}
       <Card>
-        <h3 className={`font-black text-base mb-4 ${dark?"text-white":"text-gray-900"}`}>Etapas da Produção — Brinquedos Atribuídos</h3>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={stageData} margin={{top:5,right:5,left:0,bottom:5}}>
-            <CartesianGrid strokeDasharray="3 3" stroke={dark?"#1f2937":"#f1f5f9"}/>
-            <XAxis dataKey="name" tick={{fill:dark?"#9ca3af":"#6b7280",fontSize:12}}/>
-            <YAxis tick={{fill:dark?"#9ca3af":"#6b7280",fontSize:11}} allowDecimals={false}/>
-            <Tooltip contentStyle={tt} formatter={v=>[`${v} brinquedo${v!==1?"s":""}`,""]}/>
-            <Bar dataKey="valor" name="Brinquedos" radius={[5,5,0,0]}>
-              {stageData.map((d,i)=><Cell key={i} fill={["#f97316","#3b82f6","#22c55e","#a855f7","#ec4899"][i]}/>)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className={`font-black text-base ${dark?"text-white":"text-gray-900"}`}>Calendário de Metas ({new Date().toLocaleString("pt-BR",{month:"long",year:"numeric"})})</h3>
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+            {['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=><div key={d} className={`text-xs font-bold text-center p-1 ${dark?"text-gray-400":"text-gray-500"}`}>{d}</div>)}
+            {Array.from({length:31},(_,i)=>{
+                const dayStr = String(i+1).padStart(2,'0');
+                const dateKey = `2026-03-${dayStr}`; // Hardcoded to demo month per mock
+                const itemsCount = allProdRows.filter(r=>r.deadline===dateKey).length;
+                const isToday = TODAY_STR === dateKey;
+                return (
+                    <div key={i} className={`flex flex-col items-center justify-center p-2 rounded-lg border ${dark?"border-gray-800":"border-gray-100"} ${isToday?dark?"bg-orange-500/10 border-orange-500/30":"bg-orange-50 border-orange-200":dark?"bg-gray-900":"bg-white"}`}>
+                        <span className={`text-[10px] font-bold ${isToday?(dark?"text-orange-400":"text-orange-600"):(dark?"text-gray-500":"text-gray-400")}`}>{i+1}</span>
+                        {itemsCount>0?<span className="mt-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold">{itemsCount}</span>:<span className="mt-1 w-5 h-5"/>}
+                    </div>
+                )
+            })}
+        </div>
       </Card>
 
       {/* ── VENDAS POR VENDEDOR ── */}
@@ -1697,7 +1757,7 @@ export default function App() {
       <aside className={`${sidebarOpen?"w-60":"w-16"} flex-shrink-0 border-r flex flex-col transition-all duration-300 ${dark?"bg-gray-900 border-gray-800":"bg-white border-gray-200"}`} style={{minHeight:"100vh",position:"sticky",top:0,height:"100vh",overflowY:"auto"}}>
         <div className="p-4 flex items-center justify-between border-b flex-shrink-0" style={{borderColor:dark?"#1f2937":"#f3f4f6"}}>
           {sidebarOpen&&<AppLogo/>}
-          <button onClick={()=>setSidebarOpen(!sidebarOpen)} className={`p-1.5 rounded-lg ${dark?"hover:bg-gray-800 text-gray-400":"hover:bg-gray-100 text-gray-500"}`}><Menu size={16}/></button>
+          <button onClick={()=>setSidebarOpen(!sidebarOpen)} className={`p-1.5 rounded-lg ${dark?"hover:bg-gray-800 text-gray-400":"hover:bg-gray-100 text-gray-500"}`}>{sidebarOpen?<X size={16}/>:<Menu size={16}/>}</button>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {Object.entries(TAB_META).filter(([id])=>userPerms.includes(id)).map(([id,{label,Icon}])=>{ const active=currentTab===id;
