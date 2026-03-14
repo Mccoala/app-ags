@@ -980,25 +980,36 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
             )}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          {canEdit && (
-            <button onClick={() => onTogglePriority(row._itemId, row._orderId)} title={row.priority ? "Remover prioridade" : "Marcar como prioridade"}
-              className={`p-1.5 rounded-lg border transition-all ${row.priority ? "bg-red-500/20 border-red-500/40 text-red-400" : "border-gray-700 text-gray-500 hover:border-red-400 hover:text-red-400"}`}>
-              <Flag size={14} />
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <div className="relative w-14 h-14 flex items-center justify-center">
+            <svg className="w-14 h-14 transform -rotate-90 block">
+              <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" fill="none" className={dark ? "text-gray-800" : "text-gray-200"} />
+              <circle cx="28" cy="28" r="24" stroke={pct === 100 ? "#10b981" : "url(#orange-grad-prod)"} strokeWidth="4" fill="none" strokeDasharray="150.8" strokeDashoffset={150.8 - (150.8 * pct) / 100} className="transition-all duration-500 transition-stroke ease-out drop-shadow-sm" strokeLinecap="round" />
+              <defs>
+                <linearGradient id="orange-grad-prod" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#f97316" />
+                  <stop offset="100%" stopColor="#fbbf24" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+               <span className={`text-[11px] font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-700"}`}>{pct}%</span>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            {canEdit && (
+              <button onClick={() => onTogglePriority(row._itemId, row._orderId)} title={row.priority ? "Remover prioridade" : "Marcar como prioridade"}
+                className={`p-1.5 rounded-lg border transition-all ${row.priority ? "bg-red-500/20 border-red-500/40 text-red-400" : "border-gray-700 text-gray-500 hover:border-red-400 hover:text-red-400"}`}>
+                <Flag size={14} />
+              </button>
+            )}
+            <button onClick={() => canEdit && editMode && onMarkDone(row._itemId, row._orderId)} disabled={!canEdit || !editMode}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${row.done || pct === 100 ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : dark ? "border-gray-700 text-gray-400 hover:border-emerald-500/50" : "border-gray-300 text-gray-500"} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
+              <Check size={12} />{row.done || pct === 100 ? "Concluído" : "Marcar feito"}
             </button>
-          )}
-          <button onClick={() => canEdit && editMode && onMarkDone(row._itemId, row._orderId)} disabled={!canEdit || !editMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${row.done ? "bg-emerald-500 border-emerald-500 text-white" : dark ? "border-gray-700 text-gray-400 hover:border-emerald-500/50" : "border-gray-300 text-gray-500"} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
-            <Check size={12} />{row.done ? "Concluído" : "Marcar feito"}
-          </button>
+          </div>
         </div>
       </div>
-      
-      {/* Linear Gradient Progress Bar */}
-      <div className={`h-2 relative ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
-        <div className="absolute inset-y-0 left-0 transition-all duration-500" style={{ width: `${pct}%`, background: `linear-gradient(90deg, #f97316, #22c55e)` }} />
-      </div>
-
       <div className={`p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
         <StageRow label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" />
         <StageRow label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" />
@@ -1359,8 +1370,43 @@ function DashboardTab({ data, dark }) {
   const tt = { background: dark ? "#1f2937" : "#fff", border: `1px solid ${dark ? "#374151" : "#e5e7eb"}`, borderRadius: 8, fontSize: 12 };
 
   // ── Helpers ──
-  const getFrom = (p) => ({ hoje: TODAY_STR, ontem: "2026-03-08", "3d": "2026-03-06", "7d": "2026-03-02", mes: "2026-03-01", ano: "2025-03-09" }[p] || "2020-01-01");
-  const getTo = (p) => p === "ontem" ? "2026-03-08" : TODAY_STR;
+  const year = TODAY.getFullYear();
+  const month = String(TODAY.getMonth() + 1).padStart(2, '0');
+  const daysInMonth = new Date(year, TODAY.getMonth() + 1, 0).getDate();
+  
+  const getFrom = (p) => {
+    const d = new Date(TODAY);
+    if (p === "hoje") return d.toISOString().split("T")[0];
+    if (p === "ontem") { d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; }
+    if (p === "3d") { d.setDate(d.getDate() - 3); return d.toISOString().split("T")[0]; }
+    if (p === "7d") { d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; }
+    if (p === "mes") return `${year}-${month}-01`;
+    if (p === "ano") return `${year}-01-01`;
+    return "2020-01-01";
+  };
+  const getTo = (p) => {
+    const d = new Date(TODAY);
+    if (p === "hoje") return d.toISOString().split("T")[0];
+    if (p === "ontem") { d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; }
+    if (p === "ano") return `${year}-12-31`;
+    if (p === "mes") return `${year}-${month}-${daysInMonth}`;
+    return d.toISOString().split("T")[0];
+  };
+
+  const salesDays = [];
+  let curr = new Date(getFrom(salesPeriod));
+  const end = new Date(getTo(salesPeriod));
+  if (salesPeriod === "ano") {
+    for (let i = 1; i <= 12; i++) {
+        salesDays.push({ dateStr: `${year}-${String(i).padStart(2, '0')}`, display: `${String(i).padStart(2, '0')}/${year}` });
+    }
+  } else {
+    while (curr <= end && salesDays.length < 40) {
+        const dStr = curr.toISOString().split("T")[0];
+        salesDays.push({ dateStr: dStr, display: `${String(curr.getDate()).padStart(2, '0')}/${String(curr.getMonth() + 1).padStart(2, '0')}` });
+        curr.setDate(curr.getDate() + 1);
+    }
+  }
 
   // ── Real sales data from orders ──
   const orders = data.orders;
@@ -1369,11 +1415,15 @@ function DashboardTab({ data, dark }) {
     return orders.filter(o => o.createdAt >= from && o.createdAt <= to).reduce((a, o) => a + (o.totalPrice || 0), 0);
   };
 
-  // Sales by day (current month) — real data
-  const salesByDay = Array.from({ length: 9 }, (_, i) => {
-    const date = `2026-03-0${i + 1}`;
-    const dayOrders = orders.filter(o => o.createdAt === date);
-    const obj = { date: `${i + 1}/03`, total: dayOrders.reduce((a, o) => a + (o.totalPrice || 0), 0) };
+  // Sales by day (dynamically filtered)
+  const salesByDay = salesDays.map(d => {
+    let dayOrders = [];
+    if (salesPeriod === "ano") {
+        dayOrders = orders.filter(o => o.createdAt && o.createdAt.startsWith(d.dateStr));
+    } else {
+        dayOrders = orders.filter(o => o.createdAt === d.dateStr);
+    }
+    const obj = { date: d.display, total: dayOrders.reduce((a, o) => a + (o.totalPrice || 0), 0) };
     ["Luan", "Emerson", "Sidnei"].forEach(s => { obj[s] = dayOrders.filter(o => o.seller === s).reduce((a, o) => a + (o.totalPrice || 0), 0); });
     return obj;
   });
@@ -1449,16 +1499,30 @@ function DashboardTab({ data, dark }) {
           </div>
           <RangePill val={salesPeriod} set={setSalesPeriod} opts={periodOpts} />
         </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={salesByDay} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={dark ? "#1f2937" : "#f1f5f9"} />
-            <XAxis dataKey="date" tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 11 }} />
-            <YAxis tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} width={45} />
-            <Tooltip contentStyle={tt} formatter={v => [`R$ ${v.toLocaleString("pt-BR")}`, ""]} />
-            <Bar dataKey="Luan" fill={SELLER_COLORS["Luan"]} stackId="a" radius={[0, 0, 0, 0]} />
-            <Bar dataKey="Emerson" fill={SELLER_COLORS["Emerson"]} stackId="a" />
-            <Bar dataKey="Sidnei" fill={SELLER_COLORS["Sidnei"]} stackId="a" radius={[3, 3, 0, 0]} />
-          </BarChart>
+        <ResponsiveContainer width="100%" height={260}>
+          <AreaChart data={salesByDay} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+            <defs>
+              <linearGradient id="colorLuan" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={SELLER_COLORS["Luan"]} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={SELLER_COLORS["Luan"]} stopOpacity={0}/>
+              </linearGradient>
+              <linearGradient id="colorEmerson" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={SELLER_COLORS["Emerson"]} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={SELLER_COLORS["Emerson"]} stopOpacity={0}/>
+              </linearGradient>
+              <linearGradient id="colorSidnei" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={SELLER_COLORS["Sidnei"]} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={SELLER_COLORS["Sidnei"]} stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={dark ? "#1f2937" : "#f1f5f9"} vertical={false} />
+            <XAxis dataKey="date" tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 11 }} axisLine={false} tickLine={false} dy={10} />
+            <YAxis tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} width={45} />
+            <Tooltip contentStyle={{ ...tt, borderWidth: 0, boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} formatter={v => [`R$ ${v.toLocaleString("pt-BR")}`, ""]} />
+            <Area type="monotone" dataKey="Luan" stroke={SELLER_COLORS["Luan"]} strokeWidth={3} fillOpacity={1} fill="url(#colorLuan)" />
+            <Area type="monotone" dataKey="Emerson" stroke={SELLER_COLORS["Emerson"]} strokeWidth={3} fillOpacity={1} fill="url(#colorEmerson)" />
+            <Area type="monotone" dataKey="Sidnei" stroke={SELLER_COLORS["Sidnei"]} strokeWidth={3} fillOpacity={1} fill="url(#colorSidnei)" />
+          </AreaChart>
         </ResponsiveContainer>
         <div className="flex gap-3 mt-3 justify-center">
           {["Luan", "Emerson", "Sidnei"].map(s => (
@@ -1497,9 +1561,9 @@ function DashboardTab({ data, dark }) {
         </div>
         <div className="grid grid-cols-7 gap-1">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => <div key={d} className={`text-xs font-bold text-center p-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{d}</div>)}
-          {Array.from({ length: 31 }, (_, i) => {
+          {Array.from({ length: daysInMonth }, (_, i) => {
             const dayStr = String(i + 1).padStart(2, '0');
-            const dateKey = `2026-03-${dayStr}`; // Hardcoded to demo month per mock
+            const dateKey = `${year}-${month}-${dayStr}`; 
             const itemsCount = allProdRows.filter(r => r.deadline === dateKey).length;
             const isToday = TODAY_STR === dateKey;
             return (
@@ -1527,16 +1591,14 @@ function DashboardTab({ data, dark }) {
             </div>
           ))}
         </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={sellerData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke={dark ? "#1f2937" : "#f1f5f9"} />
-            <XAxis dataKey="name" tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 13, fontWeight: "bold" }} />
-            <YAxis tick={{ fill: dark ? "#9ca3af" : "#6b7280", fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} width={40} />
-            <Tooltip contentStyle={tt} formatter={v => [`R$ ${v.toLocaleString("pt-BR")}`, ""]} />
-            <Bar dataKey="valor" name="Vendas" radius={[6, 6, 0, 0]}>
-              {sellerData.map((s, i) => <Cell key={i} fill={s.color} />)}
-            </Bar>
-          </BarChart>
+        <ResponsiveContainer width="100%" height={260}>
+          <PieChart>
+            <Pie data={sellerData.filter(d => d.valor > 0)} cx="50%" cy="45%" innerRadius={60} outerRadius={85} paddingAngle={5} dataKey="valor">
+              {sellerData.filter(d => d.valor > 0).map((s, i) => <Cell key={i} fill={s.color} />)}
+            </Pie>
+            <Tooltip contentStyle={{...tt, borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} formatter={v => [`R$ ${v.toLocaleString("pt-BR")}`, "Vendas"]} />
+            <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '13px', fontWeight: 'bold' }} />
+          </PieChart>
         </ResponsiveContainer>
       </Card>
 
@@ -1581,31 +1643,35 @@ function ClientsTab({ data, dark }) {
           return (
             <div key={c.id} className={`rounded-xl border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${isOpen ? "border-orange-500/40" : ""}`}>
               <div className="flex items-center justify-between p-4 gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-sm flex-shrink-0" style={{ background: `linear-gradient(135deg,${sc}88,${sc})` }}>{c.name.slice(0, 2).toUpperCase()}</div>
-                  <div>
-                    <div className={`font-bold ${dark ? "text-white" : "text-gray-900"}`}>{c.name}</div>
-                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                      {lastSeller && <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${sc}22`, color: sc }}>👤 {lastSeller}</span>}
-                      {c.city && <span className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>{c.city}{c.state ? ` - ${c.state}` : ""}</span>}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-white text-base flex-shrink-0" style={{ background: `linear-gradient(135deg,${sc}88,${sc})` }}>{c.name.slice(0, 2).toUpperCase()}</div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className={`font-bold text-lg ${dark ? "text-white" : "text-gray-900"}`}>{c.name}</div>
+                    <div className={`text-xs font-medium ${dark ? "text-gray-300" : "text-gray-600"}`}>
+                      {c.city || "S/ Cidade"} {c.state ? `- ${c.state}` : ""}
+                      {c.phone && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">📞 {c.phone}</span>}
+                      {c.email && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">✉️ {c.email}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      {lastSeller && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm" style={{ background: `${sc}22`, color: sc }}>👤 {lastSeller}</span>}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right"><div className="text-lg font-black" style={{ color: "#f97316" }}>{orders.length}</div><div className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>pedidos</div></div>
-                  <div className="text-right"><div className={`text-base font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {total.toLocaleString("pt-BR")}</div></div>
-                  <button onClick={() => setOpenClient(isOpen ? null : c.id)} className={`p-2 rounded-xl border ${dark ? "border-gray-700 text-gray-400 hover:border-orange-500/50" : "border-gray-200 text-gray-400"}`}>{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-xl font-black" style={{ color: "#f97316" }}>{orders.length}</div>
+                    <div className={`text-[10px] uppercase font-bold tracking-wider ${dark ? "text-gray-500" : "text-gray-400"}`}>pedidos</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-lg font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {total.toLocaleString("pt-BR")}</div>
+                  </div>
+                  <button onClick={() => setOpenClient(isOpen ? null : c.id)} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:bg-gray-800" : "border-gray-200 text-gray-500 hover:bg-gray-50"} ${isOpen ? (dark ? "bg-gray-800" : "bg-gray-100") : ""}`}>
+                    {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
                 </div>
               </div>
               {isOpen && (
                 <div className={`border-t ${dark ? "border-gray-800" : "border-gray-100"}`}>
-                  <div className="p-4 flex flex-col gap-2">
-                    <div className={`text-xs font-bold uppercase tracking-wide ${dark ? "text-gray-400" : "text-gray-500"}`}>Informações do Cliente</div>
-                    <div className={`text-sm ${dark ? "text-gray-300" : "text-gray-700"}`}>
-                      <div><strong>Contato:</strong> {c.phone || "Não informado"} / {c.email || "Não informado"}</div>
-                      <div><strong>Endereço:</strong> {c.city || "Não informado"} {c.state ? `- ${c.state}` : ""}</div>
-                    </div>
-                  </div>
                   <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wide border-t ${dark ? "border-gray-800 text-gray-400" : "border-gray-100 text-gray-500"}`}>Histórico de Pedidos</div>
                   {orders.length === 0 ? <div className={`px-4 pb-4 text-sm ${dark ? "text-gray-500" : "text-gray-400"}`}>Nenhum pedido.</div> : orders.map(o => {
                     const s = statusBadge(o.deadline, o.status === "concluido");
@@ -1694,6 +1760,7 @@ function TeamTab({ data, setData, dark }) {
   const [form, setForm] = useState({ name: "", role: "Corte", status: "ativo" });
   const [userForm, setUserForm] = useState({ name: "", email: "", password: "", permissions: ["orders"] }); // permissions now strings like "orders", "orders:edit"
   const [showUserForm, setShowUserForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
 
   const addMember = () => { if (!form.name) return; const nd = { ...data }; nd.team.push({ id: Date.now(), ...form }); setData(nd); saveData(nd); setForm({ name: "", role: "Corte", status: "ativo" }); setShowForm(false); };
   const toggle = (id) => { const nd = { ...data }; const m = nd.team.find(t => t.id === id); if (m) m.status = m.status === "ativo" ? "inativo" : "ativo"; setData(nd); saveData(nd); };
@@ -1816,26 +1883,36 @@ function TeamTab({ data, setData, dark }) {
                 {u.role !== "admin" && <button onClick={() => removeUser(u.id)} className={`p-1.5 rounded-lg flex-shrink-0 ${dark ? "hover:bg-red-500/20 text-gray-500 hover:text-red-400" : "hover:bg-red-50 text-gray-400 hover:text-red-500"}`}><Trash2 size={13} /></button>}
               </div>
               {u.role !== "admin" && (
-                <div className="flex gap-2 flex-wrap mt-2">
-                  {ALL_TABS.map(tab => {
-                    const has = (u.permissions || []).includes(tab);
-                    const hasEdit = (u.permissions || []).includes(`${tab}:edit`);
-                    return (
-                      <div key={tab} className={`flex flex-col gap-1 p-1.5 rounded-xl border ${dark ? "border-gray-800" : "border-gray-100"}`}>
-                        <button onClick={() => toggleUserPerm(u.id, tab, "read")} className={`px-2 py-1 rounded-lg text-xs font-bold border ${has ? "text-white border-transparent" : dark ? "border-gray-700 text-gray-500" : "border-gray-200 text-gray-400"}`} style={has ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>{TAB_LABELS[tab]}</button>
-                        {has && (
-                          <div className="flex items-center justify-center gap-2 mt-1">
-                            <label className={`flex items-center gap-1 text-[10px] uppercase font-bold cursor-pointer ${dark ? "text-gray-400" : "text-gray-500"}`} title="Somente Leitura">
-                              <input type="checkbox" checked={!hasEdit} onChange={() => toggleUserPerm(u.id, tab, "edit")} className="accent-orange-500 w-2.5 h-2.5" /> L
-                            </label>
-                            <label className={`flex items-center gap-1 text-[10px] uppercase font-bold cursor-pointer ${dark ? "text-gray-400" : "text-gray-500"}`} title="Pode Editar">
-                              <input type="checkbox" checked={hasEdit} onChange={() => toggleUserPerm(u.id, tab, "edit")} className="accent-orange-500 w-2.5 h-2.5" /> E
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="mt-3 border-t pt-3" style={{ borderColor: dark ? "#374151" : "#e5e7eb" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-xs font-bold uppercase tracking-wide ${dark ? "text-gray-400" : "text-gray-500"}`}>Acessos do Usuário</span>
+                    {editingUser === u.id ? (
+                      <button onClick={() => setEditingUser(null)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-all shadow-md shadow-emerald-500/20"><Check size={14}/>Salvar Acessos</button>
+                    ) : (
+                      <button onClick={() => setEditingUser(u.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}><Edit3 size={14}/>Editar Acessos</button>
+                    )}
+                  </div>
+                  <div className={`flex gap-2 flex-wrap transition-opacity duration-300 ${editingUser === u.id ? "opacity-100" : "opacity-40 pointer-events-none grayscale-[50%]"}`}>
+                    {ALL_TABS.map(tab => {
+                      const has = (u.permissions || []).includes(tab);
+                      const hasEdit = (u.permissions || []).includes(`${tab}:edit`);
+                      return (
+                        <div key={tab} className={`flex flex-col gap-1 p-1.5 rounded-xl border ${dark ? "border-gray-800" : "border-gray-100"}`}>
+                          <button onClick={() => toggleUserPerm(u.id, tab, "read")} className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${has ? "text-white border-transparent" : dark ? "border-gray-700 text-gray-500" : "border-gray-200 text-gray-400"}`} style={has ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>{TAB_LABELS[tab]}</button>
+                          {has && (
+                            <div className="flex items-center justify-center gap-2 mt-1">
+                              <label className={`flex items-center gap-1 text-[10px] uppercase font-bold cursor-pointer transition-colors ${dark ? "text-gray-400" : "text-gray-500"}`} title="Somente Leitura">
+                                <input type="checkbox" checked={!hasEdit} onChange={() => toggleUserPerm(u.id, tab, "edit")} className="accent-orange-500 w-2.5 h-2.5" /> L
+                              </label>
+                              <label className={`flex items-center gap-1 text-[10px] uppercase font-bold cursor-pointer transition-colors ${dark ? "text-gray-400" : "text-gray-500"}`} title="Pode Editar">
+                                <input type="checkbox" checked={hasEdit} onChange={() => toggleUserPerm(u.id, tab, "edit")} className="accent-orange-500 w-2.5 h-2.5" /> E
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               {u.role === "admin" && <div className={`text-xs mt-1.5 ${dark ? "text-gray-500" : "text-gray-400"}`}>Acesso total ao sistema</div>}
@@ -1899,9 +1976,9 @@ function RoutesTab({ data, dark }) {
       stateData[stateId] = { orders: 0, items: 0, value: 0 };
     }
     stateData[stateId].orders += 1;
-    o.items.forEach(it => {
-      stateData[stateId].items += it.qty;
-      stateData[stateId].value += it.qty * it.price;
+    (o.items || []).forEach(it => {
+      stateData[stateId].items += it.qty || 0;
+      stateData[stateId].value += (it.qty || 0) * (it.price || 0);
     });
   });
 
