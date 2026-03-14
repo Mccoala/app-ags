@@ -10,10 +10,14 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",
+    "d3-scale": "^4.0.2",
     "lucide-react": "^0.344.0",
+    "mapbox-gl": "^3.20.0",
     "node-fetch": "^2.7.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-map-gl": "^8.1.0",
+    "react-simple-maps": "^3.0.0",
     "recharts": "^2.12.2"
   },
   "devDependencies": {
