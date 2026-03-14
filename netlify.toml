@@ -3,6 +3,9 @@
   command = "npm run build"
   functions = "netlify/functions"
 
+[build.environment]
+  CI = "false"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
