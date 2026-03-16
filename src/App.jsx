@@ -948,22 +948,26 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const hasImg = row.images && row.images.length > 0;
   const isMulti = row._isMulti;
 
-  const StageRow = ({ label, worker, wList, field, doneField }) => (
-    <div className={`flex flex-col gap-2 p-3 rounded-xl border ${row[doneField] ? dark ? "bg-emerald-900/10 border-emerald-500/30" : "bg-emerald-50 border-emerald-200" : dark ? "bg-gray-800/50 border-gray-700/50" : "bg-gray-50 border-gray-200"}`}>
-      <div className="flex items-center justify-between gap-1.5">
-        <label className="flex items-center gap-2 cursor-pointer group">
-          <input type="checkbox" checked={!!row[doneField]} disabled={!editMode || !canEdit || !worker} onChange={(e) => onUpdateProd(row._itemId, doneField, e.target.checked)} className={`w-4 h-4 rounded border-gray-300 focus:ring-emerald-500 text-emerald-500 transition-all ${(!editMode || !canEdit || !worker) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`} />
-          <span className={`text-xs font-bold select-none ${row[doneField] ? "text-emerald-500 line-through" : dark ? "text-gray-300" : "text-gray-700"}`}>
-            {label}
-          </span>
-        </label>
-        <div className={`w-2 h-2 rounded-full ${worker ? row[doneField] ? "bg-emerald-500" : "bg-amber-400" : "bg-gray-500"}`} />
-      </div>
+  const StageNode = ({ label, worker, wList, field, doneField, isLast }) => (
+    <div className={`relative flex flex-col items-center ${isLast ? "" : "flex-1"}`}>
+      {!isLast && <div className={`absolute top-3 left-[50%] w-full h-1 -z-10 ${row[doneField] ? "bg-emerald-500" : dark ? "bg-gray-800" : "bg-gray-200"}`} />}
+      <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
+         title={!worker ? "Atribua um funcionário primeiro" : row[doneField] ? "Desmarcar" : "Marcar como feito"}
+         className={`w-6 h-6 rounded-full flex items-center justify-center border-2 outline-none transition-all z-10 bg-white dark:bg-gray-900
+           ${row[doneField] ? "border-emerald-500 bg-emerald-500 text-white" : worker ? "border-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]" : "border-gray-300 dark:border-gray-700"}
+           ${(!editMode || !canEdit || !worker) ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
+         `}>
+         {row[doneField] ? <Check size={12} strokeWidth={4} /> : <div className={`w-2 h-2 rounded-full ${worker && !row[doneField] ? "bg-amber-400" : "bg-transparent"}`} />}
+      </button>
+      <div className={`mt-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-300" : "text-gray-700"}`}>{label}</div>
       <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
-        className={`px-2 py-1.5 rounded-lg text-xs border outline-none w-full ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"} ${(!editMode || !canEdit) ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <option value="">— atribuir —</option>
-        {wList.map(w => <option key={w.id}>{w.name}</option>)}
-      </select>
+          className={`mt-1 w-20 sm:w-24 px-1 py-1 rounded text-[10px] sm:text-xs border outline-none text-center transition-opacity
+            ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"} 
+            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+          `}>
+          <option value="">Atribuir</option>
+          {wList.map(w => <option key={w.id}>{w.name}</option>)}
+       </select>
     </div>
   );
 
@@ -1041,11 +1045,13 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
           </div>
         </div>
       </div>
-      <div className={`p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-        <StageRow label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
-        <StageRow label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
-        <StageRow label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
-        <StageRow label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" />
+      <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
+        <div className="flex justify-between w-full relative z-0 overflow-x-auto hide-scrollbar">
+          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
+          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
+          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
+          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" isLast={true} />
+        </div>
       </div>
     </div>
   );
@@ -2283,6 +2289,7 @@ export default function App() {
               {currentTab === "dashboard" && <DashboardTab data={data} dark={dark} />}
               {currentTab === "clients" && <ClientsTab data={data} dark={dark} />}
               {currentTab === "team" && <TeamTab data={data} setData={setData} dark={dark} />}
+              {currentTab === "routes" && <RoutesTab data={data} dark={dark} />}
             </div>
           </div>
         )}
