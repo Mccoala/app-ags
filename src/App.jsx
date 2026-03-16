@@ -10,7 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Area,
   AreaChart, PieChart, Pie
 } from "recharts";
-import { ComposableMap, Geographies, Geography } from "react-simple-maps";
+import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 import { scaleLinear } from "d3-scale";
 import logoImg from "./assets/logo.png";
 
@@ -1503,7 +1503,8 @@ function DashboardTab({ data, dark }) {
   if (prodPeriod === "ano") {
     for (let i = 1; i <= 12; i++) prodDays.push({ dateStr: `${year}-${String(i).padStart(2, '0')}`, display: `${String(i).padStart(2, '0')}/${year}` });
   } else {
-    while (pCurr <= pEnd && prodDays.length < 40) {
+    for (let i = 0; i < 40; i++) {
+      if (pCurr > pEnd) break;
       prodDays.push({ dateStr: pCurr.toISOString().split("T")[0], display: `${String(pCurr.getDate()).padStart(2, '0')}/${String(pCurr.getMonth() + 1).padStart(2, '0')}` });
       pCurr.setDate(pCurr.getDate() + 1);
     }
@@ -1526,9 +1527,9 @@ function DashboardTab({ data, dark }) {
        const { f, w } = getSecFields(prodSector);
        const obj = { date: d.display };
        if (prodWorker === "todos") {
-         prodWorkersList.forEach(wrk => obj[wrk] = items.filter(r => r[f] && r[w] === wrk).length);
+         prodWorkersList.forEach(wrk => obj[wrk] = items.filter(r => r[f] || (r[w] === wrk && (r.status === "concluido" || r.done))).length);
        } else {
-         obj[prodWorker] = items.filter(r => r[f] && r[w] === prodWorker).length;
+         obj[prodWorker] = items.filter(r => (r[f] && r[w] === prodWorker) || (r[w] === prodWorker && (r.status === "concluido" || r.done))).length;
        }
        return obj;
     }
@@ -2085,26 +2086,46 @@ class MapErrorBoundary extends Component {
   }
 }
 
+const STATE_CENTERS = {
+  AC: [-70.55, -9.02], AL: [-36.59, -9.57], AM: [-64.62, -4.22], AP: [-51.95, 1.41],
+  BA: [-41.70, -12.57], CE: [-39.32, -5.49], DF: [-47.92, -15.79], ES: [-40.30, -19.18],
+  GO: [-49.83, -15.82], MA: [-45.11, -4.96], MG: [-44.28, -18.51], MS: [-54.60, -20.44],
+  MT: [-56.92, -12.68], PA: [-52.92, -3.97], PB: [-36.72, -7.11], PE: [-37.21, -8.28],
+  PI: [-42.80, -7.71], PR: [-51.99, -25.25], RJ: [-42.70, -22.90], RN: [-36.68, -5.79],
+  RO: [-62.90, -10.90], RR: [-60.75, 2.73], RS: [-53.27, -30.03], SC: [-50.45, -27.24],
+  SE: [-37.38, -10.59], SP: [-48.11, -22.19], TO: [-48.36, -10.17]
+};
+
 function RoutesTab({ data, dark }) {
   const [tooltipContent, setTooltipContent] = useState("");
-  // aggregate states data based on all orders
+  const [mapFilter, setMapFilter] = useState("producao");
+  const [selectedState, setSelectedState] = useState(null);
+
+  // filter logical orders
+  const filteredOrders = data.orders.filter(o => {
+    if (mapFilter === "todos") return true;
+    const isDone = o.status === "concluido" || o.done;
+    if (mapFilter === "concluidos") return isDone;
+    return !isDone; // producao means active
+  });
+
   const stateData = {};
-  
-  data.orders.forEach(o => {
-    let client = null;
+  filteredOrders.forEach(o => {
+    let clientRow = null;
     if (o.client) {
       if (typeof o.client === "string") {
-         client = data.clients.find(c => c.name === o.client);
+         clientRow = data.clients.find(c => c.name === o.client);
       } else {
-         client = o.client;
+         clientRow = o.client;
       }
     }
-    const stateId = client?.state || "SP"; // fallback loosely
+    const stateId = clientRow?.state || "SP";
     
     if (!stateData[stateId]) {
-      stateData[stateId] = { orders: 0, items: 0, value: 0 };
+      stateData[stateId] = { orders: 0, items: 0, value: 0, orderList: [] };
     }
     stateData[stateId].orders += 1;
+    stateData[stateId].orderList.push(o);
     (o.items || []).forEach(it => {
       stateData[stateId].items += it.qty || 0;
       stateData[stateId].value += (it.qty || 0) * (it.price || 0);
@@ -2112,17 +2133,26 @@ function RoutesTab({ data, dark }) {
   });
 
   const maxValue = Math.max(...Object.values(stateData).map(d => d.value), 100);
-  const colorScale = scaleLinear().domain([0, maxValue]).range(["#fed7aa", "#ea580c"]); // light orange to dark orange
+  const colorScale = scaleLinear().domain([0, maxValue]).range(dark ? ["#4b5563", "#ea580c"] : ["#fed7aa", "#ea580c"]);
 
   const sortedStates = Object.entries(stateData).sort((a,b) => b[1].value - a[1].value);
 
+  const selectedStateData = selectedState ? stateData[selectedState] : null;
+
   return (
     <div className="space-y-5 flex flex-col lg:flex-row gap-6">
-      <div className={`w-full lg:w-2/3 p-4 rounded-xl shadow-sm border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`}>
-        <h2 className={`text-xl font-black mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Mapa de Vendas</h2>
-        <div className="relative w-full aspect-square md:aspect-video rounded-xl overflow-hidden bg-sky-50 dark:bg-sky-900/10 flex items-center justify-center">
+      <div className={`w-full lg:w-2/3 p-4 rounded-xl shadow-sm border flex flex-col ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h2 className={`text-xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Território de Vendas</h2>
+          <select value={mapFilter} onChange={e => setMapFilter(e.target.value)} className={`px-4 py-2 rounded-xl text-sm font-bold border outline-none shadow-sm cursor-pointer ${dark ? "bg-gray-800 text-white border-gray-700 focus:border-orange-500" : "bg-gray-50 text-gray-900 border-gray-300 focus:border-orange-500"}`}>
+            <option value="producao">Pedidos em Produção</option>
+            <option value="concluidos">Pedidos Concluídos</option>
+            <option value="todos">Todos os Pedidos</option>
+          </select>
+        </div>
+        <div className="relative w-full flex-1 min-h-[400px] rounded-xl overflow-hidden bg-sky-50 dark:bg-sky-900/10 flex items-center justify-center border border-gray-100 dark:border-gray-800/50">
           <MapErrorBoundary>
-            <ComposableMap projection="geoMercator" projectionConfig={{ scale: 650, center: [-54, -15] }} width={800} height={600} style={{ width: "100%", height: "100%" }}>
+            <ComposableMap projection="geoMercator" projectionConfig={{ scale: 750, center: [-54, -15] }} width={800} height={600} style={{ width: "100%", height: "100%" }}>
               <Geographies geography={GEO_URL}>
                 {({ geographies }) =>
                   geographies.map((geo) => {
@@ -2132,55 +2162,102 @@ function RoutesTab({ data, dark }) {
                       <Geography
                         key={geo.rsmKey}
                         geography={geo}
-                        fill={sdata ? colorScale(sdata.value) : (dark ? "#374151" : "#e5e7eb")}
-                        stroke={dark ? "#1f2937" : "#ffffff"}
-                        strokeWidth={0.5}
+                        onClick={() => sdata && setSelectedState(stateId)}
+                        fill={sdata ? colorScale(sdata.value) : (dark ? "#1f2937" : "#f3f4f6")}
+                        stroke={dark ? "#111827" : "#ffffff"}
+                        strokeWidth={0.8}
                         onMouseEnter={() => {
-                          const valStr = sdata ? `R$ ${sdata.value.toLocaleString("pt-BR")}` : "R$ 0";
-                          setTooltipContent(`${geo.properties.name}: ${valStr} (${sdata?.orders || 0} pedidos)`);
+                          const valStr = sdata ? `R$ ${sdata.value.toLocaleString("pt-BR")}` : "0 Pedidos";
+                          setTooltipContent(`${geo.properties.name}: ${valStr} ${sdata ? `(${sdata.orders} un)` : ''}`);
                         }}
-                        onMouseLeave={() => {
-                          setTooltipContent("");
-                        }}
+                        onMouseLeave={() => setTooltipContent("")}
                         style={{
-                          hover: { fill: "#f97316", outline: "none", strokeWidth: 1.5, stroke: "#fff" },
+                          hover: { fill: "#f97316", outline: "none", strokeWidth: 1.5, stroke: "#fff", cursor: sdata ? "pointer" : "default" },
                           pressed: { fill: "#ea580c", outline: "none" },
-                          default: { outline: "none" }
+                          default: { outline: "none", cursor: sdata ? "pointer" : "default" }
                         }}
                       />
                     );
                   })
                 }
               </Geographies>
+              {Object.entries(stateData).map(([uf, sdata]) => {
+                 const coords = STATE_CENTERS[uf];
+                 if (!coords || !sdata) return null;
+                 return (
+                   <Marker key={uf} coordinates={coords}>
+                     <circle r={10} fill="#f97316" stroke="#fff" strokeWidth={1.5} style={{ pointerEvents: "none" }} />
+                     <text textAnchor="middle" y={3} style={{ fill: "#fff", fontSize: "10px", fontWeight: "900", pointerEvents: "none" }}>{sdata.orders}</text>
+                   </Marker>
+                 );
+              })}
             </ComposableMap>
           </MapErrorBoundary>
             {tooltipContent && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-gray-900 text-white text-xs rounded shadow-xl font-bold whitespace-nowrap z-10 pointer-events-none">
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-2xl font-bold whitespace-nowrap z-10 pointer-events-none ring-1 ring-white/10">
                 {tooltipContent}
               </div>
             )}
         </div>
       </div>
       <div className={`w-full lg:w-1/3 flex flex-col gap-4`}>
-        <div className={`p-4 rounded-xl shadow-sm border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`}>
-            <h3 className={`text-sm font-black uppercase tracking-wide mb-4 ${dark ? "text-gray-300" : "text-gray-700"}`}>Top Estados</h3>
+        <div className={`p-4 rounded-xl shadow-sm border flex-1 ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`}>
+            <h3 className={`text-sm font-black uppercase tracking-wide mb-4 flex items-center gap-2 ${dark ? "text-gray-300" : "text-gray-700"}`}>
+               <TrendingUp size={16} className="text-orange-500" /> Top Estados ({mapFilter === "todos" ? "Geral" : mapFilter})
+            </h3>
             <div className="space-y-3">
               {sortedStates.slice(0, 10).map(([uf, stats], i) => (
-                <div key={uf} className="flex items-center justify-between pb-2 border-b last:border-0 border-gray-100 dark:border-gray-800">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 text-center text-xs font-bold text-gray-400">{i + 1}º</span>
+                <div key={uf} onClick={() => setSelectedState(uf)} className={`flex items-center justify-between p-2 pb-3 border-b last:border-0 cursor-pointer transition-all hover:pl-3 rounded-lg ${dark ? "border-gray-800 hover:bg-gray-800/80" : "border-gray-100 hover:bg-gray-50"}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded bg-orange-500/10 text-orange-500 flex items-center justify-center text-[10px] font-black">{i + 1}º</span>
                     <span className={`text-sm font-bold ${dark ? "text-white" : "text-gray-800"}`}>{uf}</span>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-bold text-orange-500">R$ {stats.value.toLocaleString("pt-BR")}</div>
-                    <div className={`text-[10px] ${dark ? "text-gray-500" : "text-gray-400"}`}>{stats.orders} pedidos</div>
+                    <div className={`text-[10px] uppercase font-bold mt-0.5 ${dark ? "text-gray-500" : "text-gray-400"}`}>{stats.orders} pedidos</div>
                   </div>
                 </div>
               ))}
-              {sortedStates.length === 0 && <p className="text-xs text-center p-4 text-gray-400 border-dashed border rounded-xl border-gray-200 dark:border-gray-800">Nenhum dado com UF registrado.</p>}
+              {sortedStates.length === 0 && <p className="text-xs text-center p-6 text-gray-400 border-dashed border rounded-xl border-gray-200 dark:border-gray-800">Nenhum pedido nesta categoria.</p>}
             </div>
         </div>
       </div>
+      
+      {/* STATE ORDERS MODAL */}
+      {selectedState && selectedStateData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedState(null)}>
+          <div className={`w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl shadow-2xl border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`} onClick={e => e.stopPropagation()}>
+            <div className={`flex items-center justify-between p-5 border-b ${dark ? "border-gray-800" : "border-gray-100"}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-orange-500/30">{selectedState}</div>
+                <div>
+                   <h3 className={`font-black text-lg ${dark ? "text-white" : "text-gray-900"}`}>Pedidos em {selectedState}</h3>
+                   <p className={`text-xs font-bold uppercase ${dark ? "text-gray-500" : "text-gray-400"}`}>{selectedStateData.orders} pedidos • R$ {selectedStateData.value.toLocaleString("pt-BR")}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedState(null)} className={`p-2 rounded-xl transition-all ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}><X size={20} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {selectedStateData.orderList.map(o => (
+                <div key={o.id} className={`p-4 rounded-xl border flex flex-col sm:flex-row gap-4 sm:items-center justify-between ${dark ? "bg-gray-800/50 border-gray-800" : "bg-gray-50 border-gray-200"}`}>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`font-mono text-xs font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>#{o.id}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-400"}`}>{o.status === "concluido" ? "Concluído" : "Em Produção"}</span>
+                    </div>
+                    <div className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>{(o.client?.name || o.client) || "Cliente Sem Nome"}</div>
+                    <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>Vendedor: {o.seller || "—"}</div>
+                  </div>
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
+                    <div className="text-sm font-black text-orange-500">R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</div>
+                    <div className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>{(o.items || []).length} itens</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
