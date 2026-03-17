@@ -558,6 +558,7 @@ function OrdersTab({ data, setData, dark }) {
     const total = items.reduce((a, b) => a + b.price, 0);
     nd.orders.push({ id: newId, clientName: extHeader.clientName, voltage: extHeader.voltage, deadline: extHeader.deadline, seller: extHeader.seller, totalPrice: total, status: "aguardando", createdAt: TODAY_STR, priority: false, items });
     items.filter(it => !it.isMotor).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
+    const ci = nd.clients.findIndex(c => c.name.toLowerCase() === extHeader.clientName?.toLowerCase());
     if (ci >= 0) { 
         nd.clients[ci].totalOrders = (nd.clients[ci].totalOrders || 0) + 1; 
         nd.clients[ci].totalSpent = (nd.clients[ci].totalSpent || 0) + total; 
@@ -950,24 +951,20 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const hasImg = row.images && row.images.length > 0;
   const isMulti = row._isMulti;
 
-  const StageNode = ({ label, worker, wList, field, doneField, isLast, prevDone, isFirst }) => (
-    <div className={`relative flex flex-col items-center ${isLast ? "" : "flex-1"}`}>
-      {!isLast && <div className={`absolute top-3 left-[50%] w-full h-1 -z-10 ${row[doneField] ? "bg-emerald-500" : dark ? "bg-gray-800" : "bg-gray-200"}`} />}
-      <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
-         title={!worker ? "Atribua um funcionário primeiro" : row[doneField] ? "Desmarcar" : "Marcar como feito"}
-         className={`w-6 h-6 rounded-full flex items-center justify-center border-2 outline-none transition-all z-10 bg-white dark:bg-gray-900
-           ${row[doneField] ? "border-emerald-500 bg-emerald-500 text-white" : worker && (isFirst || prevDone) ? "border-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]" : "border-gray-300 dark:border-gray-700"}
-           ${(!editMode || !canEdit || !worker) ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
-         `}>
-         {row[doneField] ? <Check size={12} strokeWidth={4} /> : <div className={`w-2 h-2 rounded-full ${worker && !row[doneField] && (isFirst || prevDone) ? "bg-amber-400" : "bg-transparent"}`} />}
-      </button>
-      <div className={`mt-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${row[doneField] ? "text-emerald-500" : worker && (isFirst || prevDone) ? (dark ? "text-amber-400" : "text-amber-500") : dark ? "text-gray-500" : "text-gray-400"}`}>{label}</div>
-      <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
-          className={`mt-1 w-20 sm:w-24 px-1 py-1 rounded text-[10px] sm:text-xs border outline-none text-center transition-opacity
-            ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"} 
-            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+  const StageNode = ({ label, worker, wList, field, doneField }) => (
+    <div className={`flex flex-col p-3 rounded-xl border transition-all ${dark ? "bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/80" : "bg-gray-50 border-gray-200 hover:bg-gray-100"} flex-1 min-w-[120px]`}>
+       <div className="flex items-center justify-between mb-2">
+         <span className={`text-[10px] sm:text-xs font-black uppercase tracking-widest ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
+         <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : "bg-gray-200/50 dark:bg-gray-700/50 text-gray-500 border border-transparent"} ${(!editMode || !canEdit || !worker) ? "opacity-50 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : "Pendente"}
+         </button>
+       </div>
+       <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
+          className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold outline-none transition-all
+            ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"} border shadow-sm
+            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500 focus:ring-1 focus:ring-orange-500"}>
           `}>
-          <option value="">Atribuir</option>
+          <option value="">👤 Atribuir...</option>
           {wList.map(w => <option key={w.id}>{w.name}</option>)}
        </select>
     </div>
@@ -1048,11 +1045,11 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
         </div>
       </div>
       <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-        <div className="flex justify-between w-full relative z-0 overflow-x-auto hide-scrollbar">
-          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" isFirst={true} />
-          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" prevDone={row.cutDone} />
-          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" prevDone={row.tailorDone} />
-          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" isLast={true} prevDone={row.prepDone} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
+          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
+          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
+          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" />
         </div>
       </div>
     </div>
@@ -1736,13 +1733,25 @@ function DashboardTab({ data, dark }) {
   );
 }
 
-// ─── CLIENTS TAB ──────────────────────────────────────────────────────────────
-function ClientsTab({ data, dark }) {
+function ClientsTab({ data, setData, dark }) {
   const [search, setSearch] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
   const [openClient, setOpenClient] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   const [activeItemInfo, setActiveItemInfo] = useState(null);
+  const [editingClient, setEditingClient] = useState(null);
+
+  const saveClientEdit = (e) => {
+    e.preventDefault();
+    const nd = { ...data };
+    const ci = nd.clients.findIndex(c => c.id === editingClient.id);
+    if (ci >= 0) {
+      nd.clients[ci] = editingClient;
+      setData(nd);
+      saveData(nd);
+    }
+    setEditingClient(null);
+  };
 
   const getSellerForClient = (n) => { const o = data.orders.filter(x => x.clientName === n); return o.length ? o[o.length - 1].seller : null; };
   const clientOrders = (n) => data.orders.filter(o => o.clientName === n);
@@ -1788,16 +1797,21 @@ function ClientsTab({ data, dark }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="text-right">
+                  <div className="text-right hidden sm:block">
                     <div className="text-xl font-black" style={{ color: "#f97316" }}>{orders.length}</div>
                     <div className={`text-[10px] uppercase font-bold tracking-wider ${dark ? "text-gray-500" : "text-gray-400"}`}>pedidos</div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right hidden md:block">
                     <div className={`text-lg font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {total.toLocaleString("pt-BR")}</div>
                   </div>
-                  <button onClick={() => setOpenClient(isOpen ? null : c.id)} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:bg-gray-800" : "border-gray-200 text-gray-500 hover:bg-gray-50"} ${isOpen ? (dark ? "bg-gray-800" : "bg-gray-100") : ""}`}>
-                    {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); setEditingClient(c); }} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:text-orange-400 hover:border-orange-500/50" : "border-gray-200 text-gray-500 hover:text-orange-500 hover:bg-orange-50"} `}>
+                      <Edit3 size={18} />
+                    </button>
+                    <button onClick={() => setOpenClient(isOpen ? null : c.id)} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:bg-gray-800" : "border-gray-200 text-gray-500 hover:bg-gray-50"} ${isOpen ? (dark ? "bg-gray-800" : "bg-gray-100") : ""}`}>
+                      {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </button>
+                  </div>
                 </div>
               </div>
               {isOpen && (
@@ -2130,15 +2144,16 @@ function RoutesTab({ data, dark }) {
       }
     }
     const stateId = clientRow?.state || "SP";
+    const safeStateId = STATE_CENTERS[stateId] ? stateId : "SP";
     
-    if (!stateData[stateId]) {
-      stateData[stateId] = { orders: 0, items: 0, value: 0, orderList: [] };
+    if (!stateData[safeStateId]) {
+      stateData[safeStateId] = { orders: 0, items: 0, value: 0, orderList: [] };
     }
-    stateData[stateId].orders += 1;
-    stateData[stateId].orderList.push(o);
+    stateData[safeStateId].orders += 1;
+    stateData[safeStateId].orderList.push(o);
     (o.items || []).forEach(it => {
-      stateData[stateId].items += it.qty || 0;
-      stateData[stateId].value += (it.qty || 0) * (it.price || 0);
+      stateData[safeStateId].items += it.qty || 0;
+      stateData[safeStateId].value += (it.qty || 0) * (it.price || 0);
     });
   });
 
@@ -2374,7 +2389,7 @@ export default function App() {
             <div className="max-w-6xl mx-auto p-6">
               {currentTab === "orders" && <OrdersTab data={data} setData={setData} dark={dark} />}
               {currentTab === "dashboard" && <DashboardTab data={data} dark={dark} />}
-              {currentTab === "clients" && <ClientsTab data={data} dark={dark} />}
+              {currentTab === "clients" && <ClientsTab data={data} setData={setData} dark={dark} />}
               {currentTab === "team" && <TeamTab data={data} setData={setData} dark={dark} />}
               {currentTab === "routes" && <RoutesTab data={data} dark={dark} />}
             </div>
