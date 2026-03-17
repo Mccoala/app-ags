@@ -17,7 +17,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
       on: () => ({
         subscribe: () => ({})
       })
-    })
+    }),
+    removeChannel: () => {}
   };
 } else {
   supabaseClient = createClient(supabaseUrl, supabaseAnonKey);

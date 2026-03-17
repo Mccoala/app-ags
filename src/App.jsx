@@ -162,14 +162,16 @@ function saveData(d) { try { localStorage.setItem("ags_v3", JSON.stringify(d)); 
 const TODAY_STR = "2026-03-09";
 const parseLocal = (ds) => {
   if (!ds) return new Date();
-  const [y, m, d] = (ds.split("T")[0]).split('-');
-  return new Date(y, m - 1, d);
+  const [y, m, d] = (ds.split("T")[0]).split('-').map(Number);
+  return new Date(y, m - 1, d, 0, 0, 0);
 };
-const TODAY = parseLocal(TODAY_STR);
+const TODAY = new Date();
+TODAY.setHours(0, 0, 0, 0); // normalize today to midnight
 const fmt = (d) => { try { return parseLocal(d).toLocaleDateString("pt-BR"); } catch { return d; } };
 const daysLeft = (dl) => {
   const target = parseLocal(dl);
-  return Math.ceil((target - TODAY) / 86400000);
+  // Compare milliseconds then convert to days to avoid daylight savings jumps
+  return Math.round((target.getTime() - TODAY.getTime()) / 86400000);
 };
 const statusBadge = (deadline, done) => {
   if (done) return { label: "Concluído", color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" };
@@ -556,10 +558,10 @@ function OrdersTab({ data, setData, dark }) {
     const total = items.reduce((a, b) => a + b.price, 0);
     nd.orders.push({ id: newId, clientName: extHeader.clientName, voltage: extHeader.voltage, deadline: extHeader.deadline, seller: extHeader.seller, totalPrice: total, status: "aguardando", createdAt: TODAY_STR, priority: false, items });
     items.filter(it => !it.isMotor).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
-    const ci = nd.clients.findIndex(c => c.name.toLowerCase() === extHeader.clientName?.toLowerCase());
     if (ci >= 0) { 
         nd.clients[ci].totalOrders = (nd.clients[ci].totalOrders || 0) + 1; 
         nd.clients[ci].totalSpent = (nd.clients[ci].totalSpent || 0) + total; 
+        // merge AI extracted info into existing client
         if (!nd.clients[ci].city && extHeader.city) nd.clients[ci].city = extHeader.city;
         if (!nd.clients[ci].state && extHeader.state) nd.clients[ci].state = extHeader.state;
         if (!nd.clients[ci].phone && extHeader.phone) nd.clients[ci].phone = extHeader.phone;
@@ -948,18 +950,18 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const hasImg = row.images && row.images.length > 0;
   const isMulti = row._isMulti;
 
-  const StageNode = ({ label, worker, wList, field, doneField, isLast }) => (
+  const StageNode = ({ label, worker, wList, field, doneField, isLast, prevDone, isFirst }) => (
     <div className={`relative flex flex-col items-center ${isLast ? "" : "flex-1"}`}>
       {!isLast && <div className={`absolute top-3 left-[50%] w-full h-1 -z-10 ${row[doneField] ? "bg-emerald-500" : dark ? "bg-gray-800" : "bg-gray-200"}`} />}
       <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
          title={!worker ? "Atribua um funcionário primeiro" : row[doneField] ? "Desmarcar" : "Marcar como feito"}
          className={`w-6 h-6 rounded-full flex items-center justify-center border-2 outline-none transition-all z-10 bg-white dark:bg-gray-900
-           ${row[doneField] ? "border-emerald-500 bg-emerald-500 text-white" : worker ? "border-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]" : "border-gray-300 dark:border-gray-700"}
+           ${row[doneField] ? "border-emerald-500 bg-emerald-500 text-white" : worker && (isFirst || prevDone) ? "border-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]" : "border-gray-300 dark:border-gray-700"}
            ${(!editMode || !canEdit || !worker) ? "cursor-not-allowed opacity-50" : "cursor-pointer"}
          `}>
-         {row[doneField] ? <Check size={12} strokeWidth={4} /> : <div className={`w-2 h-2 rounded-full ${worker && !row[doneField] ? "bg-amber-400" : "bg-transparent"}`} />}
+         {row[doneField] ? <Check size={12} strokeWidth={4} /> : <div className={`w-2 h-2 rounded-full ${worker && !row[doneField] && (isFirst || prevDone) ? "bg-amber-400" : "bg-transparent"}`} />}
       </button>
-      <div className={`mt-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-300" : "text-gray-700"}`}>{label}</div>
+      <div className={`mt-2 text-[10px] sm:text-xs font-bold uppercase tracking-wider ${row[doneField] ? "text-emerald-500" : worker && (isFirst || prevDone) ? (dark ? "text-amber-400" : "text-amber-500") : dark ? "text-gray-500" : "text-gray-400"}`}>{label}</div>
       <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
           className={`mt-1 w-20 sm:w-24 px-1 py-1 rounded text-[10px] sm:text-xs border outline-none text-center transition-opacity
             ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"} 
@@ -1047,10 +1049,10 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
       </div>
       <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
         <div className="flex justify-between w-full relative z-0 overflow-x-auto hide-scrollbar">
-          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
-          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
-          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
-          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" isLast={true} />
+          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" isFirst={true} />
+          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" prevDone={row.cutDone} />
+          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" prevDone={row.tailorDone} />
+          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" isLast={true} prevDone={row.prepDone} />
         </div>
       </div>
     </div>
@@ -1113,11 +1115,19 @@ function ProductionTab({ data, setData, dark, user }) {
     const nd = { ...data };
     const prodItem = nd.production.find(p => p.itemId === itemId);
     if (!prodItem) return;
-    if (!prodItem.done && (!prodItem.cutDone || !prodItem.tailorDone || !prodItem.prepDone || !prodItem.assembleDone)) {
-      alert("Marque todas as 4 etapas como concluídas na barra antes de finalizar o pedido aqui."); return;
+    if (!prodItem.done && (!prodItem.cutter || !prodItem.tailor || !prodItem.prep || !prodItem.assembler)) {
+      alert("Atribua colaboradores em todas as 4 etapas antes de finalizar o pedido."); return;
     }
     const idx = nd.production.findIndex(p => p.itemId === itemId);
-    if (idx >= 0) nd.production[idx].done = !nd.production[idx].done;
+    if (idx >= 0) {
+      nd.production[idx].done = !nd.production[idx].done;
+      // also toggle interior checkmarks automatically for logic compatibility
+      nd.production[idx].cutDone = nd.production[idx].done;
+      nd.production[idx].tailorDone = nd.production[idx].done;
+      nd.production[idx].prepDone = nd.production[idx].done;
+      nd.production[idx].assembleDone = nd.production[idx].done;
+    }
+    
     // if marking done: add to finalization queue
     if (nd.production[idx].done) {
       if (!nd.finalization.find(f => f.itemId === itemId)) {
