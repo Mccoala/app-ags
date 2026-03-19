@@ -159,14 +159,14 @@ async function saveToSupabase(d) { try { await supabase.from('app_state').upsert
 function saveData(d) { try { localStorage.setItem("ags_v3", JSON.stringify(d)); } catch { } saveToSupabase(d); }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const TODAY_STR = "2026-03-09";
 const parseLocal = (ds) => {
   if (!ds) return new Date();
   const [y, m, d] = (ds.split("T")[0]).split('-').map(Number);
   return new Date(y, m - 1, d, 0, 0, 0);
 };
 const TODAY = new Date();
-TODAY.setHours(0, 0, 0, 0); // normalize today to midnight
+TODAY.setHours(0, 0, 0, 0);
+const TODAY_STR = TODAY.toISOString().split("T")[0]; // normalize today to midnight
 const fmt = (d) => { try { return parseLocal(d).toLocaleDateString("pt-BR"); } catch { return d; } };
 const daysLeft = (dl) => {
   const target = parseLocal(dl);

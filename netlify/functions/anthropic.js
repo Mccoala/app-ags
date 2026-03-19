@@ -4,7 +4,10 @@ export const handler = async function(event, context) {
   }
 
   try {
-    const apiKey = process.env.VITE_ANTHROPIC_API_KEY || "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";
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
+    }
     
     const requestBody = JSON.parse(event.body);
     
