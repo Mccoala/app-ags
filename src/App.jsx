@@ -196,52 +196,96 @@ function sortProdRows(rows) {
 function AppLogo({ collapsed = false, className = "" }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src={logoImg} alt="AGS Brinquedos" className={`object-contain flex-shrink-0 ${collapsed ? "h-8 w-8" : "h-12 w-auto"}`} />
+      <img src={logoImg} alt="AGS Brinquedos" className={`object-contain flex-shrink-0 transition-all duration-300 ${collapsed ? "h-8 w-8" : "h-11 w-auto"}`} />
     </div>
   );
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, dark }) {
-  const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [show, setShow] = useState(false); const
-    [err, setErr] = useState("");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
   const [data] = useState(loadData());
-  const handle = () => {
-    const u = data.users.find(x => x.email === email && x.password === pw); if (u) { onLogin(u); setErr(""); } else
-      setErr("Usuário ou senha incorretos.");
+
+  const handle = async () => {
+    setLoading(true);
+    await new Promise(r => setTimeout(r, 350));
+    const u = data.users.find(x => x.email === email && x.password === pw);
+    if (u) { onLogin(u); setErr(""); } else { setErr("Usuário ou senha incorretos."); setLoading(false); }
   };
+
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)" }}>
-      <div className="w-full max-w-md p-8 rounded-2xl shadow-2xl border bg-gray-900 border-gray-800">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-6">
-            <AppLogo collapsed={false} className="h-20" />
-          </div>
-          <p className="text-sm text-gray-400">Sistema de Gestão</p>
-        </div>
-        {err && <div className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm">{err}
-        </div>}
-        <div className="space-y-4">
-          <div><label className="text-xs font-semibold uppercase tracking-wide text-gray-400">Usuário</label>
-            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Seu usuário" autoComplete="off" name="usuario_ags_unique" className="w-full
-                    mt-1 px-4 py-3 rounded-xl border outline-none text-sm bg-gray-800 border-gray-700 text-white
-                    placeholder-gray-500 focus:border-orange-500"/>
-          </div>
-          <div><label className="text-xs font-semibold uppercase tracking-wide text-gray-400">Senha</label>
-            <div className="relative mt-1">
-              <input type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handle()} placeholder="••••••" autoComplete="new-password" name="senha_ags_unique" className="w-full px-4 py-3 pr-12
-                        rounded-xl border outline-none text-sm bg-gray-800 border-gray-700 text-white
-                        placeholder-gray-500 focus:border-orange-500"/>
-              <button onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2
-                            text-gray-400">{show ?
-                  <EyeOff size={16} /> :
-                  <Eye size={16} />}
-              </button>
+    <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
+      {/* Decorative blurred orbs */}
+      <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
+      <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
+
+      <div className="w-full max-w-md mx-4 animate-slide-up">
+        {/* Card */}
+        <div className="glass-card rounded-2xl p-8" style={{ border:"1px solid rgba(255,255,255,0.09)" }}>
+          {/* Logo + Branding */}
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-5">
+              <div className="relative">
+                <div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} />
+                <AppLogo collapsed={false} />
+              </div>
             </div>
+            <div className="divider-gradient mx-auto mb-4" style={{ maxWidth:120 }} />
+            <p style={{ fontSize:"0.78rem",letterSpacing:"0.12em",textTransform:"uppercase",color:"#64748b",fontWeight:700 }}>Sistema de Gestão Industrial</p>
           </div>
-          <button onClick={handle} className="w-full py-3 rounded-xl font-bold text-white text-sm"
-            style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Entrar</button>
+
+          {/* Error */}
+          {err && (
+            <div className="mb-4 p-3 rounded-xl flex items-center gap-2" style={{ background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",fontSize:"0.875rem" }}>
+              <AlertTriangle size={15} />{err}
+            </div>
+          )}
+
+          {/* Form */}
+          <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+            <div>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#64748b",marginBottom:6 }}>Usuário</label>
+              <div className="relative">
+                <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
+                <input
+                  value={email} onChange={e => setEmail(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handle()}
+                  placeholder="Seu usuário" autoComplete="off" name="usuario_ags_unique"
+                  className="input-dark" style={{ paddingLeft:40 }}
+                />
+              </div>
+            </div>
+            <div>
+              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#64748b",marginBottom:6 }}>Senha</label>
+              <div className="relative">
+                <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
+                <input
+                  type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handle()}
+                  placeholder="••••••" autoComplete="new-password" name="senha_ags_unique"
+                  className="input-dark" style={{ paddingLeft:40,paddingRight:44 }}
+                />
+                <button onClick={() => setShow(!show)} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#475569",background:"none",border:"none",cursor:"pointer",padding:4,borderRadius:6,transition:"color 0.15s" }}>
+                  {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <button onClick={handle} disabled={loading} className="btn-brand press-scale" style={{ width:"100%",justifyContent:"center",padding:"13px 20px",fontSize:"0.9rem",marginTop:4,opacity:loading?0.8:1 }}>
+              {loading
+                ? <><div className="animate-spin" style={{ width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTop:"2px solid white",borderRadius:"50%" }} />Entrando...</>
+                : <>Entrar</>}
+            </button>
+          </div>
+
+          {/* Footer */}
+          <div style={{ marginTop:24,textAlign:"center",fontSize:"0.7rem",color:"#334155",fontWeight:600,letterSpacing:"0.05em" }}>
+            AGS BRINQUEDOS © {new Date().getFullYear()}
+          </div>
         </div>
       </div>
     </div>
@@ -649,11 +693,11 @@ function OrdersTab({ data, setData, dark }) {
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* ── HEADER ── */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:16,marginBottom:4 }}>
         <div>
-          <h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Pedidos</h2>
-          <p className={`text-sm ${dark ? "text-gray-400" : "text-gray-500"}`}>Gerencie todos os pedidos
-            da empresa</p>
+          <h2 style={{ fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.03em",lineHeight:1.2,color:dark?"#f8fafc":"#0f172a",fontFamily:"'Inter',system-ui,sans-serif" }}>Pedidos</h2>
+          <p style={{ fontSize:"0.8rem",color:"#64748b",marginTop:2,fontWeight:500 }}>Gerencie todos os pedidos da empresa</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {!selectMode ? (<>
@@ -689,12 +733,20 @@ function OrdersTab({ data, setData, dark }) {
           </>)}
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[{ label: "Pedidos no Mês", value: thisMonth.length, color: "#f97316" }, { label: "Brinquedos", value: totalItems, color: "#3b82f6" }, { label: "Concluídos", value: done, color: "#22c55e" }, { label: "Atrasados", value: delayed, color: "#ef4444" }].map(k => (
-          <div key={k.label} className={`rounded-xl p-4 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
-            <div className={`text-xs font-semibold uppercase tracking-wide mb-2
-                                ${dark ? "text-gray-400" : "text-gray-500"}`}>{k.label}</div>
-            <div className="text-3xl font-black" style={{ color: k.color }}>{k.value}</div>
+      {/* ── STAT CARDS ── */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12 }}>
+        {[
+          { label:"Pedidos no Mês", value:thisMonth.length, colorVar:"stat-card-orange", icon:<TrendingUp size={18} style={{ color:"#f97316" }} />, color:"#f97316" },
+          { label:"Brinquedos",      value:totalItems,       colorVar:"stat-card-blue",   icon:<Package size={18} style={{ color:"#3b82f6" }} />, color:"#3b82f6" },
+          { label:"Concluídos",     value:done,            colorVar:"stat-card-green",  icon:<CheckCircle size={18} style={{ color:"#22c55e" }} />, color:"#22c55e" },
+          { label:"Atrasados",      value:delayed,         colorVar:"stat-card-red",    icon:<AlertTriangle size={18} style={{ color:"#ef4444" }} />, color:"#ef4444" },
+        ].map(k => (
+          <div key={k.label} className={`stat-card ${k.colorVar}`} style={{ padding:"16px" }}>
+            <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8 }}>
+              <span style={{ fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#64748b" }}>{k.label}</span>
+              <div style={{ width:32,height:32,borderRadius:8,background:`${k.color}18`,display:"flex",alignItems:"center",justifyContent:"center" }}>{k.icon}</div>
+            </div>
+            <div style={{ fontSize:"2rem",fontWeight:900,lineHeight:1,color:k.color,fontFamily:"'Inter',system-ui,sans-serif" }}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -1553,19 +1605,26 @@ function DashboardTab({ data, dark }) {
 
   return (
     <div className="space-y-5">
-      <div><h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Dashboard</h2><p className={`text-sm ${dark ? "text-gray-400" : "text-gray-500"}`}>Dados reais de vendas, produção e equipe</p></div>
+      <div>
+        <h2 style={{ fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.03em",color:dark?"#f8fafc":"#0f172a",fontFamily:"'Inter',system-ui,sans-serif" }}>Dashboard</h2>
+        <p style={{ fontSize:"0.8rem",color:"#64748b",marginTop:2,fontWeight:500 }}>Dados reais de vendas, produção e equipe</p>
+      </div>
 
       {/* ── TOP KPIs ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[{ label: "Total de Pedidos", value: orders.length, color: "#f97316", sub: `${orders.filter(o => o.createdAt?.startsWith("2026-03")).length} este mês` },
-        { label: "Receita Total", value: `R$ ${orders.reduce((a, o) => a + (o.totalPrice || 0), 0).toLocaleString("pt-BR")}`, color: "#22c55e", sub: "todos os pedidos" },
-        { label: "Em Produção", value: allProdRows.filter(r => !r.done).length, color: "#3b82f6", sub: `${delayedItems.length} atrasados` },
-        { label: "Finalizados", value: finalizedItems.length, color: "#a855f7", sub: `${doneItems.length} prontos para finalizar` }
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12 }}>
+        {[
+          { label:"Total de Pedidos", value: orders.length, colorVar:"stat-card-orange", icon:<Package size={18} style={{ color:"#f97316" }} />, color:"#f97316", sub:`${orders.filter(o=>o.createdAt?.startsWith("2026-03")).length} este mês` },
+          { label:"Receita Total",    value:`R$ ${orders.reduce((a,o)=>a+(o.totalPrice||0),0).toLocaleString("pt-BR")}`, colorVar:"stat-card-green", icon:<DollarSign size={18} style={{ color:"#22c55e" }} />, color:"#22c55e", sub:"todos os pedidos" },
+          { label:"Em Produção",     value: allProdRows.filter(r=>!r.done).length, colorVar:"stat-card-blue", icon:<Factory size={18} style={{ color:"#3b82f6" }} />, color:"#3b82f6", sub:`${delayedItems.length} atrasados` },
+          { label:"Finalizados",      value: finalizedItems.length, colorVar:"stat-card-purple", icon:<Sparkles size={18} style={{ color:"#a855f7" }} />, color:"#a855f7", sub:`${doneItems.length} prontos` },
         ].map(k => (
-          <div key={k.label} className={`rounded-xl p-4 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
-            <div className={`text-xs font-semibold uppercase tracking-wide mb-2 ${dark ? "text-gray-400" : "text-gray-500"}`}>{k.label}</div>
-            <div className="text-2xl font-black" style={{ color: k.color }}>{k.value}</div>
-            <div className={`text-xs mt-1 ${dark ? "text-gray-500" : "text-gray-400"}`}>{k.sub}</div>
+          <div key={k.label} className={`stat-card ${k.colorVar}`} style={{ padding:"16px" }}>
+            <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8 }}>
+              <span style={{ fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#64748b" }}>{k.label}</span>
+              <div style={{ width:32,height:32,borderRadius:8,background:`${k.color}18`,display:"flex",alignItems:"center",justifyContent:"center" }}>{k.icon}</div>
+            </div>
+            <div style={{ fontSize:typeof k.value==="string"?"1.4rem":"2rem",fontWeight:900,lineHeight:1,color:k.color,fontFamily:"'Inter',system-ui,sans-serif" }}>{k.value}</div>
+            <div style={{ fontSize:"0.7rem",color:"#475569",marginTop:4,fontWeight:500 }}>{k.sub}</div>
           </div>
         ))}
       </div>
@@ -2343,7 +2402,20 @@ export default function App() {
     };
   }, []);
 
-  if (loadingServer) return <div className="min-h-screen flex flex-col items-center justify-center" style={{ background: "linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)", color: "white" }}><div className="w-10 h-10 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin mb-4" />Sincronizando AGS Brinquedos...</div>;
+  if (loadingServer) return (
+    <div className="min-h-screen flex flex-col items-center justify-center login-bg" style={{ fontFamily:"'Inter','DM Sans',system-ui,sans-serif" }}>
+      <div className="animate-float" style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:24 }}>
+        <div style={{ position:"relative" }}>
+          <div style={{ width:56,height:56,border:"3px solid rgba(249,115,22,0.2)",borderTop:"3px solid #f97316",borderRadius:"50%",animation:"spin 0.9s linear infinite" }} />
+          <div style={{ position:"absolute",inset:8,border:"2px solid rgba(234,179,8,0.25)",borderBottom:"2px solid #eab308",borderRadius:"50%",animation:"spin 1.4s linear infinite reverse" }} />
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:"0.9rem",fontWeight:800,color:"#f8fafc",letterSpacing:"-0.01em" }}>AGS Brinquedos</div>
+          <div style={{ fontSize:"0.75rem",color:"#475569",marginTop:4,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase" }}>Sincronizando dados...</div>
+        </div>
+      </div>
+    </div>
+  );
 
   if (!user) return <LoginScreen onLogin={u => { setUser(u); const perms = u.role === "admin" ? ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"] : (u.permissions || []); setTab(perms[0] || "orders"); }} dark={dark} />;
 
@@ -2351,42 +2423,110 @@ export default function App() {
   const userPerms = user.role === "admin" ? ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"] : (user.permissions || []);
   const currentTab = tab && userPerms.includes(tab) ? tab : (userPerms[0] || "orders");
 
+  const sidebarBg = dark
+    ? "linear-gradient(180deg,#0e1628 0%,#0a1020 100%)"
+    : "linear-gradient(180deg,#ffffff 0%,#f8fafc 100%)";
+
+  const mainBg = dark ? "#070d1a" : "#f1f5f9";
+
   return (
-    <div className={`min-h-screen flex ${dark ? "bg-gray-950" : "bg-slate-100"}`} style={{ fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap'); *{box-sizing:border-box;}`}</style>
-      <aside className={`${sidebarOpen ? "w-60" : "w-16"} flex-shrink-0 border-r flex flex-col transition-all duration-300 ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`} style={{ minHeight: "100vh", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        <div className="p-4 flex items-center justify-between border-b flex-shrink-0" style={{ borderColor: dark ? "#1f2937" : "#f3f4f6" }}>
+    <div className={`min-h-screen flex`} style={{ fontFamily:"'Inter','DM Sans',system-ui,sans-serif", background: mainBg }}>
+      {/* Premium Sidebar */}
+      <aside
+        className="flex-shrink-0 flex flex-col"
+        style={{
+          width: sidebarOpen ? 232 : 60,
+          minHeight:"100vh", position:"sticky", top:0, height:"100vh", overflowY:"auto",
+          background: sidebarBg,
+          borderRight: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.07)",
+          transition:"width 0.3s cubic-bezier(0.4,0,0.2,1)",
+          boxShadow: dark ? "4px 0 24px rgba(0,0,0,0.4)" : "4px 0 16px rgba(0,0,0,0.06)"
+        }}
+      >
+        {/* Sidebar top gradient decoration */}
+        <div style={{ position:"absolute",top:0,left:0,right:0,height:200,background:"linear-gradient(180deg,rgba(249,115,22,0.07) 0%,transparent 100%)",pointerEvents:"none" }} />
+
+        {/* Logo area */}
+        <div style={{ padding:"16px 14px",display:"flex",alignItems:"center",justifyContent:sidebarOpen?"space-between":"center",borderBottom:dark?"1px solid rgba(255,255,255,0.05)":"1px solid rgba(0,0,0,0.06)",flexShrink:0 }}>
           {sidebarOpen && <AppLogo />}
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className={`p-1.5 rounded-lg ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>{sidebarOpen ? <X size={16} /> : <Menu size={16} />}</button>
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            style={{ padding:6,borderRadius:8,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",color:dark?"#64748b":"#94a3b8",cursor:"pointer",transition:"all 0.15s",lineHeight:0 }}
+          >
+            {sidebarOpen ? <X size={15} /> : <Menu size={15} />}
+          </button>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
+
+        {/* Navigation */}
+        <nav style={{ flex:1,padding:"12px 8px",display:"flex",flexDirection:"column",gap:2 }}>
           {Object.entries(TAB_META).filter(([id]) => userPerms.includes(id)).map(([id, { label, Icon }]) => {
             const active = currentTab === id;
-            return (<button key={id} onClick={() => setTab(id)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${active ? "text-white" : dark ? "text-gray-400 hover:text-gray-200 hover:bg-gray-800" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`} style={active ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}><Icon size={17} className="flex-shrink-0" />{sidebarOpen && <span className="text-sm font-semibold">{label}</span>}</button>);
+            return (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                title={!sidebarOpen ? label : undefined}
+                className={active ? "sidebar-item sidebar-item-active" : "sidebar-item"}
+                style={!sidebarOpen ? { justifyContent:"center",padding:"10px 0" } : {}}
+              >
+                <Icon size={17} style={{ flexShrink:0, opacity: active ? 1 : 0.7 }} />
+                {sidebarOpen && <span style={{ fontSize:"0.875rem",fontWeight:active?700:600,transition:"all 0.15s" }}>{label}</span>}
+              </button>
+            );
           })}
         </nav>
-        <div className="p-3 border-t space-y-1 flex-shrink-0" style={{ borderColor: dark ? "#1f2937" : "#f3f4f6" }}>
-          <button onClick={() => setDark(!dark)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl ${dark ? "text-gray-400 hover:text-gray-200 hover:bg-gray-800" : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"}`}>{dark ? <Sun size={17} /> : <Moon size={17} />}{sidebarOpen && <span className="text-sm font-semibold">{dark ? "Modo Claro" : "Modo Escuro"}</span>}</button>
-          <button onClick={() => setUser(null)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl ${dark ? "text-gray-400 hover:text-red-400 hover:bg-red-500/10" : "text-gray-600 hover:text-red-600 hover:bg-red-50"}`}><LogOut size={17} />{sidebarOpen && <span className="text-sm font-semibold">Sair</span>}</button>
+
+        {/* Bottom controls */}
+        <div style={{ padding:"8px",borderTop:dark?"1px solid rgba(255,255,255,0.05)":"1px solid rgba(0,0,0,0.06)",display:"flex",flexDirection:"column",gap:2,flexShrink:0 }}>
+          <button
+            onClick={() => setDark(!dark)}
+            className="sidebar-item"
+            style={!sidebarOpen ? { justifyContent:"center",padding:"10px 0" } : {}}
+            title={!sidebarOpen ? (dark ? "Modo Claro" : "Modo Escuro") : undefined}
+          >
+            {dark ? <Sun size={17} style={{ flexShrink:0,opacity:0.7 }} /> : <Moon size={17} style={{ flexShrink:0,opacity:0.7 }} />}
+            {sidebarOpen && <span style={{ fontSize:"0.875rem",fontWeight:600 }}>{dark ? "Modo Claro" : "Modo Escuro"}</span>}
+          </button>
+          <button
+            onClick={() => setUser(null)}
+            className="sidebar-item"
+            style={{ color:"#ef4444", ...(!sidebarOpen ? { justifyContent:"center",padding:"10px 0" } : {}) }}
+            title={!sidebarOpen ? "Sair" : undefined}
+          >
+            <LogOut size={17} style={{ flexShrink:0,opacity:0.8 }} />
+            {sidebarOpen && <span style={{ fontSize:"0.875rem",fontWeight:600 }}>Sair</span>}
+          </button>
         </div>
+
+        {/* User profile card */}
         {sidebarOpen && (
-          <div className="p-3 mx-3 mb-3 rounded-xl border flex-shrink-0" style={{ borderColor: dark ? "#1f2937" : "#e5e7eb", background: dark ? "#111827" : "#f9fafb" }}>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-black" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>{user.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
-              <div className="min-w-0"><div className={`text-xs font-bold truncate ${dark ? "text-white" : "text-gray-900"}`}>{user.name}</div><div className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>{user.role}</div></div>
+          <div className="user-profile-card" style={{ margin:"0 8px 10px 8px" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+              <div className="avatar" style={{ width:32,height:32,borderRadius:"50%",fontSize:"0.75rem" }}>
+                {user.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+              </div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:"0.8rem",fontWeight:700,color:dark?"#f8fafc":"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{user.name}</div>
+                <div style={{ fontSize:"0.7rem",color:"#64748b",textTransform:"capitalize",fontWeight:500 }}>{user.role}</div>
+              </div>
             </div>
           </div>
         )}
       </aside>
-      <main className={`flex-1 min-w-0 flex flex-col ${dark ? "bg-gray-950" : "bg-slate-100"}`} style={{ height: "100vh", overflow: "hidden" }}>
+
+      {/* Main */}
+      <main
+        className="flex-1 min-w-0 flex flex-col"
+        style={{ height:"100vh", overflow:"hidden", background: mainBg }}
+      >
         {(currentTab === "production" || currentTab === "finalization") ? (
-          <div className="flex-1 flex flex-col min-h-0 max-w-6xl w-full mx-auto px-6 py-4" style={{ height: "100%" }}>
+          <div className="flex-1 flex flex-col min-h-0 max-w-6xl w-full mx-auto px-6 py-4" style={{ height:"100%" }}>
             {currentTab === "production" && <ProductionTab data={data} setData={setData} dark={dark} user={user} />}
             {currentTab === "finalization" && <FinalizationTab data={data} setData={setData} dark={dark} user={user} />}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-6xl mx-auto p-6">
+            <div className="max-w-6xl mx-auto p-6 tab-content" key={currentTab}>
               {currentTab === "orders" && <OrdersTab data={data} setData={setData} dark={dark} />}
               {currentTab === "dashboard" && <DashboardTab data={data} dark={dark} />}
               {currentTab === "clients" && <ClientsTab data={data} setData={setData} dark={dark} />}
