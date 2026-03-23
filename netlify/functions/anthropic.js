@@ -19,19 +19,20 @@ export const handler = async function(event, context) {
     // Try multiple env var names for compatibility
     const apiKey =
       process.env.ANTHROPIC_API_KEY ||
+      process.env.ANTHROPIC_KEY ||
       process.env.VITE_ANTHROPIC_API_KEY ||
       process.env.VITE_ANTHROPIC_KEY ||
       process.env.CLAUDE_API_KEY;
 
     if (!apiKey) {
-      console.error("No API key found. Checked: ANTHROPIC_API_KEY, VITE_ANTHROPIC_API_KEY, VITE_ANTHROPIC_KEY, CLAUDE_API_KEY");
+      console.error("No API key found. Checked: ANTHROPIC_API_KEY, ANTHROPIC_KEY, VITE_ANTHROPIC_API_KEY, VITE_ANTHROPIC_KEY, CLAUDE_API_KEY");
       return {
         statusCode: 500,
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*"
         },
-        body: JSON.stringify({ error: { message: "API key not configured. Configure ANTHROPIC_API_KEY no painel do Netlify (Site configuration > Environment variables)." } })
+        body: JSON.stringify({ error: { message: "API key not configured. Configure ANTHROPIC_API_KEY ou ANTHROPIC_KEY no painel do Netlify (Site configuration > Environment variables)." } })
       };
     }
 
