@@ -1,25 +1,45 @@
 export const handler = async function(event, context) {
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS"
+      },
+      body: ""
+    };
+  }
+
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Try multiple env var names for compatibility
+    const apiKey =
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.VITE_ANTHROPIC_API_KEY ||
+      process.env.VITE_ANTHROPIC_KEY ||
+      process.env.CLAUDE_API_KEY;
+
     if (!apiKey) {
-      return { statusCode: 500, body: JSON.stringify({ error: "API key not configured" }) };
+      console.error("No API key found. Checked: ANTHROPIC_API_KEY, VITE_ANTHROPIC_API_KEY, VITE_ANTHROPIC_KEY, CLAUDE_API_KEY");
+      return {
+        statusCode: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*"
+        },
+        body: JSON.stringify({ error: { message: "API key not configured. Configure ANTHROPIC_API_KEY no painel do Netlify (Site configuration > Environment variables)." } })
+      };
     }
-    
+
     const requestBody = JSON.parse(event.body);
-    
-    // Fallback to claude-sonnet-4-6
-    let model = requestBody.model || "claude-sonnet-4-6";
-    if (model.includes("claude-3-5") || model.includes("claude-sonnet-3.5")) {
-       model = "claude-sonnet-4-6";
-    }
 
-    requestBody.model = model;
+    // Always use a stable, available model
+    requestBody.model = "claude-3-5-sonnet-20241022";
 
-    // Use native global fetch
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -41,13 +61,14 @@ export const handler = async function(event, context) {
       body: JSON.stringify(data)
     };
   } catch (error) {
+    console.error("Anthropic function error:", error);
     return {
       statusCode: 500,
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
       },
-      body: JSON.stringify({ error: error.message || "Internal Server Error" })
+      body: JSON.stringify({ error: { message: error.message || "Internal Server Error" } })
     };
   }
 };
