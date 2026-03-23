@@ -38,8 +38,12 @@ export const handler = async function(event, context) {
 
     const requestBody = JSON.parse(event.body);
 
-    // Always use a stable, widely available model
-    requestBody.model = "claude-3-5-sonnet-20240620";
+    // User specifically requested claude-sonnet-4-6
+    let model = requestBody.model || "claude-sonnet-4-6";
+    if (model.includes("claude-3-5") || model.includes("claude-sonnet-3.5")) {
+       model = "claude-sonnet-4-6";
+    }
+    requestBody.model = model;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
