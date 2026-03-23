@@ -38,8 +38,8 @@ export const handler = async function(event, context) {
 
     const requestBody = JSON.parse(event.body);
 
-    // Always use a stable, available model
-    requestBody.model = "claude-3-5-sonnet-20241022";
+    // Always use a stable, widely available model
+    requestBody.model = "claude-3-5-sonnet-20240620";
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -52,6 +52,17 @@ export const handler = async function(event, context) {
     });
 
     const data = await response.json();
+
+    if (!response.ok) {
+        return {
+          statusCode: response.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          },
+          body: JSON.stringify({ error: { message: `Anthropic API Error (${response.status}): ${JSON.stringify(data.error || data)}` } })
+        };
+    }
 
     return {
       statusCode: response.status,
