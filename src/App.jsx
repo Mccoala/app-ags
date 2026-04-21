@@ -128,10 +128,11 @@ function AppLogo({ collapsed = false, className = "" }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, dark, data }) {
+function LoginScreen({ onLogin, dark, data: propsData }) {
   const params = new URLSearchParams(window.location.search);
   const qsCompanyId = params.get('empresa');
   
+  const [data] = useState(propsData || loadData());
   const [mode, setMode] = useState(qsCompanyId ? "employee" : "admin_login"); 
   // modes: "admin_login", "admin_register", "employee"
   
@@ -227,8 +228,8 @@ function LoginScreen({ onLogin, dark, data }) {
               <div>
                 <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>Nome da Empresa</label>
                 <div className="relative">
-                  <Factory size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input value={companyName} onChange={e => setCompanyName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="Ex: AGS Brinquedos" className="input-dark pl-9 w-full" />
+                  <Factory size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
+                  <input value={companyName} onChange={e => setCompanyName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="Nome da empresa" className="input-dark w-full" style={{ paddingLeft:40 }} />
                 </div>
               </div>
             )}
@@ -236,17 +237,17 @@ function LoginScreen({ onLogin, dark, data }) {
             <div>
               <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>{mode === "employee" ? "Login do Funcionário" : "Seu E-mail"}</label>
               <div className="relative">
-                {mode === "employee" ? <UserCircle size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /> : <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />}
-                <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder={mode === "employee" ? "joao.costura" : "admin@empresa.com"} autoComplete="off" className="input-dark pl-9 w-full" />
+                {mode === "employee" ? <UserCircle size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} /> : <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />}
+                <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder={mode === "employee" ? "joao.costura" : "admin@empresa.com"} autoComplete="off" className="input-dark w-full" style={{ paddingLeft:40 }} />
               </div>
             </div>
             
             <div>
               <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>Senha</label>
               <div className="relative">
-                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="••••••" autoComplete="new-password" className="input-dark pl-9 pr-10 w-full" />
-                <button onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-1">{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
+                <input type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="••••••" autoComplete="new-password" className="input-dark w-full" style={{ paddingLeft:40, paddingRight:44 }} />
+                <button onClick={() => setShow(!show)} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#475569",background:"none",border:"none",cursor:"pointer",padding:4,borderRadius:6,transition:"color 0.15s" }}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
               </div>
             </div>
 
