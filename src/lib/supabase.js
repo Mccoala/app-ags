@@ -10,8 +10,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   // Mock client to prevent crashing when calling supabase.from() or .channel()
   supabaseClient = {
     from: () => ({
-      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: new Error('offline') }) }) }),
-      upsert: () => Promise.resolve({ data: null, error: new Error('offline') })
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: new Error('Sua conexão com o banco de dados (Supabase) não foi encontrada ou as variáveis não foram configuradas no Netlify.') }) }) }),
+      upsert: () => Promise.resolve({ data: null, error: new Error('Sua conexão com o banco de dados (Supabase) não foi encontrada.') }),
+      insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: new Error('Sua conexão com o banco de dados (Supabase) não foi encontrada.') }) }) }),
+      update: () => ({ eq: () => Promise.resolve({ data: null, error: new Error('Sua conexão com o banco de dados (Supabase) não foi encontrada.') }) })
     }),
     channel: () => ({
       on: () => ({
