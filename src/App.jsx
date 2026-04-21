@@ -1,5 +1,34 @@
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
 import { supabase } from "./lib/supabase";
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, info: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    this.setState({ info });
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "2rem", color: "red", background: "#111", minHeight: "100vh" }}>
+          <h2>Oops, a tela quebrou!</h2>
+          <details style={{ whiteSpace: "pre-wrap" }}>
+            <summary>Clique aqui para ver o erro (tire print disso):</summary>
+            {this.state.error && this.state.error.toString()}
+            <br />
+            {this.state.info && this.state.info.componentStack}
+          </details>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import {
   Package, Factory, BarChart3, Users, UserCircle, Moon, Sun, LogOut, Plus, Edit3, Check, X, ChevronDown,
   AlertTriangle, CheckCircle, Menu, Lock, Eye, EyeOff, Search, Trash2, Save, Zap, FileText, Image, ChevronUp, ChevronLeft,
@@ -2442,7 +2471,7 @@ const TAB_META = {
   team: { label: "Equipe", Icon: UserCircle },
 };
 
-export default function App() {
+function MainApp() {
   const [dark, setDark] = useState(true);
   const [user, setUser] = useState(null);
   const [data, setData] = useState(loadData);
@@ -2706,5 +2735,13 @@ export default function App() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
   );
 }
