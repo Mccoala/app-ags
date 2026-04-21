@@ -41,10 +41,7 @@ const INITIAL_DATA = {
     { id: 3, name: "Produção", email: "producao", password: "123", role: "producao", permissions: ["production", "finalization"] },
     { id: 4, name: "Finalização", email: "finalizacao", password: "123", role: "finalizacao", permissions: ["finalization"] },
   ],
-  clients: [
-    { id: 1, name: "Festa Kids LTDA", city: "São Paulo", phone: "(11) 99999-0001", email: "contato@festakids.com" },
-    { id: 2, name: "Parque Alegria", city: "Campinas", phone: "(19) 98888-0002", email: "parque@alegria.com" },
-  ],
+  clients: [],
   team: [
     { id: 1, name: "Maria Costa", role: "Costura", status: "ativo" },
     { id: 2, name: "Carlos Lima", role: "Corte", status: "ativo" },
@@ -56,84 +53,9 @@ const INITIAL_DATA = {
     { id: 8, name: "Roberto Santos", role: "Preparação", status: "ativo" },
     { id: 9, name: "Joana Melo", role: "Finalizador", status: "ativo" },
   ],
-  orders: [
-    {
-      id: "PED-001", clientName: "Festa Kids LTDA", voltage: "110V", deadline: "2026-03-15", seller: "Luan", totalPrice: 3700,
-      status: "producao", createdAt: "2026-02-20", priority: false,
-      items: [
-        { itemId: "PED-001-1", toy: "Piscina de Bolinhas XL", colors: ["Azul", "Amarelo", "Vermelho"], price: 1800, observations: "Logo da empresa na lateral", images: [], isMotor: false },
-        { itemId: "PED-001-2", toy: "Escorregador Inflável 4m", colors: ["Azul", "Verde"], price: 1900, observations: "Reforço nas laterais", images: [], isMotor: false },
-      ]
-    },
-    {
-      id: "PED-002", clientName: "Parque Alegria", voltage: "220V", deadline: "2026-03-25", seller: "Emerson", totalPrice: 2200,
-      status: "producao", createdAt: "2026-02-28", priority: false,
-      items: [{
-        itemId: "PED-002-1", toy: "Castelo Inflável Medieval", colors: ["Roxo", "Dourado"], price: 2200,
-        observations: "Bandeirolas nas torres", images: [], isMotor: false
-      }]
-    },
-    {
-      id: "PED-003", clientName: "Festa Kids LTDA", voltage: "110V", deadline: "2026-04-10", seller: "Luan", totalPrice: 5600,
-      status: "aguardando", createdAt: "2026-03-01", priority: false,
-      items: [
-        {
-          itemId: "PED-003-1", toy: "Tobogã Inflável Duplo", colors: ["Verde", "Azul"], price: 2800, observations: "", images: [],
-          isMotor: false
-        },
-        {
-          itemId: "PED-003-2", toy: "Pula-Pula Temático", colors: ["Amarelo", "Vermelho"], price: 1600, observations: "Tema circo",
-          images: [], isMotor: false
-        },
-        {
-          itemId: "PED-003-3", toy: "Gira-Gira Inflável", colors: ["Rosa", "Roxo"], price: 1200, observations: "", images: [],
-          isMotor: false
-        },
-      ]
-    },
-    {
-      id: "PED-004", clientName: "Festa Kids LTDA", voltage: "110V", deadline: "2026-02-28", seller: "Sidnei", totalPrice: 1900,
-      status: "concluido", createdAt: "2026-02-01", priority: false,
-      items: [{
-        itemId: "PED-004-1", toy: "Gira-Gira Inflável", colors: ["Rosa", "Branco"], price: 1900, observations: "Urgente",
-        images: [], isMotor: false
-      }]
-    },
-  ],
-  production: [
-    {
-      itemId: "PED-001-1", orderId: "PED-001", cutter: "Carlos Lima", tailor: "Maria Costa", prep: "Ana Souza", assembler: "",
-      cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-001-2", orderId: "PED-001", cutter: "Carlos Lima", tailor: "", prep: "", assembler: "", cutDone: false,
-      tailorDone: false, prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-002-1", orderId: "PED-002", cutter: "Carlos Lima", tailor: "Fernanda Reis", prep: "Ana Souza", assembler: "",
-      cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-003-1", orderId: "PED-003", cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false,
-      prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-003-2", orderId: "PED-003", cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false,
-      prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-003-3", orderId: "PED-003", cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false,
-      prepDone: false, assembleDone: false, done: false
-    },
-    {
-      itemId: "PED-004-1", orderId: "PED-004", cutter: "Carlos Lima", tailor: "Maria Costa", prep: "Ana Souza",
-      assembler: "Roberto Santos", cutDone: true, tailorDone: true, prepDone: true, assembleDone: true, done: true
-    },
-  ],
-  finalization: [
-    // populated when production marks done
-    { itemId: "PED-004-1", orderId: "PED-004", finalizer: "Joana Melo", done: true, finDate: "2026-02-28" },
-  ],
+  orders: [],
+  production: [],
+  finalization: [],
 };
 
 function loadData() {
@@ -155,7 +77,11 @@ function loadData() {
   } catch { }
   return INITIAL_DATA;
 }
-async function saveToSupabase(d) { try { await supabase.from('app_state').upsert({ id: 1, data: d }); } catch (err) { console.error("Supabase save error", err); } }
+let CURRENT_COMPANY_ID = null;
+async function saveToSupabase(d) {
+  if (!CURRENT_COMPANY_ID) return;
+  try { await supabase.from('companies').update({ app_data: d }).eq('id', CURRENT_COMPANY_ID); } catch (err) { console.error("Supabase save error", err); }
+}
 function saveData(d) { try { localStorage.setItem("ags_v3", JSON.stringify(d)); } catch { } saveToSupabase(d); }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -202,91 +128,139 @@ function AppLogo({ collapsed = false, className = "" }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin, dark }) {
+function LoginScreen({ onLogin, dark, data }) {
+  const params = new URLSearchParams(window.location.search);
+  const qsCompanyId = params.get('empresa');
+  
+  const [mode, setMode] = useState(qsCompanyId ? "employee" : "admin_login"); 
+  // modes: "admin_login", "admin_register", "employee"
+  
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [show, setShow] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
-  const [data] = useState(loadData());
 
-  const handle = async () => {
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 350));
-    const u = data.users.find(x => x.email === email && x.password === pw);
-    if (u) { onLogin(u); setErr(""); } else { setErr("Usuário ou senha incorretos."); setLoading(false); }
+  const handleAdminAuth = async () => {
+    setLoading(true); setErr("");
+    try {
+      if (mode === "admin_register") {
+        if (!companyName || !email || !pw) throw new Error("Preencha todos os campos.");
+        // Set trial to 7 days
+        const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate() + 7);
+        // Default init data without users (team will handle employee accounts)
+        const defData = { ...data, team: data.team || [] };
+        
+        const { data: res, error } = await supabase.from('companies').insert([{
+           company_name: companyName,
+           admin_email: email.toLowerCase(),
+           admin_password: pw,
+           trial_ends_at: trialEnd.toISOString(),
+           status: 'trial',
+           plan_id: 'free',
+           app_data: defData
+        }]).select().single();
+        if (error) throw new Error(error.message.includes("unique") ? "E-mail já está em uso." : error.message);
+        onLogin({ id: res.id, name: res.company_name, email: res.admin_email, role: "admin", company_id: res.id, plan: res.plan_id, status: res.status, trial_ends_at: res.trial_ends_at });
+      } else {
+        if (!email || !pw) throw new Error("Preencha todos os campos.");
+        const { data: res, error } = await supabase.from('companies')
+           .select('*').eq('admin_email', email.toLowerCase()).eq('admin_password', pw).single();
+        if (error || !res) throw new Error("E-mail ou senha incorretos.");
+        onLogin({ id: res.id, name: res.company_name, email: res.admin_email, role: "admin", company_id: res.id, plan: res.plan_id, status: res.status, trial_ends_at: res.trial_ends_at });
+      }
+    } catch (e) { setErr(e.message); }
+    setLoading(false);
   };
+
+  const handleEmployeeAuth = async () => {
+    setLoading(true); setErr("");
+    try {
+      if (!qsCompanyId) throw new Error("Link de empresa inválido. Peça o link correto ao seu administrador.");
+      if (!email || !pw) throw new Error("Preencha usuário e senha.");
+      const { data: cData, error } = await supabase.from('companies').select('id, company_name, app_data').eq('id', qsCompanyId).single();
+      if (error || !cData) throw new Error("Empresa não encontrada.");
+      
+      // Look for employee in app_data.users
+      const users = cData.app_data?.users || [];
+      const emp = users.find(u => u.email === email && u.password === pw);
+      if (!emp) throw new Error("Usuário ou senha incorretos.");
+      
+      onLogin({ id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], company_id: cData.id, company_name: cData.company_name });
+    } catch (e) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  const handleSubmit = () => mode === "employee" ? handleEmployeeAuth() : handleAdminAuth();
 
   return (
     <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
-      {/* Decorative blurred orbs */}
       <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
       <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
 
       <div className="w-full max-w-md mx-4 animate-slide-up">
-        {/* Card */}
+        {mode === "employee" ? (
+          <div className="text-center mb-6">
+             <div className="px-4 py-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full inline-flex font-bold text-xs uppercase mb-4 tracking-widest">Acesso da Equipe</div>
+             <h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Área Restrita</h2>
+             <p className={`text-sm mt-1 ${dark ? "text-gray-400" : "text-gray-600"}`}>Use suas credenciais para entrar</p>
+          </div>
+        ) : (
+          <div className="flex bg-black/40 p-1.5 rounded-xl backdrop-blur-md border border-white/10 mb-6">
+            <button onClick={() => {setMode("admin_login"); setErr("");}} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${mode === "admin_login" ? "bg-white/10 text-white shadow" : "text-gray-400 hover:text-white"}`}>Entrar</button>
+            <button onClick={() => {setMode("admin_register"); setErr("");}} className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${mode === "admin_register" ? "bg-white/10 text-white shadow" : "text-gray-400 hover:text-white"}`}>Criar Conta</button>
+          </div>
+        )}
+
         <div className="glass-card rounded-2xl p-8" style={{ border:"1px solid rgba(255,255,255,0.09)" }}>
-          {/* Logo + Branding */}
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-5">
-              <div className="relative">
-                <div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} />
-                <AppLogo collapsed={false} />
-              </div>
-            </div>
+            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} /><AppLogo collapsed={false} /></div></div>
             <div className="divider-gradient mx-auto mb-4" style={{ maxWidth:120 }} />
             <p style={{ fontSize:"0.78rem",letterSpacing:"0.12em",textTransform:"uppercase",color:"#64748b",fontWeight:700 }}>Sistema de Gestão Industrial</p>
           </div>
 
-          {/* Error */}
-          {err && (
-            <div className="mb-4 p-3 rounded-xl flex items-center gap-2" style={{ background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",fontSize:"0.875rem" }}>
-              <AlertTriangle size={15} />{err}
-            </div>
-          )}
+          {err && <div className="mb-4 p-3 rounded-xl flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-semibold"><AlertTriangle size={15} />{err}</div>}
 
-          {/* Form */}
           <div style={{ display:"flex",flexDirection:"column",gap:16 }}>
+            {mode === "admin_register" && (
+              <div>
+                <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>Nome da Empresa</label>
+                <div className="relative">
+                  <Factory size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input value={companyName} onChange={e => setCompanyName(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="Ex: AGS Brinquedos" className="input-dark pl-9 w-full" />
+                </div>
+              </div>
+            )}
+            
             <div>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#64748b",marginBottom:6 }}>Usuário</label>
+              <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>{mode === "employee" ? "Login do Funcionário" : "Seu E-mail"}</label>
               <div className="relative">
-                <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
-                <input
-                  value={email} onChange={e => setEmail(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handle()}
-                  placeholder="Seu usuário" autoComplete="off" name="usuario_ags_unique"
-                  className="input-dark" style={{ paddingLeft:40 }}
-                />
+                {mode === "employee" ? <UserCircle size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" /> : <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />}
+                <input value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder={mode === "employee" ? "joao.costura" : "admin@empresa.com"} autoComplete="off" className="input-dark pl-9 w-full" />
               </div>
             </div>
+            
             <div>
-              <label style={{ display:"block",fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#64748b",marginBottom:6 }}>Senha</label>
+              <label className={`block text-[11px] font-bold uppercase tracking-wider mb-1.5 ${dark ? "text-gray-400" : "text-gray-600"}`}>Senha</label>
               <div className="relative">
-                <Lock size={14} style={{ position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"#475569",pointerEvents:"none" }} />
-                <input
-                  type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handle()}
-                  placeholder="••••••" autoComplete="new-password" name="senha_ags_unique"
-                  className="input-dark" style={{ paddingLeft:40,paddingRight:44 }}
-                />
-                <button onClick={() => setShow(!show)} style={{ position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:"#475569",background:"none",border:"none",cursor:"pointer",padding:4,borderRadius:6,transition:"color 0.15s" }}>
-                  {show ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+                <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="••••••" autoComplete="new-password" className="input-dark pl-9 pr-10 w-full" />
+                <button onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-1">{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
               </div>
             </div>
 
-            <button onClick={handle} disabled={loading} className="btn-brand press-scale" style={{ width:"100%",justifyContent:"center",padding:"13px 20px",fontSize:"0.9rem",marginTop:4,opacity:loading?0.8:1 }}>
-              {loading
-                ? <><div className="animate-spin" style={{ width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTop:"2px solid white",borderRadius:"50%" }} />Entrando...</>
-                : <>Entrar</>}
+            <button onClick={handleSubmit} disabled={loading} className="btn-brand press-scale w-full mt-2 justify-center py-3 text-sm">
+              {loading ? <><RefreshCw size={16} className="animate-spin" /> Aguarde...</> : mode === "admin_register" ? "Criar Conta & Iniciar Trial" : "Entrar"}
             </button>
           </div>
-
-          {/* Footer */}
-          <div style={{ marginTop:24,textAlign:"center",fontSize:"0.7rem",color:"#334155",fontWeight:600,letterSpacing:"0.05em" }}>
-            AGS BRINQUEDOS © {new Date().getFullYear()}
-          </div>
         </div>
+        
+        {mode === "employee" && (
+           <div className="text-center mt-6">
+             <button onClick={() => window.location.href = '/'} className={`text-xs font-bold underline ${dark ? "text-gray-500" : "text-gray-400"}`}>Sou proprietário / Dono</button>
+           </div>
+        )}
       </div>
     </div>
   );
@@ -488,15 +462,24 @@ function OrdersTab({ data, setData, dark }) {
   const [selectMode, setSelectMode] = useState(false); const [selected, setSelected] = useState(new Set()); const
     [editingOrder, setEditingOrder] = useState(null); const [confirmDelete, setConfirmDelete] = useState(false);
   const [page, setPage] = useState(1);
+  const [filterType, setFilterType] = useState("todos");
+  const [openOrderIds, setOpenOrderIds] = useState(new Set());
+  const togOrderOpen = (id) => { const s = new Set(openOrderIds); s.has(id)? s.delete(id) : s.add(id); setOpenOrderIds(s); };
   const pdfRef = useRef(null);
 
   const orders = data.orders;
   const thisMonth = orders.filter(o => o.createdAt?.startsWith("2026-03"));
   const totalItems = orders.reduce((a, o) => a + (o.items?.filter(it => !it.isMotor).length || 0), 0);
   const done = orders.filter(o => o.status === "concluido").length;
-  const delayed = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0).length; const
-    filtered = orders.filter(o =>
-      o.clientName.toLowerCase().includes(search.toLowerCase()) || (o.items || []).some(it => it.toy.toLowerCase().includes(search.toLowerCase())) || o.id.includes(search));
+  const delayed = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0).length;
+  
+  let baseFiltered = orders;
+  if (filterType === "mes") baseFiltered = thisMonth;
+  else if (filterType === "concluidos") baseFiltered = orders.filter(o => o.status === "concluido");
+  else if (filterType === "atrasados") baseFiltered = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0);
+  
+  const filtered = baseFiltered.filter(o =>
+    o.clientName.toLowerCase().includes(search.toLowerCase()) || (o.items || []).some(it => it.toy.toLowerCase().includes(search.toLowerCase())) || o.id.includes(search));
   const totalPages = Math.ceil(filtered.length / ORDERS_PER_PAGE);
   const pagedOrders = filtered.slice((page - 1) * ORDERS_PER_PAGE, page * ORDERS_PER_PAGE);
 
@@ -650,7 +633,7 @@ function OrdersTab({ data, setData, dark }) {
     setManualItems(a);
   };
 
-  const uploadExtImg = (idx, e) => {
+  const hExtImg = (idx, e) => {
     const f = e.target.files[0]; if (!f) return; const r = new FileReader();
     r.onload = () => {
       const a = [...extItems];
@@ -736,12 +719,12 @@ function OrdersTab({ data, setData, dark }) {
       {/* ── STAT CARDS ── */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12 }}>
         {[
-          { label:"Pedidos no Mês", value:thisMonth.length, colorVar:"stat-card-orange", icon:<TrendingUp size={18} style={{ color:"#f97316" }} />, color:"#f97316" },
-          { label:"Brinquedos",      value:totalItems,       colorVar:"stat-card-blue",   icon:<Package size={18} style={{ color:"#3b82f6" }} />, color:"#3b82f6" },
-          { label:"Concluídos",     value:done,            colorVar:"stat-card-green",  icon:<CheckCircle size={18} style={{ color:"#22c55e" }} />, color:"#22c55e" },
-          { label:"Atrasados",      value:delayed,         colorVar:"stat-card-red",    icon:<AlertTriangle size={18} style={{ color:"#ef4444" }} />, color:"#ef4444" },
+          { id:"todos", label:"Total (Peds/Brinq)", value:`${orders.length} / ${totalItems}`, colorVar:"stat-card-blue", icon:<Layers size={18} style={{ color:"#3b82f6" }} />, color:"#3b82f6" },
+          { id:"mes", label:"Pedidos no Mês", value:thisMonth.length, colorVar:"stat-card-orange", icon:<TrendingUp size={18} style={{ color:"#f97316" }} />, color:"#f97316" },
+          { id:"concluidos", label:"Concluídos",     value:done,            colorVar:"stat-card-green",  icon:<CheckCircle size={18} style={{ color:"#22c55e" }} />, color:"#22c55e" },
+          { id:"atrasados", label:"Atrasados",      value:delayed,         colorVar:"stat-card-red",    icon:<AlertTriangle size={18} style={{ color:"#ef4444" }} />, color:"#ef4444" },
         ].map(k => (
-          <div key={k.label} className={`stat-card ${k.colorVar}`} style={{ padding:"16px" }}>
+          <div key={k.id} onClick={() => { setFilterType(k.id); setPage(1); }} className={`stat-card cursor-pointer transition-all ${k.colorVar} ${filterType === k.id ? "ring-2 ring-offset-2 ring-" + k.color.replace("#","") : "opacity-80 hover:opacity-100"}`} style={{ padding:"16px", ...(filterType === k.id ? { transform: "translateY(-2px)", borderColor: k.color } : {}) }}>
             <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8 }}>
               <span style={{ fontSize:"0.7rem",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#64748b" }}>{k.label}</span>
               <div style={{ width:32,height:32,borderRadius:8,background:`${k.color}18`,display:"flex",alignItems:"center",justifyContent:"center" }}>{k.icon}</div>
@@ -945,8 +928,10 @@ function OrdersTab({ data, setData, dark }) {
                   <div className="flex items-center gap-2">
                     <div className="text-right"><div className={`text-lg font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</div></div>
                     {!selectMode && <button onClick={e => { e.stopPropagation(); setEditingOrder(o) }} className={`p-2 rounded-xl border ${dark ? "border-gray-700 text-gray-400 hover:border-orange-500/50 hover:text-orange-400" : "border-gray-200 text-gray-400 hover:border-orange-300"}`}><Edit3 size={15} /></button>}
+                    {!selectMode && <button onClick={e => { e.stopPropagation(); togOrderOpen(o.id); }} className={`px-2 py-1.5 rounded-xl border text-xs font-bold transition-all ${openOrderIds.has(o.id) ? (dark ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "bg-orange-50 text-orange-600 border-orange-200") : (dark ? "bg-gray-800 text-gray-300 border-gray-700" : "bg-gray-100 text-gray-700 border-gray-200")}`}>{openOrderIds.has(o.id) ? "Ocultar Itens" : "Ver Itens"}</button>}
                   </div>
                 </div>
+                {openOrderIds.has(o.id) && (
                 <div className={`border-t ${dark ? "border-gray-800" : "border-gray-100"}`}>
                   {(o.items || []).map((item, idx) => (
                     <div key={item.itemId} className={`flex items-start justify-between px-4 py-2.5 gap-3 ${idx < (o.items.length - 1) ? `border-b ${dark ? "border-gray-800" : "border-gray-100"}` : ""}`}>
@@ -969,6 +954,7 @@ function OrdersTab({ data, setData, dark }) {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             );
           })}
@@ -993,12 +979,18 @@ function OrdersTab({ data, setData, dark }) {
 function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTogglePriority, canEdit, lightbox, setLightbox }) {
   const [obsOpen, setObsOpen] = useState(false);
 
-  // Progress: 25% per completed stage (cutDone, tailorDone, prepDone, assembleDone) = 4 stages
-  const completedStages = [row.cutDone, row.tailorDone, row.prepDone, row.assembleDone].filter(Boolean).length;
-  const pct = Math.round((completedStages / 4) * 100);
+  // Progress: 12.5% per assigned worker (4 stages) and 12.5% per completed stage (4 stages)
+  let points = 0;
+  if (row.cutter) points++; if (row.cutDone) points++;
+  if (row.tailor) points++; if (row.tailorDone) points++;
+  if (row.prep) points++; if (row.prepDone) points++;
+  if (row.assembler) points++; if (row.assembleDone) points++;
+  const pct = Math.round((points / 8) * 100);
+
   const dl = daysLeft(row.deadline);
   const s = statusBadge(row.deadline, row.done);
   const progressColor = row.done ? "#22c55e" : dl < 0 ? "#ef4444" : dl <= 3 ? "#f59e0b" : "#f97316";
+  const strokeColor = pct === 100 ? "#10b981" : pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316";
   const hasObs = row.observations && row.observations.trim().length > 0;
   const hasImg = row.images && row.images.length > 0;
   const isMulti = row._isMulti;
@@ -1012,8 +1004,8 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
          </button>
        </div>
        <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
-          className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold outline-none transition-all
-            ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"} border shadow-sm
+          className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold outline-none transition-all border shadow-sm
+            ${worker ? (dark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-300 text-emerald-700") : (dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900")}
             ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500 focus:ring-1 focus:ring-orange-500"}>
           `}>
           <option value="">👤 Atribuir...</option>
@@ -1070,13 +1062,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
           <div className="relative w-14 h-14 flex items-center justify-center">
             <svg className="w-14 h-14 transform -rotate-90 block">
               <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" fill="none" className={dark ? "text-gray-800" : "text-gray-200"} />
-              <circle cx="28" cy="28" r="24" stroke={pct === 100 ? "#10b981" : "url(#orange-grad-prod)"} strokeWidth="4" fill="none" strokeDasharray="150.8" strokeDashoffset={150.8 - (150.8 * pct) / 100} className="transition-all duration-500 transition-stroke ease-out drop-shadow-sm" strokeLinecap="round" />
-              <defs>
-                <linearGradient id="orange-grad-prod" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#f97316" />
-                  <stop offset="100%" stopColor="#fbbf24" />
-                </linearGradient>
-              </defs>
+              <circle cx="28" cy="28" r="24" stroke={strokeColor} strokeWidth="4" fill="none" strokeDasharray="150.8" strokeDashoffset={150.8 - (150.8 * pct) / 100} className="transition-all duration-500 ease-out drop-shadow-sm" strokeLinecap="round" />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
                <span className={`text-[11px] font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-700"}`}>{pct}%</span>
@@ -1097,11 +1083,16 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
         </div>
       </div>
       <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
           <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
           <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
           <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" />
+        </div>
+        
+        {/* Horizontal Progress Bar replacing the gradient */}
+        <div className="w-full h-1.5 rounded-full overflow-hidden flex" style={{ background: dark ? "#1f2937" : "#e5e7eb" }}>
+          <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${pct}%`, backgroundColor: strokeColor }}></div>
         </div>
       </div>
     </div>
@@ -1496,6 +1487,10 @@ function DashboardTab({ data, dark }) {
     for (let i = 1; i <= 12; i++) {
         salesDays.push({ dateStr: `${year}-${String(i).padStart(2, '0')}`, display: `${String(i).padStart(2, '0')}/${year}` });
     }
+  } else if (salesPeriod === "hoje") {
+    for (let i = 0; i <= 24; i += 3) {
+      salesDays.push({ dateStr: `HOJE_${i}`, display: `${String(i).padStart(2, '0')}:00`, hour: i });
+    }
   } else {
     while (curr <= end && salesDays.length < 40) {
         const dStr = curr.toISOString().split("T")[0];
@@ -1516,6 +1511,15 @@ function DashboardTab({ data, dark }) {
     let dayOrders = [];
     if (salesPeriod === "ano") {
         dayOrders = orders.filter(o => o.createdAt && o.createdAt.startsWith(d.dateStr));
+    } else if (salesPeriod === "hoje") {
+        const todayStr = getFrom("hoje");
+        dayOrders = orders.filter(o => {
+          if (o.createdAt?.startsWith(todayStr)) {
+            const h = o.createdAt.includes("T") ? new Date(o.createdAt).getHours() : 12;
+            return h >= d.hour && h < d.hour + 3;
+          }
+          return false;
+        });
     } else {
         dayOrders = orders.filter(o => o.createdAt === d.dateStr);
     }
@@ -1556,13 +1560,17 @@ function DashboardTab({ data, dark }) {
   const periodOpts = [["hoje", "Hoje"], ["ontem", "Ontem"], ["3d", "3 dias"], ["7d", "7 dias"], ["mes", "Mês"], ["ano", "Ano"]];
 
   // ── Production Performance Logic ──
+  const [prodStart, setProdStart] = useState("");
+  const [prodEnd, setProdEnd] = useState("");
+
   const prodDays = [];
-  let pCurr = new Date(getFrom(prodPeriod));
-  const pEnd = new Date(getTo(prodPeriod));
+  let pCurr = new Date(prodPeriod === "custom" && prodStart ? prodStart : getFrom(prodPeriod));
+  const pEnd = new Date(prodPeriod === "custom" && prodEnd ? prodEnd : getTo(prodPeriod));
+  
   if (prodPeriod === "ano") {
     for (let i = 1; i <= 12; i++) prodDays.push({ dateStr: `${year}-${String(i).padStart(2, '0')}`, display: `${String(i).padStart(2, '0')}/${year}` });
   } else {
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       if (pCurr > pEnd) break;
       prodDays.push({ dateStr: pCurr.toISOString().split("T")[0], display: `${String(pCurr.getDate()).padStart(2, '0')}/${String(pCurr.getMonth() + 1).padStart(2, '0')}` });
       pCurr.setDate(pCurr.getDate() + 1);
@@ -1700,6 +1708,7 @@ function DashboardTab({ data, dark }) {
         </div>
         <div className="grid grid-cols-7 gap-1">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => <div key={d} className={`text-xs font-bold text-center p-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{d}</div>)}
+          {Array.from({ length: new Date(year, TODAY.getMonth(), 1).getDay() }).map((_, i) => <div key={`b-${i}`} className="p-2" />)}
           {Array.from({ length: daysInMonth }, (_, i) => {
             const dayStr = String(i + 1).padStart(2, '0');
             const dateKey = `${year}-${month}-${dayStr}`; 
@@ -1723,7 +1732,7 @@ function DashboardTab({ data, dark }) {
             <h3 className={`font-black text-base ${dark ? "text-white" : "text-gray-900"}`}>Desempenho da Produção</h3>
             <p className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>Evolução de brinquedos concluídos por setor</p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
             <select value={prodSector} onChange={(e) => { setProdSector(e.target.value); setProdWorker("todos"); }} className={`px-3 py-1.5 rounded-xl text-sm font-bold border outline-none ${dark ? "bg-gray-800 text-white border-gray-700" : "bg-gray-100 text-gray-900 border-gray-200"}`}>
               <option value="todos">Todos os Setores</option>
               <option value="corte">Corte</option>
@@ -1737,7 +1746,21 @@ function DashboardTab({ data, dark }) {
                 {prodWorkersList.map(w => <option key={w} value={w}>{w}</option>)}
               </select>
             )}
-            <RangeDropdown val={prodPeriod} set={setProdPeriod} opts={periodOpts} />
+            <select value={prodPeriod} onChange={(e) => setProdPeriod(e.target.value)} className={`px-3 py-1.5 rounded-xl text-sm font-bold border outline-none ${dark ? "bg-gray-800 text-white border-gray-700 hover:border-orange-500" : "bg-gray-100 text-gray-900 border-gray-200 hover:border-orange-400"}`}>
+              <option value="hoje">Hoje</option>
+              <option value="ontem">Ontem</option>
+              <option value="7d">Últimos 7 dias</option>
+              <option value="mes">Este Mês</option>
+              <option value="ano">Este Ano</option>
+              <option value="custom">Personalizado...</option>
+            </select>
+            {prodPeriod === "custom" && (
+              <div className="flex items-center gap-1.5">
+                <input type="date" value={prodStart} onChange={e => setProdStart(e.target.value)} className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none ${dark ? "bg-gray-800 text-white border-gray-700 hover:border-orange-500" : "bg-gray-100 text-gray-900 border-gray-200 hover:border-orange-400"}`} />
+                <span className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>até</span>
+                <input type="date" value={prodEnd} onChange={e => setProdEnd(e.target.value)} className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none ${dark ? "bg-gray-800 text-white border-gray-700 hover:border-orange-500" : "bg-gray-100 text-gray-900 border-gray-200 hover:border-orange-400"}`} />
+              </div>
+            )}
           </div>
         </div>
         <ResponsiveContainer width="100%" height={260}>
@@ -1797,7 +1820,7 @@ function ClientsTab({ data, setData, dark }) {
   const [sellerFilter, setSellerFilter] = useState("");
   const [openClient, setOpenClient] = useState(null);
   const [lightbox, setLightbox] = useState(null);
-  const [activeItemInfo, setActiveItemInfo] = useState(null);
+  const [activeOrderDetails, setActiveOrderDetails] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
 
   const saveClientEdit = (e) => {
@@ -1883,34 +1906,15 @@ function ClientsTab({ data, setData, dark }) {
                         <div className="flex items-center justify-between px-4 py-3 gap-3 flex-wrap">
                           <div>
                             <div className="flex items-center gap-2"><span className={`font-mono text-sm font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>{o.id}</span><span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.color}`}>{s.label}</span></div>
-                            <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>{fmt(o.deadline)} · {o.voltage}</div>
+                            <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>{fmt(o.deadline)} · {o.voltage} · {o.items?.length || 0} itens</div>
                           </div>
-                          <span className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</span>
+                          <div className="flex items-center gap-3">
+                            <span className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setActiveOrderDetails(o); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-md transition-all hover:-translate-y-0.5" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>
+                              <FileText size={14} /> Detalhes do Pedido
+                            </button>
+                          </div>
                         </div>
-                        {(o.items || []).map(item => (
-                          <div key={item.itemId} className={`flex items-start justify-between px-6 py-2.5 gap-3 ${dark ? "bg-gray-800/30" : "bg-gray-50"}`}>
-                            <div className="flex items-start gap-2 min-w-0">
-                              {item.image && (
-                                <div className="relative group cursor-pointer flex-shrink-0" onClick={() => setLightbox(item.image)}>
-                                  <img src={item.image} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-600" />
-                                  <div className="absolute inset-0 rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={14} className="text-white" /></div>
-                                </div>
-                              )}
-                              <div>
-                                <div className="flex items-center gap-1"><span className={`text-sm font-semibold ${dark ? "text-gray-200" : "text-gray-800"}`}>{item.toy}</span>{item.isMotor && <span className="text-xs px-1.5 py-0.5 rounded font-bold bg-blue-500/20 text-blue-400">Motor</span>}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {(item.observations || (item.images && item.images.length > 0)) && (
-                                <button onClick={() => setActiveItemInfo(item)} className={`p-1.5 rounded-lg border ${dark ? "border-gray-700 hover:bg-gray-800 text-gray-400" : "border-gray-300 hover:bg-gray-100 text-gray-600"}`} title="Ver Detalhes/Imagens">
-                                  <FileText size={14} />
-                                </button>
-                              )}
-                              {!item.isMotor && <div className="flex gap-0.5">{(item.colors || []).map(cc => <span key={cc} className="w-3.5 h-3.5 rounded-full" style={{ background: COLOR_MAP[cc] || "#888" }} />)}</div>}
-                              <span className={`text-xs font-bold ${dark ? "text-gray-300" : "text-gray-700"}`}>R$ {(item.price || 0).toLocaleString("pt-BR")}</span>
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     );
                   })}
@@ -1922,32 +1926,54 @@ function ClientsTab({ data, setData, dark }) {
         {filtered.length === 0 && <div className={`text-center py-12 ${dark ? "text-gray-500" : "text-gray-400"}`}><Users size={32} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Nenhum cliente encontrado</p></div>}
       </div>
 
-      {activeItemInfo && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }} onClick={() => setActiveItemInfo(null)}>
-          <div className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className={`font-black text-lg ${dark ? "text-white" : "text-gray-900"}`}>Detalhes do Item</h3>
-              <button onClick={() => setActiveItemInfo(null)} className={`p-2 rounded-xl border ${dark ? "border-gray-700 text-gray-400 hover:bg-gray-800" : "border-gray-200 text-gray-500 hover:bg-gray-100"}`}><X size={16} /></button>
-            </div>
-            <div className={`text-sm font-bold mb-4 ${dark ? "text-gray-200" : "text-gray-800"}`}>{activeItemInfo.toy}</div>
-
-            {activeItemInfo.observations && (
-              <div className="mb-4">
-                <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>Observações</div>
-                <div className={`p-3 rounded-lg text-sm ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-50 text-gray-700"}`}>{activeItemInfo.observations}</div>
-              </div>
-            )}
-
-            {activeItemInfo.images && activeItemInfo.images.length > 0 && (
+      {activeOrderDetails && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setActiveOrderDetails(null)}>
+          <div className={`w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border shadow-2xl transition-all ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`} onClick={e => e.stopPropagation()}>
+            <div className={`sticky top-0 px-6 py-4 flex items-center justify-between border-b z-10 ${dark ? "bg-gray-900/90 border-gray-800" : "bg-white/90 border-gray-100"} backdrop-blur-md`}>
               <div>
-                <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>Imagens</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {activeItemInfo.images.map((img, i) => (
-                    <img key={i} src={img} alt="" className="w-full h-24 object-cover rounded-lg border border-gray-600 cursor-pointer" onClick={() => setLightbox(img)} />
-                  ))}
-                </div>
+                <h3 className={`font-black text-xl flex items-center gap-2 ${dark ? "text-white" : "text-gray-900"}`}><Package size={20} className="text-orange-500"/> Pedido {activeOrderDetails.id}</h3>
+                <span className={`text-xs font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>{activeOrderDetails.clientName} · Voltagem {activeOrderDetails.voltage}</span>
               </div>
-            )}
+              <button onClick={() => setActiveOrderDetails(null)} className={`p-2 rounded-xl transition-all ${dark ? "bg-gray-800 hover:bg-gray-700 text-gray-300" : "bg-gray-100 hover:bg-gray-200 text-gray-600"}`}><X size={18} /></button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {(activeOrderDetails.items || []).map((it, i) => (
+                <div key={i} className={`rounded-2xl p-4 border ${dark ? "bg-gray-800/40 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
+                  <div className="flex items-start justify-between mb-3 border-b pb-3 border-dashed" style={{ borderColor: dark ? "#374151" : "#e5e7eb" }}>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-sm font-black ${dark ? "text-white" : "text-gray-900"}`}>{it.toy}</span>
+                        {it.isMotor && <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/20 text-blue-400">Motor</span>}
+                      </div>
+                      {!it.isMotor && <div className="flex gap-1">{(it.colors || []).map(cc => <span key={cc} title={cc} className="w-3.5 h-3.5 rounded-full border shadow-sm" style={{ background: COLOR_MAP[cc] || "#888", borderColor: dark ? "#374151" : "#e5e7eb" }} />)}</div>}
+                    </div>
+                    <span className={`text-sm font-black ${dark ? "text-green-400" : "text-green-600"}`}>R$ {(it.price || 0).toLocaleString("pt-BR")}</span>
+                  </div>
+                  
+                  {it.observations && (
+                    <div className="mb-3">
+                      <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${dark ? "text-gray-500" : "text-gray-400"}`}><FileText size={10} className="inline mr-1"/> Observações</div>
+                      <p className={`text-sm leading-relaxed p-3 rounded-xl ${dark ? "bg-gray-900 border border-gray-700 text-gray-300" : "bg-white border border-gray-200 text-gray-700"}`}>{it.observations}</p>
+                    </div>
+                  )}
+
+                  {it.images && it.images.length > 0 && (
+                     <div>
+                       <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 mt-2 ${dark ? "text-gray-500" : "text-gray-400"}`}><Image size={10} className="inline mr-1"/> Referências visuais</div>
+                       <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                         {it.images.map((img, idx) => (
+                           <div key={idx} className="relative group cursor-pointer flex-shrink-0" onClick={() => setLightbox(img)}>
+                             <img src={img} alt="" className="w-20 h-20 rounded-xl object-cover border-2 shadow-sm transition-transform hover:scale-105" style={{ borderColor: dark ? "#4b5563" : "#d1d5db" }} />
+                             <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={16} className="text-white"/></div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1956,7 +1982,7 @@ function ClientsTab({ data, setData, dark }) {
 }
 
 // ─── TEAM TAB ─────────────────────────────────────────────────────────────────
-function TeamTab({ data, setData, dark }) {
+function TeamTab({ data, setData, dark, user }) {
   const [showForm, setShowForm] = useState(false);
   const ALL_TABS = ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"];
   const TAB_LABELS = { "orders": "Pedidos", "production": "Produção", "finalization": "Finalização", "dashboard": "Dashboard", "routes": "Rotas", "clients": "Clientes", "team": "Equipe" };
@@ -2013,6 +2039,20 @@ function TeamTab({ data, setData, dark }) {
           <button onClick={() => setShowUserForm(!showUserForm)} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}><Shield size={14} />Novo Login</button>
         </div>
       </div>
+      
+      {/* EMPLOYEE ACCESS LINK */}
+      {user && user.company_id && (
+         <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-3 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
+            <div>
+               <h4 className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>Link de Acesso da Equipe</h4>
+               <p className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>Envie este link para os funcionários logarem direto na plataforma</p>
+            </div>
+            <div className="flex w-full md:w-auto items-center gap-2">
+               <input readOnly value={`${window.location.origin}/?empresa=${user.company_id}`} className={`flex-1 md:w-64 px-3 py-1.5 rounded-lg border text-xs font-mono outline-none ${dark ? "bg-gray-900 border-gray-600 text-gray-300" : "bg-white border-gray-300 text-gray-600"}`} />
+               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/?empresa=${user.company_id}`)} className="px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition">Copiar</button>
+            </div>
+         </div>
+      )}
 
       {showUserForm && (
         <div className={`rounded-xl p-4 border ${dark ? "bg-gray-900 border-orange-500/30" : "bg-orange-50 border-orange-200"}`}>
@@ -2026,6 +2066,7 @@ function TeamTab({ data, setData, dark }) {
             <label className={`block text-xs font-semibold uppercase mb-2 ${dark ? "text-gray-400" : "text-gray-500"}`}>Permissões de Acesso</label>
             <div className="flex gap-2 flex-wrap">
               {ALL_TABS.map(tab => {
+                if (user && user.plan === 'free' && user.status !== 'trial' && tab !== "orders" && tab !== "production" && tab !== "routes") return null;
                 const has = userForm.permissions.includes(tab);
                 const hasEdit = userForm.permissions.includes(`${tab}:edit`);
                 return (
@@ -2202,8 +2243,23 @@ function RoutesTab({ data, dark }) {
          clientRow = o.client;
       }
     }
-    const stateId = clientRow?.state || "SP";
-    const safeStateId = STATE_CENTERS[stateId] ? stateId : "SP";
+    const normalizeState = (str) => {
+      if(!str) return "SP";
+      const s = str.trim().toUpperCase();
+      if(STATE_CENTERS[s]) return s;
+      const map = {
+        "SÃO PAULO":"SP", "SAO PAULO":"SP", "MINAS GERAIS":"MG", "RIO DE JANEIRO":"RJ",
+        "ESPIRITO SANTO":"ES", "ESPÍRITO SANTO":"ES", "BAHIA":"BA", "PARANÁ":"PR", "PARANA":"PR",
+        "SANTA CATARINA":"SC", "RIO GRANDE DO SUL":"RS", "MATO GROSSO":"MT", "MATO GROSSO DO SUL":"MS",
+        "GOIÁS":"GO", "GOIAS":"GO", "DISTRITO FEDERAL":"DF", "CEARÁ":"CE", "CEARA":"CE",
+        "PERNAMBUCO":"PE", "PARAÍBA":"PB", "PARAIBA":"PB", "RIO GRANDE DO NORTE":"RN",
+        "ALAGOAS":"AL", "SERGIPE":"SE", "PIAUÍ":"PI", "PIAUI":"PI", "MARANHÃO":"MA", "MARANHAO":"MA",
+        "TOCANTINS":"TO", "PARÁ":"PA", "PARA":"PA", "AMAPÁ":"AP", "AMAPA":"AP", "RORAIMA":"RR",
+        "AMAZONAS":"AM", "ACRE":"AC", "RONDÔNIA":"RO", "RONDONIA":"RO"
+      };
+      return map[s] || "SP";
+    };
+    const safeStateId = normalizeState(clientRow?.state);
     
     if (!stateData[safeStateId]) {
       stateData[safeStateId] = { orders: 0, items: 0, value: 0, orderList: [] };
@@ -2323,18 +2379,46 @@ function RoutesTab({ data, dark }) {
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {selectedStateData.orderList.map(o => (
-                <div key={o.id} className={`p-4 rounded-xl border flex flex-col sm:flex-row gap-4 sm:items-center justify-between ${dark ? "bg-gray-800/50 border-gray-800" : "bg-gray-50 border-gray-200"}`}>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`font-mono text-xs font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>#{o.id}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-400"}`}>{o.status === "concluido" ? "Concluído" : "Em Produção"}</span>
+                <div key={o.id} className={`p-4 rounded-xl border flex flex-col gap-3 ${dark ? "bg-gray-800/50 border-gray-800" : "bg-gray-50 border-gray-200"}`}>
+                  <div className="flex sm:items-center justify-between flex-col sm:flex-row gap-2 border-b pb-3" style={{ borderColor: dark ? "#374151" : "#e5e7eb" }}>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`font-mono text-xs font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>#{o.id}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-500" : "bg-blue-500/20 text-blue-400"}`}>{o.status === "concluido" ? "Concluído" : "Em Produção"}</span>
+                      </div>
+                      <div className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>{(o.client?.name || o.clientName || o.client) || "Cliente Sem Nome"}</div>
+                      <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>Vendedor: {o.seller || "—"} · Prazo: {o.deadline}</div>
                     </div>
-                    <div className={`font-bold text-sm ${dark ? "text-white" : "text-gray-900"}`}>{(o.client?.name || o.client) || "Cliente Sem Nome"}</div>
-                    <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>Vendedor: {o.seller || "—"}</div>
+                    <div className="flex flex-col sm:items-end justify-between">
+                      <div className="text-sm font-black text-orange-500">R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</div>
+                      <div className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>{(o.items || []).length} itens</div>
+                    </div>
                   </div>
-                  <div className="flex sm:flex-col items-center sm:items-end justify-between">
-                    <div className="text-sm font-black text-orange-500">R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</div>
-                    <div className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>{(o.items || []).length} itens</div>
+                  
+                  <div className="space-y-3">
+                    {(o.items || []).map((it, idx) => (
+                      <div key={idx} className={`p-3 rounded-lg border flex flex-col gap-2 ${dark ? "bg-gray-900/50 border-gray-700" : "bg-white border-gray-200"}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                             <span className={`text-sm font-bold ${dark ? "text-gray-200" : "text-gray-800"}`}>{it.toy}</span>
+                             {it.isMotor && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-bold">Motor</span>}
+                          </div>
+                          {!it.isMotor && <div className="flex gap-1">{(it.colors || []).map(cc => <span key={cc} title={cc} className="w-3.5 h-3.5 rounded-full shadow-sm" style={{ background: COLOR_MAP[cc] || "#888" }} />)}</div>}
+                        </div>
+                        {it.observations && (
+                          <div className={`text-xs leading-relaxed ${dark ? "text-gray-400" : "text-gray-600"}`}>
+                            <span className="font-bold uppercase tracking-wider opacity-70">Obs:</span> {it.observations}
+                          </div>
+                        )}
+                        {it.images && it.images.length > 0 && (
+                          <div className="flex gap-2 overflow-x-auto pb-1 mt-1 custom-scrollbar">
+                            {it.images.map((img, i) => (
+                               <img key={i} src={img} alt="" className="w-16 h-16 object-cover rounded-lg border border-gray-600 cursor-pointer" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -2366,12 +2450,18 @@ export default function App() {
   const [loadingServer, setLoadingServer] = useState(true);
 
   useEffect(() => {
+    if (!user || !user.company_id) {
+       setLoadingServer(false);
+       return;
+    }
+    CURRENT_COMPANY_ID = user.company_id;
+
     async function fetchState() {
       try {
-        const { data: remote, error } = await supabase.from('app_state').select('data').eq('id', 1).single();
-        if (remote && remote.data && Object.keys(remote.data).length > 0) {
-          setData(remote.data);
-          try { localStorage.setItem("ags_v3", JSON.stringify(remote.data)); } catch { }
+        const { data: remote, error } = await supabase.from('companies').select('app_data').eq('id', user.company_id).single();
+        if (remote && remote.app_data && Object.keys(remote.app_data).length > 0) {
+          setData(remote.app_data);
+          try { localStorage.setItem("ags_v3", JSON.stringify(remote.app_data)); } catch { }
         }
       } catch (err) { console.error(err); }
       setLoadingServer(false);
@@ -2386,12 +2476,13 @@ export default function App() {
         {
           event: '*', // Listen to INSERT, UPDATE, DELETE
           schema: 'public',
-          table: 'app_state',
+          table: 'companies',
+          filter: `id=eq.${user.company_id}`
         },
         (payload) => {
-          if (payload.new && payload.new.data) {
-            setData(payload.new.data);
-            try { localStorage.setItem("ags_v3", JSON.stringify(payload.new.data)); } catch { }
+          if (payload.new && payload.new.app_data) {
+            setData(payload.new.app_data);
+            try { localStorage.setItem("ags_v3", JSON.stringify(payload.new.app_data)); } catch { }
           }
         }
       )
@@ -2400,7 +2491,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [user]);
 
   if (loadingServer) return (
     <div className="min-h-screen flex flex-col items-center justify-center login-bg" style={{ fontFamily:"'Inter','DM Sans',system-ui,sans-serif" }}>
@@ -2420,7 +2511,16 @@ export default function App() {
   if (!user) return <LoginScreen onLogin={u => { setUser(u); const perms = u.role === "admin" ? ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"] : (u.permissions || []); setTab(perms[0] || "orders"); }} dark={dark} />;
 
 
-  const userPerms = user.role === "admin" ? ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"] : (user.permissions || []);
+  const [showPlans, setShowPlans] = useState(false);
+  const trialLeft = user ? Math.ceil((new Date(user.trial_ends_at).getTime() - new Date().getTime()) / 86400000) : 0;
+  const isExpired = user && user.plan === 'free' && trialLeft < 0;
+
+  let allowTabs = ["orders", "production", "routes"];
+  if (user && user.plan === "premium" || (user && user.plan === "free" && !isExpired)) {
+     allowTabs = ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"];
+  }
+
+  const userPerms = user.role === "admin" ? allowTabs : (user.permissions || []);
   const currentTab = tab && userPerms.includes(tab) ? tab : (userPerms[0] || "orders");
 
   const sidebarBg = dark
@@ -2516,9 +2616,18 @@ export default function App() {
 
       {/* Main */}
       <main
-        className="flex-1 min-w-0 flex flex-col"
+        className="flex-1 min-w-0 flex flex-col relative"
         style={{ height:"100vh", overflow:"hidden", background: mainBg }}
       >
+        {user.plan === 'free' && !isExpired && (
+          <div className="bg-orange-500 text-white px-4 py-2 flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-2 font-bold text-sm">
+              <Sparkles size={16} /> Você está no período gratuito. Restam {trialLeft} {trialLeft === 1 ? "dia" : "dias"}.
+            </div>
+            <button onClick={() => setShowPlans(true)} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-lg text-xs font-bold transition">Ver Planos</button>
+          </div>
+        )}
+
         {(currentTab === "production" || currentTab === "finalization") ? (
           <div className="flex-1 flex flex-col min-h-0 max-w-6xl w-full mx-auto px-6 py-4" style={{ height:"100%" }}>
             {currentTab === "production" && <ProductionTab data={data} setData={setData} dark={dark} user={user} />}
@@ -2530,8 +2639,67 @@ export default function App() {
               {currentTab === "orders" && <OrdersTab data={data} setData={setData} dark={dark} />}
               {currentTab === "dashboard" && <DashboardTab data={data} dark={dark} />}
               {currentTab === "clients" && <ClientsTab data={data} setData={setData} dark={dark} />}
-              {currentTab === "team" && <TeamTab data={data} setData={setData} dark={dark} />}
+              {currentTab === "team" && <TeamTab data={data} setData={setData} dark={dark} user={user} />}
               {currentTab === "routes" && <RoutesTab data={data} dark={dark} />}
+            </div>
+          </div>
+        )}
+
+        {isExpired && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+            <div className={`max-w-lg w-full rounded-2xl p-8 text-center shadow-2xl border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+               <Lock size={48} className="text-orange-500 mx-auto mb-4" />
+               <h2 className={`text-2xl font-black mb-2 ${dark ? "text-white" : "text-gray-900"}`}>Seu trial terminou</h2>
+               <p className={`text-sm mb-6 ${dark ? "text-gray-400" : "text-gray-600"}`}>Para continuar usando o sistema, gerindo sua produção e faturando ainda mais, selecione um de nossos planos.</p>
+               {user.role === 'admin' ? (
+                 <button onClick={() => setShowPlans(true)} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition">Assinar Agora</button>
+               ) : (
+                 <p className="text-red-400 font-bold text-sm">Contate o administrador da empresa para assinar o plano.</p>
+               )}
+            </div>
+          </div>
+        )}
+
+        {showPlans && (
+          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+            <div className="max-w-4xl w-full flex flex-col items-center">
+              <div className="flex justify-between w-full mb-6">
+                 <div>
+                   <h2 className="text-3xl font-black text-white">Escolha seu Plano</h2>
+                   <p className="text-gray-400 mt-1">Evolua o AGS Brinquedos junto com o seu negócio.</p>
+                 </div>
+                 <button onClick={() => setShowPlans(false)} className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center"><X size={20}/></button>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 w-full">
+                {/* Basic Plan */}
+                <div className={`p-8 rounded-2xl border flex flex-col ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+                  <h3 className={`text-xl font-black mb-1 ${dark ? "text-white" : "text-gray-900"}`}>Básico</h3>
+                  <div className="text-3xl font-black text-orange-500 mb-6">R$ 379,90<span className="text-sm text-gray-500">/mês</span></div>
+                  <ul className={`space-y-3 mb-8 flex-1 text-sm font-medium ${dark ? "text-gray-300" : "text-gray-600"}`}>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-emerald-500" /> Extração de Pedidos via IA</li>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-emerald-500" /> Controle de Produção (Esteira)</li>
+                    <li className="flex items-center gap-2 text-gray-400"><X size={16} className="text-gray-500" /> Dashboard Analytics Avançado</li>
+                    <li className="flex items-center gap-2 text-gray-400"><X size={16} className="text-gray-500" /> Moderação de Funcionários / Equipe</li>
+                  </ul>
+                  <a href={`https://www.ggcheckout.com/checkout/v5/rX4Adibo7XVf5LY31Hph?sck=${user.company_id}`} target="_blank" rel="noreferrer" className="w-full text-center bg-gray-800 hover:bg-gray-700 text-white font-bold py-3 rounded-xl transition border border-gray-700">Assinar Básico</a>
+                </div>
+
+                {/* Premium Plan */}
+                <div className="p-8 rounded-2xl border flex flex-col bg-gradient-to-b from-orange-500/20 to-orange-900/20 border-orange-500 relative">
+                  <div className="absolute top-0 right-6 -translate-y-1/2 bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">Recomendado</div>
+                  <h3 className={`text-xl font-black mb-1 ${dark ? "text-white" : "text-gray-900"}`}>Completo</h3>
+                  <div className="text-3xl font-black text-orange-500 mb-6">R$ 697,00<span className="text-sm text-gray-500">/mês</span></div>
+                  <ul className={`space-y-3 mb-8 flex-1 text-sm font-medium ${dark ? "text-gray-200" : "text-gray-700"}`}>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-orange-500" /> Extração de Pedidos via IA</li>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-orange-500" /> Controle de Produção</li>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-orange-500" /> Dashboard e Relatórios em Tempo Real</li>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-orange-500" /> Cadastro e Moderação de Funcionários</li>
+                    <li className="flex items-center gap-2"><Check size={16} className="text-orange-500" /> Roteirização pelo Mapa Inteligente</li>
+                  </ul>
+                  <a href={`https://www.ggcheckout.com/checkout/v5/rX4Adibo7XVf5LY31Hph?sck=${user.company_id}`} target="_blank" rel="noreferrer" className="w-full text-center bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-500/30 text-white font-bold py-3 rounded-xl transition">Assinar Completo</a>
+                </div>
+              </div>
             </div>
           </div>
         )}
