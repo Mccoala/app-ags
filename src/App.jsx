@@ -2478,6 +2478,7 @@ function MainApp() {
   const [tab, setTab] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loadingServer, setLoadingServer] = useState(true);
+  const [showPlans, setShowPlans] = useState(false);
 
   useEffect(() => {
     if (!user || !user.company_id) {
@@ -2521,7 +2522,7 @@ function MainApp() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [user]);
+  }, [user?.company_id]);
 
   if (loadingServer) return (
     <div className="min-h-screen flex flex-col items-center justify-center login-bg" style={{ fontFamily:"'Inter','DM Sans',system-ui,sans-serif" }}>
@@ -2541,7 +2542,6 @@ function MainApp() {
   if (!user) return <LoginScreen onLogin={u => { setUser(u); const perms = u.role === "admin" ? ["orders", "production", "finalization", "dashboard", "routes", "clients", "team"] : (u.permissions || []); setTab(perms[0] || "orders"); }} dark={dark} />;
 
 
-  const [showPlans, setShowPlans] = useState(false);
   const trialLeft = user ? Math.ceil((new Date(user.trial_ends_at).getTime() - new Date().getTime()) / 86400000) : 0;
   const isExpired = user && user.plan === 'free' && trialLeft < 0;
 
