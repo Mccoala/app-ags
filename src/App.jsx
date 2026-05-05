@@ -58,30 +58,9 @@ const canEditProd = (role) => CAN_EDIT_PRODUCTION.includes(role) && role !== "mi
 
 // ─── INITIAL DATA ────────────────────────────────────────────────────────────
 const INITIAL_DATA = {
-  users: [
-    {
-      id: 1, name: "Admin", email: "admin", password: "ags", role: "admin",
-      permissions: ["orders", "production", "finalization", "dashboard", "clients", "team"]
-    },
-    {
-      id: 2, name: "Miriane", email: "miriane", password: "123", role: "miriane",
-      permissions: ["orders", "production", "finalization", "clients"]
-    },
-    { id: 3, name: "Produção", email: "producao", password: "123", role: "producao", permissions: ["production", "finalization"] },
-    { id: 4, name: "Finalização", email: "finalizacao", password: "123", role: "finalizacao", permissions: ["finalization"] },
-  ],
+  users: [],
   clients: [],
-  team: [
-    { id: 1, name: "Maria Costa", role: "Costura", status: "ativo" },
-    { id: 2, name: "Carlos Lima", role: "Corte", status: "ativo" },
-    { id: 3, name: "Ana Souza", role: "Preparação", status: "ativo" },
-    { id: 4, name: "Luan", role: "Vendedor", status: "ativo" },
-    { id: 5, name: "Fernanda Reis", role: "Costura", status: "ativo" },
-    { id: 6, name: "Emerson", role: "Vendedor", status: "ativo" },
-    { id: 7, name: "Sidnei", role: "Vendedor", status: "ativo" },
-    { id: 8, name: "Roberto Santos", role: "Preparação", status: "ativo" },
-    { id: 9, name: "Joana Melo", role: "Finalizador", status: "ativo" },
-  ],
+  team: [],
   orders: [],
   production: [],
   finalization: [],
@@ -131,9 +110,9 @@ const daysLeft = (dl) => {
 const statusBadge = (deadline, done) => {
   if (done) return { label: "Concluído", color: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" };
   const d = daysLeft(deadline);
-  if (d < 0) return { label: `${Math.abs(d)}d atrasado`, color: "bg-red-500/20 text-red-400 border border-red-500/30" }; if
-    (d <= 3) return { label: `${d}d restantes`, color: "bg-amber-500/20 text-amber-400 border border-amber-500/30" };
-  return { label: `${d}d restantes`, color: "bg-sky-500/20 text-sky-400 border border-sky-500/30" };
+  if (d < 0) return { label: `Atrasado ${Math.abs(d)}d`, color: "bg-red-500/20 text-red-400 border border-red-500/30" }; if
+    (d <= 3) return { label: `No Prazo (${d}d)`, color: "bg-amber-500/20 text-amber-400 border border-amber-500/30" };
+  return { label: `No Prazo (${d}d)`, color: "bg-sky-500/20 text-sky-400 border border-sky-500/30" };
 }; const
   COLOR_MAP = {
     "Azul"
@@ -369,6 +348,14 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
                     ${dark ? "border-gray-700" : "border-gray-200"}`}>
           <div>
             <h3 className={`font-black text-lg ${dark ? "text-white" : "text-gray-900"}`}>Editar Pedido</h3>
+          <div className="flex gap-2">
+            <select value={calMonth} onChange={e => setCalMonth(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
+              {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m,i)=><option key={i} value={i}>{m}</option>)}
+            </select>
+            <select value={calYear} onChange={e => setCalYear(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
+              {[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
             <span className="font-mono text-sm font-bold text-orange-400">{order.id}</span>
           </div>
           <button onClick={onClose} className={`p-2 rounded-xl ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
@@ -566,7 +553,7 @@ function OrdersTab({ data, setData, dark }) {
             Representante, Rep., Atendente, Vendido por, Agente. Copie o nome exatamente como está. Caso não encontre nenhum dos 3 explicitamente, aplique a lógica de dedução ou deixe em branco caso seja totalmente incerto.",
             "items":[{"toy":"nome","colors":["cor1"],"price":0,"observations":"obs","isMotor":false}]
             }
-            Motores/sopradores/bombas: isMotor=true. Crie um item por brinquedo.`;
+            Motores/sopradores/bombas: isMotor=true. ATENÇÃO: NÃO coloque observações (observations) em motores/sopradores/bombas, deixe vazio. Coloque TODAS as observações do pedido no item do brinquedo principal. Crie um item por brinquedo.`;
     try {
       const
         content = pdfData ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: "Extraia os dados deste pedido em PDF. Busque o REPRESENTANTE para o vendedor. Lembre-se, os unicos vendedores são Luan, Emerson e Sidnei. E busque o campo PRAZO nas observações para o prazo de fabricação." }] : `Extraia os dados:\n\n${text}\n\nLembre-se: os únicos vendedores são Luan, Emerson e Sidnei.`;
@@ -1020,7 +1007,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const dl = daysLeft(row.deadline);
   const s = statusBadge(row.deadline, row.done);
   const progressColor = row.done ? "#22c55e" : dl < 0 ? "#ef4444" : dl <= 3 ? "#f59e0b" : "#f97316";
-  const strokeColor = pct === 100 ? "#10b981" : pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316";
+  const strokeColor = row.done ? "#10b981" : (pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316");
   const hasObs = row.observations && row.observations.trim().length > 0;
   const hasImg = row.images && row.images.length > 0;
   const isMulti = row._isMulti;
@@ -1030,7 +1017,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
        <div className="flex items-center justify-between mb-2">
          <span className={`text-[10px] sm:text-xs font-black uppercase tracking-widest ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
          <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : "bg-gray-200/50 dark:bg-gray-700/50 text-gray-500 border border-transparent"} ${(!editMode || !canEdit || !worker) ? "opacity-50 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : "Pendente"}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : (worker ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : "bg-gray-200/50 dark:bg-gray-700/50 text-gray-500 border border-transparent")} ${(!editMode || !canEdit || !worker) ? "opacity-50 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : (worker ? "Em Progresso" : "Pendente")}
          </button>
        </div>
        <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
@@ -1131,6 +1118,7 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
 
 // ─── PRODUCTION TAB ───────────────────────────────────────────────────────────
 function ProductionTab({ data, setData, dark, user }) {
+  const [search, setSearch] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatus, setFilterStatus] = useState("todos");
@@ -1150,7 +1138,7 @@ function ProductionTab({ data, setData, dark, user }) {
   });
 
   const sortedRows = sortProdRows(allRows);
-  const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido");
+  const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido" && (r.clientName?.toLowerCase().includes(search.toLowerCase()) || r.toy?.toLowerCase().includes(search.toLowerCase()) || r._orderId?.includes(search)));
   const doneRows = sortedRows.filter(r => r.done || r.status === "concluido");
   const thisMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-03-01") && d <= new Date("2026-03-31"); });
   const nextMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-04-01") && d <= new Date("2026-04-30"); });
@@ -1220,7 +1208,7 @@ function ProductionTab({ data, setData, dark, user }) {
       const wasPriority = nd.orders[oi].priority;
       nd.orders[oi].priority = !wasPriority;
       // When activating priority, jump to "urgente" filter
-      if (!wasPriority) setFilterStatus("urgente");
+      
     }
     setData(nd); saveData(nd);
   };
@@ -1265,7 +1253,7 @@ function ProductionTab({ data, setData, dark, user }) {
           ))}
         </div>
         {/* Row 3: filters */}
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="relative mb-2"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por cliente ou brinquedo..." className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`} /></div><div className="flex gap-1.5 flex-wrap">
           {filterOpts.map(([v, l]) => (
             <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>
               {l}{" "}<span className="opacity-70">{v === "todos" ? `(${sortedRows.length})` : v === "atrasados" ? `(${delayedRows.length})` : v === "concluidos" ? `(${doneRows.length})` : v === "urgente" ? `(${activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); }).length})` : ""}</span>
@@ -1483,13 +1471,15 @@ function DashboardTab({ data, dark }) {
   const [prodSector, setProdSector] = useState("todos");
   const [prodWorker, setProdWorker] = useState("todos");
   const [calDate, setCalDate] = useState(null);
+  const [calMonth, setCalMonth] = useState(TODAY.getMonth());
+  const [calYear, setCalYear] = useState(TODAY.getFullYear());
 
   const tt = { background: dark ? "#1f2937" : "#fff", border: `1px solid ${dark ? "#374151" : "#e5e7eb"}`, borderRadius: 8, fontSize: 12 };
 
   // ── Helpers ──
-  const year = TODAY.getFullYear();
-  const month = String(TODAY.getMonth() + 1).padStart(2, '0');
-  const daysInMonth = new Date(year, TODAY.getMonth() + 1, 0).getDate();
+  const year = calYear;
+  const month = String(calMonth + 1).padStart(2, '0');
+  const daysInMonth = new Date(year, calMonth + 1, 0).getDate();
   
   const getFrom = (p) => {
     const d = new Date(TODAY);
@@ -1734,11 +1724,11 @@ function DashboardTab({ data, dark }) {
       {/* ── CALENDÁRIO MENSIAL DE VENDAS ── */}
       <Card>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h3 className={`font-black text-base ${dark ? "text-white" : "text-gray-900"}`}>Calendário de Metas ({new Date().toLocaleString("pt-BR", { month: "long", year: "numeric" })})</h3>
+          <h3 className={`font-black text-base ${dark ? "text-white" : "text-gray-900"}`}>Calendário de Metas</h3>
         </div>
         <div className="grid grid-cols-7 gap-1">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => <div key={d} className={`text-xs font-bold text-center p-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{d}</div>)}
-          {Array.from({ length: new Date(year, TODAY.getMonth(), 1).getDay() }).map((_, i) => <div key={`b-${i}`} className="p-2" />)}
+          {Array.from({ length: new Date(year, calMonth, 1).getDay() }).map((_, i) => <div key={`b-${i}`} className="p-2" />)}
           {Array.from({ length: daysInMonth }, (_, i) => {
             const dayStr = String(i + 1).padStart(2, '0');
             const dateKey = `${year}-${month}-${dayStr}`; 
@@ -1957,7 +1947,7 @@ function ClientsTab({ data, setData, dark }) {
       </div>
 
       {activeOrderDetails && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setActiveOrderDetails(null)}>
+        <div className="fixed inset-0 z-[60] p-4 bg-black/80 backdrop-blur-sm" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }} onClick={() => setActiveOrderDetails(null)}>
           <div className={`w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border shadow-2xl transition-all ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`} onClick={e => e.stopPropagation()}>
             <div className={`sticky top-0 px-6 py-4 flex items-center justify-between border-b z-10 ${dark ? "bg-gray-900/90 border-gray-800" : "bg-white/90 border-gray-100"} backdrop-blur-md`}>
               <div>
@@ -2274,7 +2264,7 @@ function RoutesTab({ data, dark }) {
       }
     }
     const normalizeState = (str) => {
-      if(!str) return "SP";
+      if(!str || str.length < 2) return "SP";
       const s = str.trim().toUpperCase();
       if(STATE_CENTERS[s]) return s;
       const map = {
