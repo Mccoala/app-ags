@@ -66,9 +66,17 @@ const INITIAL_DATA = {
   finalization: [],
 };
 
-function loadData() {
+let CURRENT_COMPANY_ID = null;
+
+function getStorageKey(companyId) {
+  const id = companyId || CURRENT_COMPANY_ID || localStorage.getItem("ags_last_company");
+  return id ? `ags_v3_${id}` : "ags_v3";
+}
+
+function loadData(companyId) {
   try {
-    const s = localStorage.getItem("ags_v3");
+    const key = getStorageKey(companyId);
+    const s = localStorage.getItem(key);
     if (s) {
       const p = JSON.parse(s);
       return {
@@ -85,12 +93,17 @@ function loadData() {
   } catch { }
   return INITIAL_DATA;
 }
-let CURRENT_COMPANY_ID = null;
+
 async function saveToSupabase(d) {
   if (!CURRENT_COMPANY_ID) return;
   try { await supabase.from('companies').update({ app_data: d }).eq('id', CURRENT_COMPANY_ID); } catch (err) { console.error("Supabase save error", err); }
 }
-function saveData(d) { try { localStorage.setItem("ags_v3", JSON.stringify(d)); } catch { } saveToSupabase(d); }
+
+function saveData(d) { 
+  const key = getStorageKey();
+  try { localStorage.setItem(key, JSON.stringify(d)); } catch { } 
+  saveToSupabase(d); 
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const parseLocal = (ds) => {
@@ -348,14 +361,6 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
                     ${dark ? "border-gray-700" : "border-gray-200"}`}>
           <div>
             <h3 className={`font-black text-lg ${dark ? "text-white" : "text-gray-900"}`}>Editar Pedido</h3>
-          <div className="flex gap-2">
-            <select value={calMonth} onChange={e => setCalMonth(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
-              {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m,i)=><option key={i} value={i}>{m}</option>)}
-            </select>
-            <select value={calYear} onChange={e => setCalYear(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
-              {[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
             <span className="font-mono text-sm font-bold text-orange-400">{order.id}</span>
           </div>
           <button onClick={onClose} className={`p-2 rounded-xl ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
@@ -485,7 +490,8 @@ function OrdersTab({ data, setData, dark }) {
   const pdfRef = useRef(null);
 
   const orders = data.orders;
-  const thisMonth = orders.filter(o => o.createdAt?.startsWith("2026-03"));
+  const currentMonthStr = TODAY.toISOString().slice(0, 7); // "YYYY-MM"
+  const thisMonth = orders.filter(o => o.createdAt?.startsWith(currentMonthStr));
   const totalItems = orders.reduce((a, o) => a + (o.items?.filter(it => !it.isMotor).length || 0), 0);
   const done = orders.filter(o => o.status === "concluido").length;
   const delayed = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0).length;
@@ -1140,9 +1146,15 @@ function ProductionTab({ data, setData, dark, user }) {
   const sortedRows = sortProdRows(allRows);
   const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido" && (r.clientName?.toLowerCase().includes(search.toLowerCase()) || r.toy?.toLowerCase().includes(search.toLowerCase()) || r._orderId?.includes(search)));
   const doneRows = sortedRows.filter(r => r.done || r.status === "concluido");
-  const thisMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-03-01") && d <= new Date("2026-03-31"); });
-  const nextMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-04-01") && d <= new Date("2026-04-30"); });
-  const doneMon = doneRows.filter(r => r.deadline >= "2026-03-01" && r.deadline <= "2026-03-31");
+  const currentMonthStart = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+  const currentMonthEnd = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0);
+  const nextMonthStart = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 1);
+  const nextMonthEnd = new Date(TODAY.getFullYear(), TODAY.getMonth() + 2, 0);
+  const currentMonthPrefix = TODAY.toISOString().slice(0, 7);
+
+  const thisMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= currentMonthStart && d <= currentMonthEnd; });
+  const nextMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= nextMonthStart && d <= nextMonthEnd; });
+  const doneMon = doneRows.filter(r => r.deadline && r.deadline.startsWith(currentMonthPrefix));
   const delayedRows = activeRows.filter(r => daysLeft(r.deadline) < 0);
 
   const workers = {
@@ -2482,7 +2494,8 @@ function MainApp() {
         const { data: remote, error } = await supabase.from('companies').select('app_data').eq('id', user.company_id).single();
         if (remote && remote.app_data && Object.keys(remote.app_data).length > 0) {
           setData(remote.app_data);
-          try { localStorage.setItem("ags_v3", JSON.stringify(remote.app_data)); } catch { }
+          const key = getStorageKey(user.company_id);
+          try { localStorage.setItem(key, JSON.stringify(remote.app_data)); localStorage.setItem("ags_last_company", user.company_id); } catch { }
         }
       } catch (err) { console.error(err); }
       setLoadingServer(false);
@@ -2503,7 +2516,8 @@ function MainApp() {
         (payload) => {
           if (payload.new && payload.new.app_data) {
             setData(payload.new.app_data);
-            try { localStorage.setItem("ags_v3", JSON.stringify(payload.new.app_data)); } catch { }
+            const key = getStorageKey(user.company_id);
+            try { localStorage.setItem(key, JSON.stringify(payload.new.app_data)); } catch { }
           }
         }
       )
@@ -2608,7 +2622,7 @@ function MainApp() {
             {sidebarOpen && <span style={{ fontSize:"0.875rem",fontWeight:600 }}>{dark ? "Modo Claro" : "Modo Escuro"}</span>}
           </button>
           <button
-            onClick={() => setUser(null)}
+            onClick={() => { setUser(null); setData(INITIAL_DATA); CURRENT_COMPANY_ID = null; }}
             className="sidebar-item"
             style={{ color:"#ef4444", ...(!sidebarOpen ? { justifyContent:"center",padding:"10px 0" } : {}) }}
             title={!sidebarOpen ? "Sair" : undefined}
