@@ -1,3 +1,4 @@
+// AGS Industrial System - Last Update: 2026-05-08
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
 import { supabase } from "./lib/supabase";
 
@@ -1474,7 +1475,12 @@ function FinalizationTab({ data, setData, dark, user }) {
             </div>
           );
         })}
-        {sorted.length === 0 && <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}><Sparkles size={36} className="mx-auto mb-3 opacity-30" /><p className="text-sm font-medium">Nenhum brinquedo aguardando finalização</p></div>}
+        {sorted.length === 0 && (
+          <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}>
+            <Sparkles size={36} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium">Nenhum brinquedo aguardando finalização</p>
+          </div>
+        )}
       </div>
     </div>
   );
