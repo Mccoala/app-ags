@@ -1,4 +1,4 @@
-// AGS Industrial System - Last Update: 2026-05-08
+// AGS Industrial System - Last Update: 2026-10-26
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
 import { supabase } from "./lib/supabase";
 
@@ -45,7 +45,9 @@ import { scaleLinear } from "d3-scale";
 import logoImg from "./assets/logo.png";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
-const GEO_URL = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
+// Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
+const GEO_URL = "/brazil-states.json";
+const STATUS_LABEL = { aguardando: "Aguardando", producao: "Em produção", concluido: "Concluído" };
 
 const TAB_META = {
   dashboard: { label: "Dashboard", Icon: BarChart3 },
@@ -66,8 +68,9 @@ const ROLE_PERMISSIONS = {
   finalizacao: ["finalization"],
   user: ["orders", "production", "finalization"],
 };
-const CAN_EDIT_PRODUCTION = ["admin", "producao", "finalizacao", "user"];
-const canEditProd = (role) => CAN_EDIT_PRODUCTION.includes(role) && role !== "miriane";
+// Dono (admin) sempre pode; funcionário pode se tiver acesso à aba (definido em Equipe > Logins)
+const canEditProd = (user) => !!user && (user.role === "admin" || (user.permissions || []).includes("production"));
+const canEditFin = (user) => !!user && (user.role === "admin" || (user.permissions || []).includes("finalization"));
 
 const INITIAL_DATA = {
   users: [],
@@ -118,7 +121,7 @@ const parseLocal = (ds) => {
 };
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
-const TODAY_STR = TODAY.toISOString().split("T")[0]; // normalize today to midnight
+const TODAY_STR = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, "0")}-${String(TODAY.getDate()).padStart(2, "0")}`; // data local (evita virar o dia às 21h)
 const fmt = (d) => { try { return parseLocal(d).toLocaleDateString("pt-BR"); } catch { return d; } };
 const daysLeft = (dl) => {
   const target = parseLocal(dl);
@@ -144,6 +147,29 @@ function sortProdRows(rows) {
   });
 }
 
+// Lista de vendedores cadastrados (aba Equipe > Vendedores). Mantém o valor atual mesmo se o vendedor foi removido.
+function sellerNames(data, current) {
+  const names = (data?.sellers || []).map(s => s.name).filter(Boolean);
+  if (current && !names.includes(current)) names.push(current);
+  return names;
+}
+const sellerColor = (data, name) => (data?.sellers || []).find(s => s.name === name)?.color || SELLER_COLORS[name] || "#9ca3af";
+// Próximo número de pedido sem repetir (mesmo após excluir pedidos)
+function nextOrderId(orders) {
+  const max = (orders || []).reduce((m, o) => {
+    const n = parseInt(String(o.id || "").replace(/^PED-/, ""), 10);
+    return /^PED-\d+$/.test(o.id || "") && n > m ? n : m;
+  }, 0);
+  let id = `PED-${String(max + 1).padStart(3, "0")}`;
+  while ((orders || []).some(o => o.id === id)) id = `PED-${String(parseInt(id.slice(4)) + 1).padStart(3, "0")}`;
+  return id;
+}
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const CUR_MONTH = monthKey(TODAY);
+const NEXT_MONTH = monthKey(new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 1));
+const PREV_MONTH = monthKey(new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1));
+const money = (v) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR")}`;
+
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
 function AppLogo({ collapsed = false, className = "" }) {
   return (
@@ -158,7 +184,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
   const params = new URLSearchParams(window.location.search);
   const qsCompanyId = params.get('empresa');
   
-  const [data] = useState(propsData || loadData());
+  const [data] = useState(propsData || INITIAL_DATA);
   const [mode, setMode] = useState(qsCompanyId ? "employee" : "admin_login"); 
   // modes: "admin_login", "admin_register", "employee"
   
@@ -211,7 +237,8 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
       
       // Look for employee in app_data.users
       const users = cData.app_data?.users || [];
-      const emp = users.find(u => u.email === email && u.password === pw);
+      const login = email.trim().toLowerCase();
+      const emp = users.find(u => (u.email || "").trim().toLowerCase() === login && u.password === pw);
       if (!emp) throw new Error("Usuário ou senha incorretos.");
       
       onLogin({ id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], company_id: cData.id, company_name: cData.company_name });
@@ -318,7 +345,7 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
   const emptyItem = { itemId: "", toy: "", colors: "", price: "", observations: "", images: [], isMotor: false };
   const [form, setForm] = useState({
     clientName: order.clientName || "", voltage: order.voltage || "110V",
-    deadline: order.deadline || "", seller: order.seller || "", status: order.status || "aguardando",
+    deadline: order.deadline || "", seller: order.seller || "", status: order.status || "aguardando", priority: !!order.priority,
     items: order.items ? order.items.map(it => ({ ...it, images: it.images || [], colors: Array.isArray(it.colors) ? it.colors.join(",") : it.colors })) : [{ ...emptyItem }]
   });
   const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white focus:border-orange-500" : "bg-gray-50 border-gray-200 text-gray-900 focus:border-orange-400"}`;
@@ -366,14 +393,6 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
                     ${dark ? "border-gray-700" : "border-gray-200"}`}>
           <div>
             <h3 className={`font-black text-lg ${dark ? "text-white" : "text-gray-900"}`}>Editar Pedido</h3>
-          <div className="flex gap-2">
-            <select value={calMonth} onChange={e => setCalMonth(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
-              {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"].map((m,i)=><option key={i} value={i}>{m}</option>)}
-            </select>
-            <select value={calYear} onChange={e => setCalYear(parseInt(e.target.value))} className="bg-transparent border-none text-xs font-bold outline-none cursor-pointer">
-              {[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
             <span className="font-mono text-sm font-bold text-orange-400">{order.id}</span>
           </div>
           <button onClick={onClose} className={`p-2 rounded-xl ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
@@ -387,8 +406,8 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
             <div><label className={lc}>Vendedor</label>
               <select value={form.seller} onChange={e => setForm({ ...form, seller: e.target.value })}
                 className={ic}>
-                <option value="">— selecione —</option>{["Luan", "Emerson", "Sidnei"].map(s => <option
-                  key={s}>{s}</option>)}
+                <option value="">— selecione —</option>{sellerNames(data, form.seller).map(s => <option
+                  key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div><label className={lc}>Prazo</label><input type="date" value={form.deadline}
@@ -404,6 +423,7 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
               <option value="producao">Em Produção</option>
               <option value="concluido">Concluído</option>
             </select></div>
+            <div className="flex items-end"><label className="flex items-center gap-2 cursor-pointer pb-2"><input type="checkbox" checked={!!form.priority} onChange={e => setForm({ ...form, priority: e.target.checked })} /><span className={`text-sm font-bold ${dark ? "text-red-400" : "text-red-600"}`}>🚨 Prioridade</span></label></div>
           </div>
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -503,7 +523,7 @@ function OrdersTab({ data, setData, dark }) {
   const pdfRef = useRef(null);
 
   const orders = data.orders;
-  const thisMonth = orders.filter(o => o.createdAt?.startsWith("2026-03"));
+  const thisMonth = orders.filter(o => o.createdAt?.startsWith(CUR_MONTH));
   const totalItems = orders.reduce((a, o) => a + (o.items?.filter(it => !it.isMotor).length || 0), 0);
   const done = orders.filter(o => o.status === "concluido").length;
   const delayed = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0).length;
@@ -514,7 +534,7 @@ function OrdersTab({ data, setData, dark }) {
   else if (filterType === "atrasados") baseFiltered = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0);
   
   const filtered = baseFiltered.filter(o =>
-    o.clientName.toLowerCase().includes(search.toLowerCase()) || (o.items || []).some(it => it.toy.toLowerCase().includes(search.toLowerCase())) || o.id.includes(search));
+    (o.clientName || "").toLowerCase().includes(search.toLowerCase()) || (o.items || []).some(it => (it.toy || "").toLowerCase().includes(search.toLowerCase())) || String(o.id).toLowerCase().includes(search.toLowerCase()));
   const totalPages = Math.ceil(filtered.length / ORDERS_PER_PAGE);
   const pagedOrders = filtered.slice((page - 1) * ORDERS_PER_PAGE, page * ORDERS_PER_PAGE);
 
@@ -567,21 +587,21 @@ function OrdersTab({ data, setData, dark }) {
             "voltage":"110V ou 220V",
             "deadline":"YYYY-MM-DD — ATENÇÃO: procure o prazo de FABRICAÇÃO/CONFECÇÃO. Ele aparece como 'PRAZO' seguido
             de data nas observações. NÃO é a data de emissão. Se houver dois prazos, use o ÚLTIMO.",
-            "seller":"nome do representante/vendedor — IMPORTANTE: Apenas existem 3 vendedores autorizados: Luan, Emerson, Sidnei. Procure EXATAMENTE nos campos: REPRESENTANTE, Vendedor,
-            Representante, Rep., Atendente, Vendido por, Agente. Copie o nome exatamente como está. Caso não encontre nenhum dos 3 explicitamente, aplique a lógica de dedução ou deixe em branco caso seja totalmente incerto.",
+            "seller":"nome do representante/vendedor — IMPORTANTE: os vendedores cadastrados são: ${sellerNames(data).join(", ") || "(nenhum cadastrado)"}. Procure EXATAMENTE nos campos: REPRESENTANTE, Vendedor,
+            Representante, Rep., Atendente, Vendido por, Agente. Copie o nome exatamente como está. Caso não encontre nenhum deles explicitamente, aplique a lógica de dedução ou deixe em branco caso seja totalmente incerto.",
             "items":[{"toy":"nome","colors":["cor1"],"price":0,"observations":"obs","isMotor":false}]
             }
             Motores/sopradores/bombas: isMotor=true. ATENÇÃO: NÃO coloque observações (observations) em motores/sopradores/bombas, deixe vazio. Coloque TODAS as observações do pedido no item do brinquedo principal. Crie um item por brinquedo.`;
     try {
       const
-        content = pdfData ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: "Extraia os dados deste pedido em PDF. Busque o REPRESENTANTE para o vendedor. Lembre-se, os unicos vendedores são Luan, Emerson e Sidnei. E busque o campo PRAZO nas observações para o prazo de fabricação." }] : `Extraia os dados:\n\n${text}\n\nLembre-se: os únicos vendedores são Luan, Emerson e Sidnei.`;
+        content = pdfData ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: `Extraia os dados deste pedido em PDF. Busque o REPRESENTANTE para o vendedor (vendedores cadastrados: ${sellerNames(data).join(", ") || "nenhum"}). E busque o campo PRAZO nas observações para o prazo de fabricação.` }] : `Extraia os dados:\n\n${text}\n\nVendedores cadastrados: ${sellerNames(data).join(", ") || "nenhum"}.`;
       const res = await fetch("/.netlify/functions/anthropic", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "claude-3-5-sonnet-20241022",
+          model: "claude-sonnet-4-6",
           max_tokens: 2000,
           system: sys,
           messages: [{ role: "user", content }]
@@ -601,8 +621,8 @@ function OrdersTab({ data, setData, dark }) {
         }
         throw new Error(errMsg);
       }
-      const raw = d.content[0].text.replace(/```json|```/g, "").trim();
-      const p = JSON.parse(raw);
+      const raw = (d.content || []).map(c => c.text || "").join("").replace(/```json|```/g, "").trim();
+      const p = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
       setExtracted(p);
       setExtHeader({ orderNumber: p.orderNumber || "", clientName: p.clientName || "", city: p.city || "", state: p.state || "", phone: p.phone || "", email: p.email || "", voltage: p.voltage || "110V", deadline: p.deadline || "", seller: p.seller || "" });
       setExtItems((p.items || []).map(it => ({ ...it, images: [], colors: Array.isArray(it.colors) ? it.colors.join(",") : (it.colors || "") })));
@@ -612,7 +632,7 @@ function OrdersTab({ data, setData, dark }) {
 
   const saveExt = () => {
     const nd = { ...data }; const rawNum = extHeader.orderNumber?.trim(); const
-      newId = rawNum || `PED-${String(nd.orders.length + 1).padStart(3, "0")}`;
+      newId = (rawNum && !nd.orders.some(o => o.id === rawNum)) ? rawNum : nextOrderId(nd.orders);
     const items = extItems.map((it, i) => ({
       itemId: `${newId}-${i + 1}`, toy: it.toy, colors: typeof
         it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price) || 0, observations: it.observations || "", images: it.images || [], isMotor: !!it.isMotor
@@ -637,7 +657,9 @@ function OrdersTab({ data, setData, dark }) {
   };
 
   const addManual = () => {
-    const nd = { ...data }; const newId = `PED-${String(nd.orders.length + 1).padStart(3, "0")}`;
+    if (!manualHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
+    if (!manualItems.some(it => it.toy?.trim())) { alert("Informe ao menos um item."); return; }
+    const nd = { ...data }; const newId = nextOrderId(nd.orders);
     const
       items = manualItems.map((it, i) => ({ itemId: `${newId}-${i + 1}`, toy: it.toy, colors: it.colors.split(",").map(c => c.trim()).filter(Boolean), price: Number(it.price) || 0, observations: it.observations, images: it.images || [], isMotor: !!it.isMotor }));
     const total = items.reduce((a, b) => a + b.price, 0);
@@ -646,7 +668,7 @@ function OrdersTab({ data, setData, dark }) {
     const ci = nd.clients.findIndex(c => c.name.toLowerCase() === manualHeader.clientName?.toLowerCase());
     if (ci >= 0) { nd.clients[ci].totalOrders = (nd.clients[ci].totalOrders || 0) + 1; nd.clients[ci].totalSpent = (nd.clients[ci].totalSpent || 0) + total; }
     else
-      if (manualHeader.clientName) nd.clients.push({ id: Date.now(), name: manualHeader.clientName, city: "", phone: "", email: "", totalOrders: 1, totalSpent: total });
+      if (manualHeader.clientName) nd.clients.push({ id: Date.now(), name: manualHeader.clientName, city: manualHeader.city || "", state: manualHeader.state || "", phone: "", email: "", totalOrders: 1, totalSpent: total });
     setData(nd); saveData(nd); setShowForm(false); setManualItems([{ toy: "", colors: "", price: "", observations: "", images: [], isMotor: false }]); setManualHeader({ clientName: "", voltage: "110V", deadline: "", seller: "" });
   };
 
@@ -939,7 +961,7 @@ function OrdersTab({ data, setData, dark }) {
         <div className="relative"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar..." className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
         <div className="space-y-4">
           {pagedOrders.map(o => {
-            const s = statusBadge(o.deadline, o.status === "concluido"); const isSel = selected.has(o.id); const sc = SELLER_COLORS[o.seller] || "#9ca3af"; const ni = (o.items || []).filter(it => !it.isMotor).length; const mi = (o.items || []).filter(it => it.isMotor).length;
+            const s = statusBadge(o.deadline, o.status === "concluido"); const isSel = selected.has(o.id); const sc = sellerColor(data, o.seller); const ni = (o.items || []).filter(it => !it.isMotor).length; const mi = (o.items || []).filter(it => it.isMotor).length;
             return (
               <div key={o.id} onClick={() => selectMode && togSel(o.id)} className={`rounded-xl border ${selectMode ? "cursor-pointer" : ""} ${isSel ? "border-orange-500 bg-orange-500/5" : dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${o.priority ? "ring-2 ring-red-500/50" : ""}`}>
                 <div className="flex items-center justify-between p-4 gap-3 flex-wrap">
@@ -1031,27 +1053,28 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
   const isMulti = row._isMulti;
 
   const StageNode = ({ label, worker, wList, field, doneField }) => (
-    <div className={`flex flex-col p-3 rounded-xl border transition-all ${dark ? "bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/80" : "bg-gray-50 border-gray-200 hover:bg-gray-100"} flex-1 min-w-[120px]`}>
+    <div className={`flex flex-col p-3 rounded-xl border transition-all ${dark ? "bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/80" : "bg-gray-50 border-gray-200 hover:bg-gray-100"} flex-1 min-w-0`}>
        <div className="flex items-center justify-between mb-2">
          <span className={`text-[10px] sm:text-xs font-black uppercase tracking-widest ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
          <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : (worker ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : "bg-gray-200/50 dark:bg-gray-700/50 text-gray-500 border border-transparent")} ${(!editMode || !canEdit || !worker) ? "opacity-50 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : (worker ? "Em Progresso" : "Pendente")}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : (worker ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : (dark ? "bg-gray-800 text-gray-400 border border-gray-700" : "bg-gray-100 text-gray-500 border border-gray-200"))} ${(!editMode || !canEdit || !worker) ? "opacity-70 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : (worker ? "Em Progresso" : "Pendente")}
          </button>
        </div>
        <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
           className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold outline-none transition-all border shadow-sm
             ${worker ? (dark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-300 text-emerald-700") : (dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900")}
-            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500 focus:ring-1 focus:ring-orange-500"}>
+            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500 focus:ring-1 focus:ring-orange-500"}
           `}>
           <option value="">👤 Atribuir...</option>
-          {wList.map(w => <option key={w.id}>{w.name}</option>)}
+          {wList.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+          {worker && !wList.some(w => w.name === worker) && <option value={worker}>{worker}</option>}
        </select>
     </div>
   );
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""} ${row.done ? "opacity-70" : ""}`}>
-      <div className="flex items-start justify-between p-4 gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
@@ -1111,14 +1134,14 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
               </button>
             )}
             <button onClick={() => canEdit && editMode && onMarkDone(row._itemId, row._orderId)} disabled={!canEdit || !editMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${row.done || pct === 100 ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : dark ? "border-gray-700 text-gray-400 hover:border-emerald-500/50" : "border-gray-300 text-gray-500"} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
-              <Check size={12} />{row.done || pct === 100 ? "Concluído" : "Marcar feito"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${row.done ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : pct === 100 ? "border-emerald-500 text-emerald-500 animate-pulse" : dark ? "border-gray-700 text-gray-400 hover:border-emerald-500/50" : "border-gray-300 text-gray-500"} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
+              <Check size={12} />{row.done ? "Concluído" : pct === 100 ? "Enviar p/ finalização" : "Marcar feito"}
             </button>
           </div>
         </div>
       </div>
       <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
           <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
           <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
@@ -1144,7 +1167,7 @@ function ProductionTab({ data, setData, dark, user }) {
   const [savedState, setSavedState] = useState(null); // snapshot before edit
   const [form, setForm] = useState({ toy: "", clientName: "", deadline: "", seller: "", colors: "", voltage: "110V", observations: "" });
 
-  const canEdit = canEditProd(user?.role);
+  const canEdit = canEditProd(user);
 
   const allRows = [];
   data.orders.forEach(order => {
@@ -1156,11 +1179,15 @@ function ProductionTab({ data, setData, dark, user }) {
   });
 
   const sortedRows = sortProdRows(allRows);
-  const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido" && (r.clientName?.toLowerCase().includes(search.toLowerCase()) || r.toy?.toLowerCase().includes(search.toLowerCase()) || r._orderId?.includes(search)));
-  const doneRows = sortedRows.filter(r => r.done || r.status === "concluido");
-  const thisMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-03-01") && d <= new Date("2026-03-31"); });
-  const nextMon = sortedRows.filter(r => { const d = new Date(r.deadline); return d >= new Date("2026-04-01") && d <= new Date("2026-04-30"); });
-  const doneMon = doneRows.filter(r => r.deadline >= "2026-03-01" && r.deadline <= "2026-03-31");
+  const q = search.trim().toLowerCase();
+  const matches = (r) => !q || r.clientName?.toLowerCase().includes(q) || r.toy?.toLowerCase().includes(q) || String(r._orderId || "").toLowerCase().includes(q);
+  const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido" && matches(r));
+  const doneRows = sortedRows.filter(r => (r.done || r.status === "concluido") && matches(r));
+  // Prazos do mês atual / próximo mês (calculado pela data de hoje, não mais fixo em março/abril)
+  const notDone = sortedRows.filter(r => !r.done && r.status !== "concluido");
+  const thisMon = notDone.filter(r => (r.deadline || "").startsWith(CUR_MONTH));
+  const nextMon = notDone.filter(r => (r.deadline || "").startsWith(NEXT_MONTH));
+  const doneMon = doneRows.filter(r => (r.deadline || "").startsWith(CUR_MONTH));
   const delayedRows = activeRows.filter(r => daysLeft(r.deadline) < 0);
 
   const workers = {
@@ -1170,7 +1197,7 @@ function ProductionTab({ data, setData, dark, user }) {
     montagem: data.team.filter(t => (t.role === "Preparação" || t.role === "Montagem") && t.status === "ativo"),
   };
 
-  const filteredRows = filterStatus === "todos" ? sortedRows
+  const filteredRows = filterStatus === "todos" ? [...activeRows, ...doneRows]
     : filterStatus === "atrasados" ? activeRows.filter(r => daysLeft(r.deadline) < 0)
       : filterStatus === "concluidos" ? doneRows
         : filterStatus === "urgente" ? activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); })
@@ -1232,10 +1259,11 @@ function ProductionTab({ data, setData, dark, user }) {
   };
 
   const addOrder = () => {
-    const nd = { ...data }; const newId = `PED-${String(nd.orders.length + 1).padStart(3, "0")}`; const itemId = `${newId}-1`;
+    if (!form.toy?.trim() || !form.clientName?.trim()) { alert("Informe o brinquedo e o cliente."); return; }
+    const nd = { ...data }; const newId = nextOrderId(nd.orders); const itemId = `${newId}-1`;
     nd.orders.push({ id: newId, clientName: form.clientName, voltage: form.voltage, deadline: form.deadline, seller: form.seller, totalPrice: 0, status: "producao", createdAt: TODAY_STR, priority: false, items: [{ itemId, toy: form.toy, colors: form.colors.split(",").map(c => c.trim()).filter(Boolean), price: 0, observations: form.observations, image: null, isMotor: false }] });
     nd.production.push({ itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false });
-    setData(nd); saveData(nd); setShowAdd(false);
+    setData(nd); saveData(nd); setShowAdd(false); setForm({ toy: "", clientName: "", deadline: "", seller: "", colors: "", voltage: "110V", observations: "" });
   };
 
   const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`;
@@ -1262,8 +1290,8 @@ function ProductionTab({ data, setData, dark, user }) {
           </div>
         </div>
         {/* Row 2: stats compact */}
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          {[{ label: "Atrasados", value: delayedRows.length, color: "#ef4444" }, { label: "Mês", value: thisMon.length, color: "#f97316" }, { label: "Prox. Mês", value: nextMon.length, color: "#3b82f6" }, { label: "Montados", value: doneMon.length, color: "#22c55e" }].map(s => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          {[{ label: "Atrasados", value: delayedRows.length, color: "#ef4444" }, { label: "Prazo no mês", value: thisMon.length, color: "#f97316" }, { label: "Prox. Mês", value: nextMon.length, color: "#3b82f6" }, { label: "Prontos no mês", value: doneMon.length, color: "#22c55e" }].map(s => (
             <div key={s.label} className={`rounded-lg px-2 py-1.5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} flex items-center gap-1.5`}>
               <span className="text-lg font-black leading-none" style={{ color: s.color }}>{s.value}</span>
               <span className={`text-xs font-medium leading-tight ${dark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
@@ -1274,7 +1302,7 @@ function ProductionTab({ data, setData, dark, user }) {
         <div className="relative mb-2"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por cliente ou brinquedo..." className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`} /></div><div className="flex gap-1.5 flex-wrap">
           {filterOpts.map(([v, l]) => (
             <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>
-              {l}{" "}<span className="opacity-70">{v === "todos" ? `(${sortedRows.length})` : v === "atrasados" ? `(${delayedRows.length})` : v === "concluidos" ? `(${doneRows.length})` : v === "urgente" ? `(${activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); }).length})` : ""}</span>
+              {l}{" "}<span className="opacity-70">{v === "todos" ? `(${activeRows.length + doneRows.length})` : v === "atrasados" ? `(${delayedRows.length})` : v === "concluidos" ? `(${doneRows.length})` : v === "urgente" ? `(${activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); }).length})` : ""}</span>
             </button>
           ))}
         </div>
@@ -1293,7 +1321,11 @@ function ProductionTab({ data, setData, dark, user }) {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {[["toy", "Brinquedo"], ["clientName", "Cliente"], ["deadline", "Prazo", "date"], ["seller", "Vendedor"], ["colors", "Cores"], ["observations", "Observações"]].map(([k, l, t]) => (
-                <div key={k}><label className={`block text-xs font-semibold uppercase mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{l}</label><input type={t || "text"} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} className={ic} /></div>
+                <div key={k}><label className={`block text-xs font-semibold uppercase mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{l}</label>
+                  {k === "seller"
+                    ? <select value={form.seller} onChange={e => setForm({ ...form, seller: e.target.value })} className={ic}><option value="">— selecione —</option>{sellerNames(data).map(n => <option key={n} value={n}>{n}</option>)}</select>
+                    : <input type={t || "text"} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} className={ic} />}
+                </div>
               ))}
             </div>
             <div className="flex gap-2 mt-3">
@@ -1317,7 +1349,7 @@ function FinalizationTab({ data, setData, dark, user }) {
   const [editMode, setEditMode] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [savedState, setSavedState] = useState(null);
-  const canEdit = user?.role === "admin" || user?.role === "finalizacao" || user?.role === "producao";
+  const canEdit = canEditFin(user);
 
   // Only items that are done in production
   const finRows = [];
@@ -1456,6 +1488,7 @@ function FinalizationTab({ data, setData, dark, user }) {
                     {row.done ? <><Check size={16} /> Finalizado</> : "Finalizar Item"}
                   </button>
                 </div>
+              </div>
               <div className={`h-1.5 ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
                 <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: row.done ? "#22c55e" : "linear-gradient(90deg,#f97316,#eab308)" }} />
               </div>
@@ -1487,7 +1520,7 @@ function FinalizationTab({ data, setData, dark, user }) {
 }
 
 // ─── DASHBOARD TAB ────────────────────────────────────────────────────────────
-function DashboardTab({ data, dark }) {
+function DashboardTab({ data, dark, goTo }) {
   const [salesPeriod, setSalesPeriod] = useState("mes");
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -1506,8 +1539,12 @@ function DashboardTab({ data, dark }) {
   const now = new Date();
   const currentMonthStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
   
-  const monthOrders = orders.filter(o => o.createdAt?.startsWith(currentMonthStr));
-  const monthRevenue = monthOrders.reduce((a, o) => a + (o.totalPrice || 0), 0);
+  // Faturamento do mês atual x mês anterior (comparação real, antes era um "+12,5%" fixo)
+  const revenueOf = (mk) => orders.filter(o => o.createdAt?.startsWith(mk)).reduce((a, o) => a + (Number(o.totalPrice) || 0), 0);
+  const monthOrders = orders.filter(o => o.createdAt?.startsWith(CUR_MONTH));
+  const monthRevenue = revenueOf(CUR_MONTH);
+  const prevRevenue = revenueOf(PREV_MONTH);
+  const growth = prevRevenue > 0 ? ((monthRevenue - prevRevenue) / prevRevenue) * 100 : null;
   const totalRevenue = orders.reduce((a, o) => a + (o.totalPrice || 0), 0);
   
   const activeOrders = orders.filter(o => o.status !== "concluido");
@@ -1559,17 +1596,17 @@ function DashboardTab({ data, dark }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-3-5-sonnet-20241022",
+          model: "claude-sonnet-4-6",
           max_tokens: 1000,
           system: "Você é um consultor de gestão industrial sênior. Analise os dados e forneça 3 insights estratégicos curtos e acionáveis para o diretor da empresa. Retorne APENAS os 3 pontos em formato de lista, sem introdução.",
           messages: [{ role: "user", content: `Analise estes dados da AGS Brinquedos:\n${JSON.stringify(statsSummary)}` }]
         })
       });
       const d = await res.json();
-      const text = d.content[0].text;
-      setAiInsights(text);
+      if (d.error || !d.content) throw new Error(d.error?.message || "Resposta inválida");
+      setAiInsights(d.content.map(c => c.text || "").join("\n").trim());
     } catch (err) {
-      setAiInsights("Não foi possível gerar insights no momento. Verifique sua chave de API.");
+      setAiInsights(`Não foi possível gerar insights agora (${err.message}). Confira a chave ANTHROPIC_API_KEY no painel da Netlify.`);
     }
     setAiLoading(false);
   };
@@ -1598,7 +1635,9 @@ function DashboardTab({ data, dark }) {
               </div>
               <div className="text-2xl font-black tabular-nums text-orange-500">R$ {monthRevenue.toLocaleString("pt-BR")}</div>
               <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                <TrendingUp size={12} className="text-emerald-500" /> +12.5% em relação ao mês anterior
+                {growth === null
+                  ? <>{monthOrders.length} pedido{monthOrders.length === 1 ? "" : "s"} este mês · sem vendas no mês anterior para comparar</>
+                  : <>{growth >= 0 ? <TrendingUp size={12} className="text-emerald-500" /> : <TrendingDown size={12} className="text-red-500" />} {growth >= 0 ? "+" : ""}{growth.toFixed(1).replace(".", ",")}% em relação ao mês anterior ({money(prevRevenue)})</>}
               </div>
             </div>
             <div className="stat-card stat-card-blue p-5">
@@ -1672,7 +1711,7 @@ function DashboardTab({ data, dark }) {
                   </div>
                   <span className="font-black text-sm tabular-nums">R$ {s.value.toLocaleString("pt-BR")}</span>
                 </div>
-                <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className={`w-full h-1.5 rounded-full overflow-hidden ${dark ? "bg-slate-800" : "bg-slate-100"}`}>
                   <div className="h-full transition-all duration-1000" style={{ width: `${(s.value / (salesBySeller[0]?.value || 1)) * 100}%`, backgroundColor: s.color }} />
                 </div>
               </div>
@@ -1687,9 +1726,9 @@ function DashboardTab({ data, dark }) {
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-black text-lg">Agenda de Entregas</h3>
             <div className="flex items-center gap-2">
-              <button onClick={() => setCalMonth(m => m === 0 ? 11 : m - 1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={16}/></button>
+              <button onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(calMonth - 1); }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={16}/></button>
               <span className="text-xs font-black uppercase tracking-widest w-28 text-center">{monthNames[calMonth]} {calYear}</span>
-              <button onClick={() => setCalMonth(m => m === 11 ? 0 : m + 1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronRight size={16}/></button>
+              <button onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(calMonth + 1); }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronRight size={16}/></button>
             </div>
           </div>
           <div className="grid grid-cols-7 gap-1 mb-2">
@@ -1717,14 +1756,14 @@ function DashboardTab({ data, dark }) {
         <div className="card-surface p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-black text-lg">Performance Regional</h3>
-            <button className="text-[10px] font-black uppercase text-orange-500 hover:underline">Ver no Mapa</button>
+            {goTo && <button onClick={() => goTo("routes")} className="text-[10px] font-black uppercase text-orange-500 hover:underline">Ver no Mapa</button>}
           </div>
           <div className="space-y-4">
              {/* Mini ranking of states */}
              {Object.entries(
                 orders.reduce((acc, o) => {
                   const client = clients.find(c => c.name === o.clientName);
-                  const uf = (client?.state || "N/A").trim().toUpperCase().slice(0, 2);
+                  const uf = clientUF(client) || "N/A";
                   if (!acc[uf]) acc[uf] = 0;
                   acc[uf] += (o.totalPrice || 0);
                   return acc;
@@ -1733,11 +1772,11 @@ function DashboardTab({ data, dark }) {
                 <div key={uf} className="flex items-center justify-between p-3 rounded-2xl bg-slate-500/5 border border-transparent hover:border-slate-500/20 transition-all">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-sm">{uf}</div>
-                    <div className="text-sm font-bold">{uf === "N/A" ? "Não Definido" : `Estado de ${uf}`}</div>
+                    <div className="text-sm font-bold">{uf === "N/A" ? "Estado não definido" : (UF_NAMES[uf] || uf)}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-black tabular-nums">R$ {val.toLocaleString("pt-BR")}</div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Líder Regional</div>
+                    {i === 0 && uf !== "N/A" && <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Líder Regional</div>}
                   </div>
                 </div>
              ))}
@@ -1758,11 +1797,11 @@ function DashboardTab({ data, dark }) {
                 <div key={o.id} className={`p-4 rounded-2xl border ${dark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-mono text-xs font-black text-orange-400">{o.id}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-400" : "bg-blue-500/20 text-blue-400"}`}>{o.status}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-400" : "bg-blue-500/20 text-blue-400"}`}>{STATUS_LABEL[o.status] || o.status}</span>
                   </div>
                   <div className="font-black text-base truncate">{o.clientName}</div>
                   <div className="text-xs text-slate-500 font-bold mt-1">
-                    {(o.items || []).length} Brinquedos · R$ {o.totalPrice.toLocaleString("pt-BR")}
+                    {(o.items || []).filter(it => !it.isMotor).length} brinquedo(s) · {money(o.totalPrice)}
                   </div>
                 </div>
               ))}
@@ -1787,7 +1826,10 @@ function ClientsTab({ data, setData, dark }) {
     const nd = { ...data };
     const ci = nd.clients.findIndex(c => c.id === editingClient.id);
     if (ci >= 0) {
-      nd.clients[ci] = editingClient;
+      const oldName = nd.clients[ci].name;
+      const newName = (editingClient.name || "").trim() || oldName;
+      nd.clients[ci] = { ...editingClient, name: newName };
+      if (newName !== oldName) nd.orders = nd.orders.map(o => o.clientName === oldName ? { ...o, clientName: newName } : o);
       setData(nd);
       saveData(nd);
     }
@@ -1799,7 +1841,7 @@ function ClientsTab({ data, setData, dark }) {
 
   const filtered = data.clients.filter(c => {
     const q = search.toLowerCase();
-    const matchName = c.name.toLowerCase().includes(q) || c.city?.toLowerCase().includes(q);
+    const matchName = (c.name || "").toLowerCase().includes(q) || c.city?.toLowerCase().includes(q) || (clientUF(c) || "").toLowerCase() === q;
     const lastSeller = getSellerForClient(c.name);
     const matchSeller = !sellerFilter || (lastSeller === sellerFilter);
     const matchSearch = !q || matchName;
@@ -1809,7 +1851,7 @@ function ClientsTab({ data, setData, dark }) {
   return (
     <div className="space-y-5">
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
-      <div><h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Clientes</h2><p className={`text-sm ${dark ? "text-gray-400" : "text-gray-500"}`}>Histórico e informações — somente visualização</p></div>
+      <div><h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Clientes</h2><p className={`text-sm ${dark ? "text-gray-400" : "text-gray-500"}`}>Histórico de pedidos e dados de contato</p></div>
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente ou cidade..." className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
         <select value={sellerFilter} onChange={e => setSellerFilter(e.target.value)} className={`px-3 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
@@ -1819,16 +1861,16 @@ function ClientsTab({ data, setData, dark }) {
       </div>
       <div className="space-y-3">
         {filtered.map(c => {
-          const orders = clientOrders(c.name); const total = orders.reduce((a, b) => a + (b.totalPrice || 0), 0); const lastSeller = getSellerForClient(c.name); const sc = SELLER_COLORS[lastSeller] || "#9ca3af"; const isOpen = openClient === c.id;
+          const orders = clientOrders(c.name); const total = orders.reduce((a, b) => a + (b.totalPrice || 0), 0); const lastSeller = getSellerForClient(c.name); const sc = sellerColor(data, lastSeller); const isOpen = openClient === c.id;
           return (
             <div key={c.id} className={`rounded-xl border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${isOpen ? "border-orange-500/40" : ""}`}>
               <div className="flex items-center justify-between p-4 gap-3">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-white text-base flex-shrink-0" style={{ background: `linear-gradient(135deg,${sc}88,${sc})` }}>{c.name.slice(0, 2).toUpperCase()}</div>
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center font-black text-white text-base flex-shrink-0" style={{ background: `linear-gradient(135deg,${sc}88,${sc})` }}>{(c.name || "?").slice(0, 2).toUpperCase()}</div>
                   <div className="flex flex-col gap-0.5">
                     <div className={`font-bold text-lg ${dark ? "text-white" : "text-gray-900"}`}>{c.name}</div>
                     <div className={`text-xs font-medium ${dark ? "text-gray-300" : "text-gray-600"}`}>
-                      {c.city || "S/ Cidade"} {c.state ? `- ${c.state}` : ""}
+                      {c.city || "S/ Cidade"} {clientUF(c) ? `- ${clientUF(c)}` : <span className="text-amber-500 font-bold">· sem estado</span>}
                       {c.phone && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">📞 {c.phone}</span>}
                       {c.email && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">✉️ {c.email}</span>}
                     </div>
@@ -1884,6 +1926,34 @@ function ClientsTab({ data, setData, dark }) {
         })}
         {filtered.length === 0 && <div className={`text-center py-12 ${dark ? "text-gray-500" : "text-gray-400"}`}><Users size={32} className="mx-auto mb-3 opacity-40" /><p className="text-sm">Nenhum cliente encontrado</p></div>}
       </div>
+
+      {editingClient && (
+        <div className="fixed inset-0 z-[60] p-4 bg-black/80 backdrop-blur-sm flex items-center justify-center" onClick={() => setEditingClient(null)}>
+          <form onSubmit={saveClientEdit} onClick={e => e.stopPropagation()} className={`w-full max-w-lg rounded-3xl border shadow-2xl p-6 space-y-4 ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`}>
+            <div className="flex items-center justify-between">
+              <h3 className={`font-black text-xl ${dark ? "text-white" : "text-gray-900"}`}>Editar Cliente</h3>
+              <button type="button" onClick={() => setEditingClient(null)} className={`p-2 rounded-xl ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}><X size={18} /></button>
+            </div>
+            {[["name", "Nome"], ["city", "Cidade"], ["phone", "Telefone"], ["email", "E-mail"]].map(([k, l]) => (
+              <div key={k}>
+                <label className={`block text-xs font-semibold uppercase tracking-wide mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{l}</label>
+                <input value={editingClient[k] || ""} onChange={e => setEditingClient({ ...editingClient, [k]: e.target.value })} className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`} />
+              </div>
+            ))}
+            <div>
+              <label className={`block text-xs font-semibold uppercase tracking-wide mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>Estado (usado no Mapa)</label>
+              <select value={normalizeState(editingClient.state) || ""} onChange={e => setEditingClient({ ...editingClient, state: e.target.value })} className={`w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`}>
+                <option value="">— selecione —</option>
+                {Object.entries(UF_NAMES).sort((a, b) => a[1].localeCompare(b[1])).map(([uf, n]) => <option key={uf} value={uf}>{n} ({uf})</option>)}
+              </select>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="submit" className="flex-1 py-2.5 rounded-xl text-sm font-black text-white" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Salvar</button>
+              <button type="button" onClick={() => setEditingClient(null)} className={`flex-1 py-2.5 rounded-xl text-sm font-bold ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>Cancelar</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {activeOrderDetails && (
         <div className="fixed inset-0 z-[60] p-4 bg-black/80 backdrop-blur-sm" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }} onClick={() => setActiveOrderDetails(null)}>
@@ -1941,74 +2011,6 @@ function ClientsTab({ data, setData, dark }) {
 }
 
 // ─── TEAM TAB ─────────────────────────────────────────────────────────────────
-
-function EditOrderModal({ order, data, setData, dark, onClose }) {
-  const [form, setForm] = useState({ ...order });
-  const [items, setItems] = useState([...(order.items || [])]);
-
-  const handleSave = () => {
-    const nd = { ...data };
-    const idx = nd.orders.findIndex(o => o.id === order.id);
-    if (idx >= 0) {
-      nd.orders[idx] = { ...form, items };
-      setData(nd);
-      saveData(nd);
-    }
-    onClose();
-  };
-
-  const updItem = (idx, field, val) => {
-    const ni = [...items];
-    ni[idx] = { ...ni[idx], [field]: val };
-    setItems(ni);
-  };
-
-  const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`;
-  const lc = `block text-xs font-semibold uppercase tracking-wide mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
-      <div className={`w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border shadow-2xl ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`} onClick={e => e.stopPropagation()}>
-        <div className={`sticky top-0 px-6 py-4 flex items-center justify-between border-b z-10 ${dark ? "bg-gray-900/90 border-gray-800" : "bg-white/90 border-gray-100"} backdrop-blur-md`}>
-          <h3 className={`font-black text-xl ${dark ? "text-white" : "text-gray-900"}`}>Editar Pedido {order.id}</h3>
-          <button onClick={onClose} className={`p-2 rounded-xl ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}><X size={20}/></button>
-        </div>
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="col-span-2"><label className={lc}>Cliente</label><input value={form.clientName} onChange={e => setForm({ ...form, clientName: e.target.value })} className={ic} /></div>
-            <div><label className={lc}>Vendedor</label>
-              <select value={form.seller} onChange={e => setForm({ ...form, seller: e.target.value })} className={ic}>
-                <option value="">— selecione —</option>
-                {(data.sellers || []).map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
-              </select>
-            </div>
-            <div><label className={lc}>Prazo</label><input type="date" value={form.deadline} onChange={e => setForm({ ...form, deadline: e.target.value })} className={ic} /></div>
-            <div><label className={lc}>Voltagem</label><select value={form.voltage} onChange={e => setForm({ ...form, voltage: e.target.value })} className={ic}><option>110V</option><option>220V</option></select></div>
-            <div><label className="flex items-center gap-2 cursor-pointer mt-6"><input type="checkbox" checked={form.priority} onChange={e => setForm({ ...form, priority: e.target.checked })} /><span className={lc}>Prioridade 🚨</span></label></div>
-          </div>
-          <div className="space-y-4">
-            <h4 className={`font-black text-sm uppercase tracking-widest ${dark ? "text-gray-400" : "text-gray-500"}`}>Itens do Pedido</h4>
-            {items.map((it, idx) => (
-              <div key={idx} className={`p-4 rounded-2xl border ${dark ? "bg-gray-800/40 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="col-span-2"><label className={lc}>Brinquedo</label><input value={it.toy} onChange={e => updItem(idx, "toy", e.target.value)} className={ic} /></div>
-                  <div><label className={lc}>Preço R$</label><input type="number" value={it.price} onChange={e => updItem(idx, "price", Number(e.target.value))} className={ic} /></div>
-                  {!it.isMotor && <div><label className={lc}>Cores</label><input value={(it.colors || []).join(", ")} onChange={e => updItem(idx, "colors", e.target.value.split(",").map(c => c.trim()).filter(Boolean))} className={ic} /></div>}
-                  <div className="col-span-4"><label className={lc}>Observações</label><input value={it.observations} onChange={e => updItem(idx, "observations", e.target.value)} className={ic} /></div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-3 pt-4 border-t" style={{ borderColor: dark ? "#374151" : "#e5e7eb" }}>
-            <button onClick={handleSave} className="flex-1 py-3 rounded-2xl text-sm font-black text-white shadow-lg shadow-orange-500/20" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Salvar Alterações</button>
-            <button onClick={onClose} className={`flex-1 py-3 rounded-2xl text-sm font-bold ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>Cancelar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function TeamTab({ data, setData, dark, user }) {
   const [activeSubTab, setActiveSubTab] = useState('members'); 
   const [showForm, setShowForm] = useState(false);
@@ -2025,9 +2027,17 @@ function TeamTab({ data, setData, dark, user }) {
   const addSeller = () => { if (!sellerForm.name) return; const nd = { ...data }; nd.sellers = nd.sellers || []; nd.sellers.push({ id: Date.now(), ...sellerForm }); setData(nd); saveData(nd); setSellerForm({ name: '', color: '#3b82f6' }); setShowSellerForm(false); };
   const removeSeller = (id) => { const nd = { ...data }; nd.sellers = nd.sellers.filter(s => s.id !== id); setData(nd); saveData(nd); };
 
+  const [copied, setCopied] = useState(false);
+  const accessLink = `${window.location.origin}/?empresa=${user?.company_id || ""}`;
+  const copyLink = async () => { try { await navigator.clipboard.writeText(accessLink); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", accessLink); } };
+  const togglePerm = (k) => setUserForm(f => ({ ...f, permissions: f.permissions.includes(k) ? f.permissions.filter(x => x !== k) : [...f.permissions, k] }));
+  const toggleUserPerm = (uid, k) => { const nd = { ...data }; nd.users = nd.users.map(u => u.id !== uid ? u : { ...u, permissions: (u.permissions || []).includes(k) ? u.permissions.filter(x => x !== k) : [...(u.permissions || []), k] }); setData(nd); saveData(nd); };
+  const toggleMemberStatus = (id) => { const nd = { ...data }; nd.team = nd.team.map(m => m.id !== id ? m : { ...m, status: m.status === 'ativo' ? 'inativo' : 'ativo' }); setData(nd); saveData(nd); };
+
   const addUser = () => {
-    if (!userForm.name || !userForm.email || !userForm.password) return;
-    const nd = { ...data }; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email, password: userForm.password, role: 'user', permissions: userForm.permissions });
+    if (!userForm.name || !userForm.email || !userForm.password) { alert('Preencha nome, usuário e senha.'); return; }
+    if ((data.users || []).some(u => (u.email || '').toLowerCase() === userForm.email.trim().toLowerCase())) { alert('Esse usuário já existe.'); return; }
+    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: userForm.permissions });
     setData(nd); saveData(nd); setUserForm({ name: '', email: '', password: '', permissions: ['orders'] }); setShowUserForm(false);
   };
 
@@ -2042,9 +2052,9 @@ function TeamTab({ data, setData, dark, user }) {
         </div>
       </div>
 
-      <div className='flex gap-2 p-1 bg-black/5 rounded-xl w-fit'>
+      <div className={`flex gap-2 p-1 rounded-xl w-fit ${dark ? 'bg-gray-900 border border-gray-800' : 'bg-black/5'}`}>
         {[{id:'members', label:'Colaboradores', icon:<Users size={14}/>}, {id:'logins', label:'Logins', icon:<Shield size={14}/>}, {id:'sellers', label:'Vendedores', icon:<UserPlus size={14}/>}].map(t => (
-          <button key={t.id} onClick={() => setActiveSubTab(t.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeSubTab === t.id ? 'bg-white shadow-sm text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>
+          <button key={t.id} onClick={() => setActiveSubTab(t.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeSubTab === t.id ? (dark ? 'bg-gray-800 shadow-sm text-orange-500' : 'bg-white shadow-sm text-orange-600') : 'text-slate-500 hover:text-orange-500'}`}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -2060,18 +2070,21 @@ function TeamTab({ data, setData, dark, user }) {
                 <select value={form.role} onChange={e => setForm({...form, role:e.target.value})} className={ic}>
                   {['Corte', 'Costura', 'Preparação', 'Montagem', 'Finalizador'].map(r => <option key={r}>{r}</option>)}
                 </select>
-                <button onClick={addMember} className='btn-brand w-full'>Salvar</button>
+                <div className='flex gap-2'><button onClick={addMember} className='btn-brand flex-1'>Salvar</button><button onClick={() => setShowForm(false)} className={`px-3 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}><X size={14}/></button></div>
               </div>
             </div>
           )}
           <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
             {data.team.map(m => (
               <div key={m.id} className='card-surface p-4 flex items-center justify-between'>
-                <div className='flex items-center gap-3'>
-                  <div className='w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-600 font-black'>{m.name[0]}</div>
-                  <div><p className='font-bold text-sm'>{m.name}</p><p className='text-xs text-slate-500'>{m.role}</p></div>
+                <div className={`flex items-center gap-3 ${m.status === 'ativo' ? '' : 'opacity-50'}`}>
+                  <div className='w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-600 font-black'>{(m.name || '?')[0]}</div>
+                  <div><p className='font-bold text-sm'>{m.name}</p><p className='text-xs text-slate-500'>{m.role}{m.status !== 'ativo' ? ' · inativo' : ''}</p></div>
                 </div>
+                <div className='flex items-center gap-1'>
+                <button onClick={() => toggleMemberStatus(m.id)} className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${m.status === 'ativo' ? 'border-emerald-500/40 text-emerald-500' : dark ? 'border-gray-700 text-gray-500' : 'border-gray-300 text-gray-500'}`}>{m.status === 'ativo' ? 'Ativo' : 'Inativo'}</button>
                 <button onClick={() => { const nd={...data}; nd.team=nd.team.filter(x=>x.id!==m.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500 transition-colors'><Trash2 size={16}/></button>
+                </div>
               </div>
             ))}
           </div>
@@ -2080,7 +2093,17 @@ function TeamTab({ data, setData, dark, user }) {
 
       {activeSubTab === 'logins' && (
         <div className='space-y-4'>
-          <div className='flex justify-end'><button onClick={() => setShowUserForm(true)} className='btn-brand text-xs'><Shield size={14}/> Novo Login</button></div>
+          <div className={`card-surface p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between`}>
+            <div className='min-w-0'>
+              <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500'>Link de acesso da equipe</div>
+              <div className='text-xs font-mono truncate text-orange-500'>{accessLink}</div>
+              <div className='text-[11px] text-slate-500'>Envie este link aos funcionários. Eles entram com o usuário e senha criados aqui.</div>
+            </div>
+            <div className='flex gap-2 flex-shrink-0'>
+              <button onClick={copyLink} className={`px-3 py-2 rounded-xl text-xs font-bold border ${dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>{copied ? 'Copiado ✓' : 'Copiar link'}</button>
+              <button onClick={() => setShowUserForm(true)} className='btn-brand text-xs'><Shield size={14}/> Novo Login</button>
+            </div>
+          </div>
           {showUserForm && (
             <div className='card-surface p-4 border-orange-500/30 animate-slide-up'>
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-4'>
@@ -2088,13 +2111,34 @@ function TeamTab({ data, setData, dark, user }) {
                 <input placeholder='Usuário' value={userForm.email} onChange={e => setUserForm({...userForm, email:e.target.value})} className={ic} />
                 <input placeholder='Senha' type='password' value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} className={ic} />
               </div>
-              <button onClick={addUser} className='btn-brand'>Criar Acesso</button>
+              <div className='mb-4'>
+                <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>Abas que este login pode acessar</div>
+                <div className='flex flex-wrap gap-2'>
+                  {ALL_TABS.filter(k => k !== 'team').map(k => (
+                    <label key={k} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${userForm.permissions.includes(k) ? 'border-orange-500 bg-orange-500/10 text-orange-500' : dark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+                      <input type='checkbox' className='hidden' checked={userForm.permissions.includes(k)} onChange={() => togglePerm(k)} />
+                      {userForm.permissions.includes(k) && <Check size={12} />}{TAB_LABELS[k]}
+                    </label>
+                  ))}
+                </div>
+                <p className='text-[11px] text-slate-500 mt-2'>Quem tem acesso a Produção ou Finalização também pode editar essas etapas.</p>
+              </div>
+              <div className='flex gap-2'><button onClick={addUser} className='btn-brand'>Criar Acesso</button><button onClick={() => setShowUserForm(false)} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>Cancelar</button></div>
             </div>
           )}
           <div className='space-y-2'>
-            {data.users.map(u => (
-              <div key={u.id} className='card-surface p-4 flex items-center justify-between'>
-                <div><p className='font-bold text-sm'>{u.name}</p><p className='text-xs text-slate-500'>@{u.email} · {u.role}</p></div>
+            {(data.users || []).length === 0 && <div className='text-center py-10 text-sm text-slate-500'>Nenhum login de funcionário criado ainda.</div>}
+            {(data.users || []).map(u => (
+              <div key={u.id} className='card-surface p-4 flex items-center justify-between gap-3 flex-wrap'>
+                <div className='min-w-0'>
+                  <p className='font-bold text-sm'>{u.name}</p><p className='text-xs text-slate-500'>usuário: {u.email}</p>
+                  <div className='flex flex-wrap gap-1.5 mt-2'>
+                    {ALL_TABS.filter(k => k !== 'team').map(k => {
+                      const on = (u.permissions || []).includes(k);
+                      return <button key={k} onClick={() => toggleUserPerm(u.id, k)} title={on ? 'Clique para remover o acesso' : 'Clique para liberar o acesso'} className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${on ? 'border-orange-500/50 bg-orange-500/10 text-orange-500' : dark ? 'border-gray-800 text-gray-600' : 'border-gray-200 text-gray-400'}`}>{TAB_LABELS[k]}</button>;
+                    })}
+                  </div>
+                </div>
                 <div className='flex gap-2'>
                   <button onClick={() => { const nd={...data}; nd.users=nd.users.filter(x=>x.id!==u.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
                 </div>
@@ -2150,89 +2194,153 @@ const UF_MAP = {
   'RORAIMA': 'RR', 'SANTA CATARINA': 'SC', 'SAO PAULO': 'SP', 'SERGIPE': 'SE', 'TOCANTINS': 'TO'
 };
 
+const UF_NAMES = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo',
+  GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba',
+  PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul',
+  RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins'
+};
+
+// Aceita "SP", "sp", "São Paulo", "Sao Paulo/SP", "Campinas - SP"... devolve a sigla ou "" se não reconhecer
 function normalizeState(s) {
   if (!s) return '';
-  const clean = s.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (clean.length === 2) return clean;
-  return UF_MAP[clean] || clean.slice(0, 2);
+  const clean = String(s).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (STATE_COORDS[clean]) return clean;
+  if (UF_MAP[clean]) return UF_MAP[clean];
+  const tail = clean.match(/(?:^|[\s\/\-,(])([A-Z]{2})\)?\s*$/);
+  if (tail && STATE_COORDS[tail[1]]) return tail[1];
+  const byName = Object.keys(UF_MAP).sort((a, b) => b.length - a.length).find(n => clean.includes(n));
+  return byName ? UF_MAP[byName] : '';
 }
+const clientUF = (client) => normalizeState(client?.state) || normalizeState(client?.city);
 
-function RoutesTab({ data, dark }) {
+function RoutesTab({ data, setData, dark }) {
   const [mapFilter, setMapFilter] = useState('producao');
   const [selectedState, setSelectedState] = useState(null);
+  const [hover, setHover] = useState(null);
 
-  const filteredOrders = data.orders.filter(o => {
+  const orders = data.orders || [];
+  const clients = data.clients || [];
+  const findClient = (name) => clients.find(c => (c.name || '').trim().toLowerCase() === (name || '').trim().toLowerCase());
+
+  const filteredOrders = orders.filter(o => {
     if (mapFilter === 'concluidos') return o.status === 'concluido';
     if (mapFilter === 'producao') return o.status !== 'concluido';
     return true;
   });
 
   const stateData = {};
+  const noState = []; // pedidos cujo cliente não tem estado cadastrado
   filteredOrders.forEach(o => {
-    const clientRow = data.clients.find(c => c.name === o.clientName);
-    const uf = normalizeState(clientRow?.state);
-    if (!uf) return;
+    const clientRow = findClient(o.clientName);
+    const uf = clientUF(clientRow);
+    if (!uf) { noState.push({ ...o, client: clientRow }); return; }
     if (!stateData[uf]) stateData[uf] = { orders: 0, value: 0, orderList: [] };
     stateData[uf].orders += 1;
     stateData[uf].orderList.push({ ...o, clientCity: clientRow?.city });
-    stateData[uf].value += o.totalPrice || 0;
+    stateData[uf].value += Number(o.totalPrice) || 0;
   });
+  const noStateClients = [...new Map(noState.map(o => [o.clientName, o])).values()];
 
   const maxValue = Math.max(...Object.values(stateData).map(d => d.value), 100);
-  const colorScale = scaleLinear().domain([0, maxValue]).range(dark ? ['#1e293b', '#f97316'] : ['#fff7ed', '#f97316']);
+  const colorScale = scaleLinear().domain([0, maxValue]).range(dark ? ['#3b2416', '#f97316'] : ['#fed7aa', '#ea580c']);
+  const totalMapped = Object.values(stateData).reduce((a, d) => a + d.orders, 0);
 
-  // Jitter for markers to avoid overlap in the same state
-  const getJitter = (id) => {
-    const seed = id.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-    return [(seed % 20 - 10) / 10, (seed % 14 - 7) / 10];
+  // Espalha os pontos dos pedidos em volta do centro do estado (sem sobrepor)
+  const markerPos = (uf, idx, total) => {
+    const [x, y] = STATE_COORDS[uf];
+    if (total <= 1) return [x, y];
+    const ring = Math.floor(idx / 8) + 1, ang = (idx % 8) / 8 * Math.PI * 2 + ring;
+    const r = 0.45 * ring;
+    return [x + Math.cos(ang) * r, y + Math.sin(ang) * r];
+  };
+
+  const setClientState = (clientName, uf) => {
+    if (!uf) return;
+    const nd = { ...data };
+    const idx = nd.clients.findIndex(c => (c.name || '').trim().toLowerCase() === (clientName || '').trim().toLowerCase());
+    if (idx >= 0) nd.clients[idx] = { ...nd.clients[idx], state: uf };
+    else nd.clients = [...nd.clients, { id: Date.now(), name: clientName, city: '', state: uf, phone: '', email: '', totalOrders: 1, totalSpent: 0 }];
+    setData(nd); saveData(nd);
   };
 
   const selectedStateInfo = selectedState ? stateData[selectedState] : null;
+  const sel = `px-2 py-1 rounded-lg text-xs font-bold border outline-none ${dark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white border-gray-200 text-gray-900'}`;
 
   return (
     <div className='space-y-6 animate-slide-up'>
-      <div className='flex items-center justify-between'>
+      <div className='flex items-center justify-between flex-wrap gap-3'>
         <div>
           <h2 className='page-title page-title-underline'>MAPA Estratégico</h2>
-          <p className='text-sm text-slate-500 mt-1 font-medium'>Distribuição geográfica e volume de vendas</p>
+          <p className='text-sm text-slate-500 mt-1 font-medium'>Onde estão seus clientes e quanto cada estado compra</p>
         </div>
-        <select value={mapFilter} onChange={e => { setMapFilter(e.target.value); setSelectedState(null); }} 
-          className={`px-4 py-2 rounded-xl text-sm font-bold border outline-none ${dark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white border-gray-200 text-gray-900'}`}>
-          <option value='producao'>Em Produção</option>
-          <option value='concluidos'>Concluídos</option>
-          <option value='todos'>Todos</option>
-        </select>
+        <div className={`flex gap-1 p-1 rounded-xl border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+          {[['producao', 'Em produção'], ['concluidos', 'Concluídos'], ['todos', 'Todos']].map(([v, l]) => (
+            <button key={v} onClick={() => { setMapFilter(v); setSelectedState(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${mapFilter === v ? 'bg-orange-500 text-white' : dark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}>{l}</button>
+          ))}
+        </div>
       </div>
 
-      <div className='flex flex-col lg:flex-row gap-6'>
-        {/* MAP CONTAINER */}
-        <div className='lg:w-2/3 card-surface p-4 relative min-h-[550px] overflow-hidden flex flex-col'>
-          <div className="absolute top-6 left-6 z-10 flex flex-col gap-2">
-            <div className={`p-3 rounded-xl border backdrop-blur-md ${dark ? 'bg-gray-900/80 border-gray-700' : 'bg-white/80 border-gray-200'}`}>
-              <div className="text-[10px] font-black uppercase text-slate-500 mb-1">Legenda de Volume</div>
-              <div className="flex items-center gap-2">
-                <div className="w-24 h-2 rounded-full bg-gradient-to-r from-slate-200 to-orange-500" />
-                <span className="text-[10px] font-bold text-slate-400">R$ {maxValue.toLocaleString('pt-BR')}</span>
+      {noStateClients.length > 0 && (
+        <div className={`rounded-2xl border p-4 ${dark ? 'bg-amber-500/5 border-amber-500/30' : 'bg-amber-50 border-amber-200'}`}>
+          <div className='flex items-center gap-2 text-sm font-bold text-amber-500 mb-1'><AlertTriangle size={16} /> {noState.length} pedido{noState.length > 1 ? 's' : ''} fora do mapa: cliente sem estado cadastrado</div>
+          <p className={`text-xs mb-3 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>Escolha o estado de cada cliente abaixo e ele aparece no mapa na hora.</p>
+          <div className='flex flex-wrap gap-2'>
+            {noStateClients.slice(0, 12).map(o => (
+              <div key={o.clientName} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
+                <span className='text-xs font-bold truncate max-w-[160px]'>{o.clientName || 'Sem nome'}</span>
+                <select defaultValue='' onChange={e => setClientState(o.clientName, e.target.value)} className={sel}>
+                  <option value=''>UF</option>
+                  {Object.keys(UF_NAMES).sort().map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                </select>
               </div>
+            ))}
+            {noStateClients.length > 12 && <span className='text-xs text-slate-500 self-center'>+{noStateClients.length - 12} na aba Clientes</span>}
+          </div>
+        </div>
+      )}
+
+      <div className='flex flex-col lg:flex-row gap-6'>
+        {/* MAPA */}
+        <div className='lg:w-2/3 card-surface p-4 relative overflow-hidden' style={{ minHeight: 420 }}>
+          <div className={`absolute top-4 left-4 z-10 p-3 rounded-xl border backdrop-blur-md ${dark ? 'bg-gray-900/80 border-gray-700' : 'bg-white/80 border-gray-200'}`}>
+            <div className="text-[10px] font-black uppercase text-slate-500 mb-1">Volume vendido</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400">R$ 0</span>
+              <div className="w-20 h-2 rounded-full" style={{ background: `linear-gradient(90deg, ${colorScale(0)}, ${colorScale(maxValue)})` }} />
+              <span className="text-[10px] font-bold text-slate-400">{money(maxValue)}</span>
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-[10px] font-bold text-slate-500">
+              <span className='flex items-center gap-1'><span className='w-2 h-2 rounded-full bg-orange-500 inline-block' />Em produção</span>
+              <span className='flex items-center gap-1'><span className='w-2 h-2 rounded-full bg-emerald-500 inline-block' />Concluído</span>
             </div>
           </div>
 
-          <div className="flex-1">
-            <ComposableMap projection='geoMercator' projectionConfig={{ scale: 850, center: [-54, -15] }} style={{ width: "100%", height: "100%" }}>
+          {hover && (
+            <div className={`absolute top-4 right-4 z-10 px-3 py-2 rounded-xl border text-xs pointer-events-none ${dark ? 'bg-gray-900/90 border-gray-700' : 'bg-white/90 border-gray-200'}`}>
+              <div className='font-black'>{UF_NAMES[hover] || hover}</div>
+              <div className='text-slate-500 font-bold'>{stateData[hover] ? `${stateData[hover].orders} pedido${stateData[hover].orders > 1 ? 's' : ''} · ${money(stateData[hover].value)}` : 'Sem pedidos'}</div>
+            </div>
+          )}
+
+            <ComposableMap projection='geoMercator' projectionConfig={{ scale: 750, center: [-53, -15] }} width={800} height={700} style={{ width: "100%", height: "auto" }}>
               <Geographies geography={GEO_URL}>
                 {({ geographies }) => geographies.map(geo => {
-                  const uf = geo.properties.sigla;
+                  const uf = geo.properties.sigla || normalizeState(geo.properties.name);
                   const sdata = stateData[uf];
                   const isSelected = selectedState === uf;
+                  const fill = isSelected ? '#f97316' : (sdata ? colorScale(sdata.value) : (dark ? '#1f2937' : '#f1f5f9'));
                   return (
-                    <Geography key={geo.rsmKey} geography={geo} 
-                      fill={isSelected ? '#f97316' : (sdata ? colorScale(sdata.value) : (dark ? '#111827' : '#f8fafc'))}
-                      stroke={isSelected ? '#fff' : (dark ? '#1e293b' : '#e2e8f0')}
-                      strokeWidth={isSelected ? 1.5 : 0.5}
-                      onClick={() => setSelectedState(uf)}
-                      style={{ 
+                    <Geography key={geo.rsmKey} geography={geo}
+                      fill={fill}
+                      stroke={isSelected ? '#fff' : (dark ? '#0b1220' : '#cbd5e1')}
+                      strokeWidth={isSelected ? 1.5 : 0.6}
+                      onClick={() => setSelectedState(isSelected ? null : uf)}
+                      onMouseEnter={() => setHover(uf)}
+                      onMouseLeave={() => setHover(null)}
+                      style={{
                         default: { outline: 'none' },
-                        hover: { fill: '#fb923c', cursor: 'pointer', outline: 'none' },
+                        hover: { fill: isSelected ? '#f97316' : '#fb923c', cursor: 'pointer', outline: 'none' },
                         pressed: { outline: 'none' }
                       }}
                     />
@@ -2240,86 +2348,71 @@ function RoutesTab({ data, dark }) {
                 })}
               </Geographies>
 
-              {/* RENDER MARKERS FOR EACH ORDER */}
-              {Object.entries(stateData).map(([uf, data]) => {
-                const coords = STATE_COORDS[uf];
-                if (!coords) return null;
-                return data.orderList.map((order, idx) => {
-                  const [jx, jy] = getJitter(order.id);
-                  return (
-                    <Marker key={order.id} coordinates={[coords[0] + jx, coords[1] + jy]}>
-                      <circle r={mapFilter === 'producao' ? 3 : 2} 
-                        fill={order.status === 'concluido' ? '#22c55e' : '#f97316'} 
-                        stroke="#fff" strokeWidth={0.5} 
-                        className="animate-pulse-soft"
-                      />
-                    </Marker>
-                  );
-                });
-              })}
+              {Object.entries(stateData).map(([uf, sd]) => sd.orderList.map((order, idx) => (
+                <Marker key={`${uf}-${order.id}-${idx}`} coordinates={markerPos(uf, idx, sd.orderList.length)} onClick={() => setSelectedState(uf)}>
+                  <circle r={4} fill={order.status === 'concluido' ? '#22c55e' : '#f97316'} stroke={dark ? '#0b1220' : '#fff'} strokeWidth={1} style={{ cursor: 'pointer' }}>
+                    <title>{`${order.id} · ${order.clientName} · ${money(order.totalPrice)}`}</title>
+                  </circle>
+                </Marker>
+              )))}
             </ComposableMap>
-          </div>
+          <div className='text-[11px] text-slate-500 font-bold text-center mt-1'>{totalMapped} pedido{totalMapped === 1 ? '' : 's'} no mapa · clique num estado para ver os pedidos</div>
         </div>
 
-        {/* SIDE PANEL */}
-        <div className='lg:w-1/3 flex flex-col gap-4'>
+        {/* PAINEL LATERAL */}
+        <div className='lg:w-1/3 flex flex-col gap-4' style={{ maxHeight: 640 }}>
           {selectedState ? (
-            <div className='card-surface p-5 border-orange-500/30 animate-slide-up flex flex-col h-full'>
+            <div className='card-surface p-5 border-orange-500/30 animate-slide-up flex flex-col h-full min-h-0'>
               <div className='flex items-center justify-between mb-4'>
                 <div>
-                  <h3 className='font-black text-2xl text-orange-500'>{selectedState}</h3>
-                  <p className='text-xs text-slate-500 font-bold uppercase'>{selectedStateInfo?.orders || 0} Pedidos no estado</p>
+                  <h3 className='font-black text-2xl text-orange-500'>{UF_NAMES[selectedState] || selectedState}</h3>
+                  <p className='text-xs text-slate-500 font-bold uppercase'>{selectedStateInfo?.orders || 0} pedidos no estado</p>
                 </div>
-                <button onClick={() => setSelectedState(null)} className='p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800'><X size={20}/></button>
+                <button onClick={() => setSelectedState(null)} className={`p-2 rounded-xl ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}><X size={20}/></button>
               </div>
-
-              <div className='bg-orange-500/10 rounded-2xl p-4 mb-6 border border-orange-500/20'>
-                <div className='text-[10px] font-black uppercase text-orange-500/60 mb-1'>Volume Total</div>
-                <div className='text-2xl font-black tabular-nums'>R$ {(selectedStateInfo?.value || 0).toLocaleString('pt-BR')}</div>
+              <div className='bg-orange-500/10 rounded-2xl p-4 mb-4 border border-orange-500/20'>
+                <div className='text-[10px] font-black uppercase text-orange-500/70 mb-1'>Volume total</div>
+                <div className='text-2xl font-black tabular-nums'>{money(selectedStateInfo?.value)}</div>
               </div>
-
-              <div className='flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3'>
-                {selectedStateInfo?.orderList.map(o => (
+              <div className='flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 min-h-0'>
+                {(selectedStateInfo?.orderList || []).map(o => (
                   <div key={o.id} className={`p-3 rounded-xl border ${dark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                     <div className='flex justify-between items-start mb-1'>
                       <span className='font-mono text-[10px] font-black text-orange-400'>{o.id}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.status === 'concluido' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}`}>{o.status}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.status === 'concluido' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}`}>{STATUS_LABEL[o.status] || o.status}</span>
                     </div>
                     <div className='text-sm font-black truncate'>{o.clientName}</div>
-                    <div className='text-[10px] text-slate-500 font-bold'>{o.clientCity} · R$ {o.totalPrice.toLocaleString('pt-BR')}</div>
+                    <div className='text-[10px] text-slate-500 font-bold'>{o.clientCity || 'Cidade não informada'} · {money(o.totalPrice)} · prazo {fmt(o.deadline)}</div>
                   </div>
                 ))}
                 {(!selectedStateInfo || selectedStateInfo.orderList.length === 0) && (
-                  <div className='text-center py-10 opacity-30'><Package size={40} className='mx-auto mb-2'/><p className='text-sm font-bold'>Nenhum pedido</p></div>
+                  <div className='text-center py-10 opacity-40'><Package size={40} className='mx-auto mb-2'/><p className='text-sm font-bold'>Nenhum pedido neste filtro</p></div>
                 )}
               </div>
             </div>
           ) : (
-            <div className='card-surface p-5 flex flex-col h-full'>
-              <h3 className='font-black text-sm uppercase tracking-widest text-slate-500 mb-6'>Ranking por Região</h3>
-              <div className='space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar'>
-                {Object.entries(stateData).sort((a,b) => b[1].value - a[1].value).map(([uf, s], i) => (
+            <div className='card-surface p-5 flex flex-col h-full min-h-0'>
+              <h3 className='font-black text-sm uppercase tracking-widest text-slate-500 mb-4'>Ranking por estado</h3>
+              <div className='space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0'>
+                {Object.entries(stateData).sort((a, b) => b[1].value - a[1].value).map(([uf, s], i) => (
                   <div key={uf} onClick={() => setSelectedState(uf)} className='group cursor-pointer p-3 rounded-2xl border border-transparent hover:border-orange-500/30 hover:bg-orange-500/5 transition-all'>
                     <div className='flex justify-between items-center'>
                       <div className='flex items-center gap-3'>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${i === 0 ? 'bg-orange-500 text-white' : dark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>{i+1}</div>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${i === 0 ? 'bg-orange-500 text-white' : dark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>{uf}</div>
                         <div>
-                          <div className='font-black text-sm'>{uf}</div>
-                          <div className='text-[10px] font-bold text-slate-500'>{s.orders} pedidos</div>
+                          <div className='font-black text-sm'>{UF_NAMES[uf] || uf}</div>
+                          <div className='text-[10px] font-bold text-slate-500'>{s.orders} pedido{s.orders > 1 ? 's' : ''}</div>
                         </div>
                       </div>
-                      <div className='text-right'>
-                        <div className='font-black text-sm text-orange-500'>R$ {s.value.toLocaleString('pt-BR')}</div>
-                        <div className='text-[10px] font-bold text-slate-400'>{(s.value/maxValue*100).toFixed(0)}% do topo</div>
-                      </div>
+                      <div className='font-black text-sm text-orange-500 tabular-nums'>{money(s.value)}</div>
                     </div>
-                    <div className='mt-2 w-full h-1 bg-slate-100 dark:bg-gray-800 rounded-full overflow-hidden'>
-                      <div className='h-full bg-orange-500 rounded-full transition-all duration-1000' style={{ width: `${(s.value/maxValue*100)}%` }} />
+                    <div className={`mt-2 w-full h-1 rounded-full overflow-hidden ${dark ? 'bg-gray-800' : 'bg-gray-100'}`}>
+                      <div className='h-full bg-orange-500 rounded-full transition-all duration-700' style={{ width: `${(s.value / maxValue * 100)}%` }} />
                     </div>
                   </div>
                 ))}
                 {Object.keys(stateData).length === 0 && (
-                  <div className='text-center py-20 opacity-20'><Layers size={48} className='mx-auto mb-4'/><p className='font-black'>Aguardando dados...</p></div>
+                  <div className='text-center py-16 opacity-40'><Layers size={40} className='mx-auto mb-3'/><p className='font-black text-sm'>Nenhum pedido com estado definido</p><p className='text-xs mt-1'>Cadastre o estado dos clientes para eles aparecerem aqui.</p></div>
                 )}
               </div>
             </div>
@@ -2330,12 +2423,35 @@ function RoutesTab({ data, dark }) {
   );
 }
 
+const SESSION_KEY = "ags_session";
+function loadSession() {
+  try { const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); return s && s.company_id ? s : null; } catch { return null; }
+}
+// Abas que o usuário pode ver: dono vê tudo; funcionário vê só o que foi liberado em Equipe > Logins
+const allowedTabs = (user) => {
+  if (!user) return [];
+  if (user.role === "admin") return Object.keys(TAB_META);
+  const p = user.permissions || [];
+  return Object.keys(TAB_META).filter(k => p.includes(k));
+};
+
 function MainApp() {
-  const [dark, setDark] = useState(true);
-  const [user, setUser] = useState(null);
-  const [data, setData] = useState(loadData);
-  const [tab, setTab] = useState('orders');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
+  const [user, setUser] = useState(loadSession);
+  const [data, setData] = useState(INITIAL_DATA);
+  const [tab, setTab] = useState(() => allowedTabs(loadSession())[0] || 'orders');
+  const login = (u) => {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
+    setLoadingServer(true);
+    setTab(allowedTabs(u).includes("dashboard") ? "dashboard" : (allowedTabs(u)[0] || "orders"));
+    setUser(u);
+  };
+  const logout = () => {
+    try { localStorage.removeItem(SESSION_KEY); } catch { }
+    CURRENT_COMPANY_ID = null; setData(INITIAL_DATA); setUser(null);
+  };
+  useEffect(() => { try { localStorage.setItem("ags_dark", dark ? "1" : "0"); } catch { } }, [dark]);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 900);
   const [loadingServer, setLoadingServer] = useState(true);
   const [showPlans, setShowPlans] = useState(false);
 
@@ -2347,20 +2463,32 @@ function MainApp() {
     CURRENT_COMPANY_ID = user.company_id;
     async function fetchState() {
       try {
-        const { data: remote, error } = await supabase.from('companies').select('app_data').eq('id', user.company_id).single();
+        const { data: remote, error } = await supabase.from('companies').select('app_data, plan_id, status, trial_ends_at').eq('id', user.company_id).single();
+        if (error) throw error;
         if (remote && remote.app_data) {
           const merged = { ...INITIAL_DATA, ...remote.app_data };
           setData(merged);
+          try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
         }
-      } catch (err) { console.error(err); }
+        if (remote && user.role === "admin" && (remote.plan_id !== user.plan || remote.status !== user.status)) {
+          const u = { ...user, plan: remote.plan_id, status: remote.status, trial_ends_at: remote.trial_ends_at };
+          try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
+        }
+      } catch (err) {
+        console.error(err);
+        // Sem internet / falha no banco: usa a última cópia salva neste aparelho
+        try { const c = localStorage.getItem(`ags_v3_${user.company_id}`); if (c) setData({ ...INITIAL_DATA, ...JSON.parse(c) }); } catch { }
+      }
       finally { setLoadingServer(false); }
     }
     fetchState();
   }, [user]);
 
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <LoginScreen onLogin={login} dark={dark} />;
   if (loadingServer) return <div className='flex items-center justify-center h-screen bg-gray-950'><div className='animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500'></div></div>;
 
+  const tabs = allowedTabs(user);
+  const currentTab = tabs.includes(tab) ? tab : (tabs[0] || 'orders');
   const ActiveTab = { 
     orders: OrdersTab, 
     production: ProductionTab, 
@@ -2369,24 +2497,26 @@ function MainApp() {
     routes: RoutesTab, 
     clients: ClientsTab, 
     team: TeamTab 
-  }[tab || 'orders'];
+  }[currentTab];
 
-  const isTrial = !user.plan || user.plan === 'trial';
+  const isAdmin = user.role === 'admin';
+  const isTrial = isAdmin && (user.status === 'trial' || !user.plan || user.plan === 'trial' || user.plan === 'free');
+  const trialDays = user.trial_ends_at ? Math.ceil((new Date(user.trial_ends_at) - new Date()) / 86400000) : null;
 
   return (
     <div className={`flex h-screen overflow-hidden ${dark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* SIDEBAR */}
-      <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
-        <div className='p-6 flex items-center gap-3 overflow-hidden'>
+      <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
+        <div className={`${sidebarOpen ? 'p-6' : 'p-3 md:p-5 justify-center'} flex items-center gap-3 overflow-hidden`}>
           <div className='w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex-shrink-0 shadow-lg shadow-orange-500/20 flex items-center justify-center text-white'><Package size={24} /></div>
-          {sidebarOpen && <h1 className='text-xl font-black tracking-tight'>AGS<span className='text-orange-500'>.ind</span></h1>}
+          {sidebarOpen && <div className='min-w-0'><h1 className='text-xl font-black tracking-tight'>AGS<span className='text-orange-500'>.ind</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
         </div>
 
         <nav className='flex-1 px-3 space-y-1 py-4'>
-          {Object.entries(TAB_META).map(([k, { label, Icon }]) => {
-            const active = tab === k;
+          {Object.entries(TAB_META).filter(([k]) => tabs.includes(k)).map(([k, { label, Icon }]) => {
+            const active = currentTab === k;
             return (
-              <button key={k} onClick={() => setTab(k)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+              <button key={k} onClick={() => { setTab(k); if (window.innerWidth < 900) setSidebarOpen(false); }} title={label} className={`w-full flex items-center ${sidebarOpen ? '' : 'justify-center'} gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
                 <Icon size={20} className={active ? 'text-orange-500' : ''} />
                 {sidebarOpen && <span className='text-sm'>{label}</span>}
               </button>
@@ -2394,17 +2524,17 @@ function MainApp() {
           })}
         </nav>
 
-        <div className='p-4 border-t' style={{ borderColor: dark ? '#1f2937' : '#f1f5f9' }}>
-          {sidebarOpen && (
+        <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t`} style={{ borderColor: dark ? '#1f2937' : '#f1f5f9' }}>
+          {sidebarOpen && isAdmin && (
             <button onClick={() => setShowPlans(true)} className='w-full flex items-center gap-2 mb-4 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20 hover:scale-[1.02] transition-transform'>
               <CreditCard size={14} /> Planos e Assinatura
             </button>
           )}
-          <div className='flex items-center justify-between'>
+          <div className={`flex items-center justify-between ${sidebarOpen ? '' : 'flex-col gap-2'}`}>
             <button onClick={() => setDark(!dark)} className={`p-2.5 rounded-xl border transition-all ${dark ? 'border-gray-700 bg-gray-800 text-yellow-400' : 'border-gray-200 bg-gray-100 text-blue-600'}`}>
               {dark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            {sidebarOpen && <button onClick={() => setUser(null)} className='p-2.5 text-gray-500 hover:text-red-500 transition-colors'><LogOut size={20} /></button>}
+            <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors'><LogOut size={20} /></button>
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className={`p-2.5 rounded-xl border ${dark ? 'border-gray-700 hover:bg-gray-800' : 'border-gray-200 hover:bg-gray-100'}`}>
               {sidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
             </button>
@@ -2413,18 +2543,18 @@ function MainApp() {
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className='flex-1 flex flex-col relative overflow-hidden'>
+      <main className='flex-1 min-w-0 flex flex-col relative overflow-hidden'>
         {isTrial && (
           <div className='bg-orange-500/10 border-b border-orange-500/20 px-6 py-2 flex items-center justify-between'>
             <div className='flex items-center gap-2 text-xs font-bold text-orange-500'>
-               <Sparkles size={14} /> Período de teste ativo (Expirará em breve)
+               <Sparkles size={14} /> Período de teste ativo{trialDays !== null ? (trialDays > 0 ? ` — faltam ${trialDays} dia${trialDays === 1 ? '' : 's'}` : ' — expirado') : ''}
             </div>
             <button onClick={() => setShowPlans(true)} className='text-xs font-black uppercase text-orange-600 hover:underline'>Ver Planos</button>
           </div>
         )}
 
         <div className='flex-1 overflow-y-auto p-4 md:p-8'>
-          <ActiveTab data={data} setData={setData} dark={dark} user={user} />
+          {ActiveTab ? <ActiveTab data={data} setData={setData} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
         {showPlans && (
