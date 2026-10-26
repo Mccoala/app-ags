@@ -1,4 +1,4 @@
-// AGS Industrial System - Last Update: 2026-10-26
+// Inflatudo — Gestão para fabricantes de infláveis - Last Update: 2026-10-26
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
 import { supabase } from "./lib/supabase";
 
@@ -42,7 +42,7 @@ import {
 } from "recharts";
 import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 import { scaleLinear } from "d3-scale";
-import logoImg from "./assets/logo.png";
+import logoMark from "./assets/logo-mark.svg";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 // Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
@@ -68,49 +68,35 @@ const ROLE_PERMISSIONS = {
   finalizacao: ["finalization"],
   user: ["orders", "production", "finalization"],
 };
-// Dono (admin) sempre pode; funcionário pode se tiver acesso à aba (definido em Equipe > Logins)
-const canEditProd = (user) => !!user && (user.role === "admin" || (user.permissions || []).includes("production"));
-const canEditFin = (user) => !!user && (user.role === "admin" || (user.permissions || []).includes("finalization"));
-
-const INITIAL_DATA = {
-  users: [],
-  clients: [],
-  team: [],
-  sellers: [],
-  orders: [],
-  production: [],
-  finalization: [],
-};
-
-function loadData() {
-  try {
-    const s = localStorage.getItem("ags_v3");
-    if (s) {
-      const p = JSON.parse(s);
-      return {
-        ...INITIAL_DATA,
-        ...p,
-        users: p.users || INITIAL_DATA.users,
-        clients: p.clients || INITIAL_DATA.clients,
-        team: p.team || INITIAL_DATA.team,
-        orders: p.orders || INITIAL_DATA.orders,
-        production: p.production || INITIAL_DATA.production,
-        finalization: p.finalization || INITIAL_DATA.finalization,
-      };
-    }
-  } catch { }
-  return INITIAL_DATA;
+// Permissões por aba: o gerente (dono da conta) define em Equipe > Logins se o funcionário
+// não vê a aba, só visualiza ("view") ou pode editar ("edit"). O dono pode tudo.
+// Compatível com o formato antigo (lista de abas = pode editar).
+function permLevel(user, tab) {
+  if (!user) return null;
+  if (user.role === "admin") return "edit";
+  const p = user.permissions;
+  if (Array.isArray(p)) return p.includes(tab) ? "edit" : null;
+  return (p && (p[tab] === "view" || p[tab] === "edit")) ? p[tab] : null;
 }
+const canEdit = (user, tab) => permLevel(user, tab) === "edit";
+const canEditProd = (user) => canEdit(user, "production");
+const canEditFin = (user) => canEdit(user, "finalization");
+const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "routes", "clients"];
+
+// Conta nova sempre começa zerada. É uma função (e não um objeto fixo) para que
+// nenhuma lista seja compartilhada entre contas diferentes no mesmo navegador.
+const emptyData = () => ({ users: [], clients: [], team: [], sellers: [], orders: [], production: [], finalization: [] });
+const INITIAL_DATA = emptyData();
+
 let CURRENT_COMPANY_ID = null;
 async function saveToSupabase(d) {
   if (!CURRENT_COMPANY_ID) return;
   try { await supabase.from('companies').update({ app_data: d }).eq('id', CURRENT_COMPANY_ID); } catch (err) { console.error("Supabase save error", err); }
 }
-function saveData(d) { 
-  const companyId = CURRENT_COMPANY_ID || localStorage.getItem("ags_last_company");
-  const key = companyId ? `ags_v3_${companyId}` : "ags_v3";
-  try { localStorage.setItem(key, JSON.stringify(d)); } catch { } 
-  saveToSupabase(d); 
+function saveData(d) {
+  if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
+  try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
+  saveToSupabase(d);
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -174,7 +160,8 @@ const money = (v) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR")}`;
 function AppLogo({ collapsed = false, className = "" }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src={logoImg} alt="AGS Brinquedos" className={`object-contain flex-shrink-0 transition-all duration-300 ${collapsed ? "h-8 w-8" : "h-11 w-auto"}`} />
+      <img src={logoMark} alt="Inflatudo" className={`flex-shrink-0 transition-all duration-300 ${collapsed ? "h-10 w-10" : "h-12 w-12"}`} />
+      {!collapsed && <span className="font-black tracking-tight leading-none" style={{ fontSize: "1.6rem", letterSpacing: "-0.03em" }}>Infla<span className="text-orange-500">tudo</span></span>}
     </div>
   );
 }
@@ -184,7 +171,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
   const params = new URLSearchParams(window.location.search);
   const qsCompanyId = params.get('empresa');
   
-  const [data] = useState(propsData || INITIAL_DATA);
+  const [data] = useState(propsData || emptyData());
   const [mode, setMode] = useState(qsCompanyId ? "employee" : "admin_login"); 
   // modes: "admin_login", "admin_register", "employee"
   
@@ -203,7 +190,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
         // Set trial to 7 days
         const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate() + 7);
         // Default init data without users (team will handle employee accounts)
-        const defData = { ...data, team: data.team || [] };
+        const defData = emptyData(); // empresa nova: nenhum dado de outra conta
         
         const { data: res, error } = await supabase.from('companies').insert([{
            company_name: companyName,
@@ -269,7 +256,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
 
         <div className="glass-card rounded-2xl p-8" style={{ border:"1px solid rgba(255,255,255,0.09)" }}>
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} /><AppLogo collapsed={false} /></div></div>
+            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} /><AppLogo collapsed={false} className={dark === false ? "text-gray-900" : "text-white"} /></div></div>
             <div className="divider-gradient mx-auto mb-4" style={{ maxWidth:120 }} />
             <p style={{ fontSize:"0.78rem",letterSpacing:"0.12em",textTransform:"uppercase",color:"#64748b",fontWeight:700 }}>Sistema de Gestão Industrial</p>
           </div>
@@ -504,7 +491,8 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
 
 // ─── ORDERS TAB ───────────────────────────────────────────────────────────────
 const ORDERS_PER_PAGE = 10;
-function OrdersTab({ data, setData, dark }) {
+function OrdersTab({ data, setData, dark, user }) {
+  const canWrite = canEdit(user, "orders");
   const [view, setView] = useState("list"); const [inputMode, setInputMode] = useState("text");
   const [text, setText] = useState(""); const [pdfData, setPdfData] = useState(null); const
     [pdfName, setPdfName] = useState(""); const [loading, setLoading] = useState(false);
@@ -740,7 +728,7 @@ function OrdersTab({ data, setData, dark }) {
           <p style={{ fontSize:"0.8rem",color:"#64748b",marginTop:2,fontWeight:500 }}>Gerencie todos os pedidos da empresa</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {!selectMode ? (<>
+          {!canWrite ? <span className={`text-xs font-bold px-3 py-2 rounded-xl border ${dark ? "border-gray-800 text-gray-500" : "border-gray-200 text-gray-500"}`}>👁️ Somente visualização</span> : !selectMode ? (<>
             <button onClick={() => { setSelectMode(true); setView("list") }} className={`flex
                                     items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border
                                     ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
@@ -790,7 +778,7 @@ function OrdersTab({ data, setData, dark }) {
           </div>
         ))}
       </div>
-      {showForm && (
+      {showForm && canWrite && (
         <div className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className={`font-bold ${dark ? "text-white" : "text-gray-900"}`}>Novo Pedido Manual</h3>
@@ -883,7 +871,7 @@ function OrdersTab({ data, setData, dark }) {
           </div>
         </div>
       )}
-      {view === "ai" && (
+      {view === "ai" && canWrite && (
         <div className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
           <h3 className={`font-bold mb-1 ${dark ? "text-white" : "text-gray-900"}`}>Extração com IA</h3>
           <p className={`text-xs mb-4 ${dark ? "text-gray-400" : "text-gray-500"}`}>A IA busca o campo
@@ -984,7 +972,7 @@ function OrdersTab({ data, setData, dark }) {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-right"><div className={`text-lg font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {(o.totalPrice || 0).toLocaleString("pt-BR")}</div></div>
-                    {!selectMode && <button onClick={e => { e.stopPropagation(); setEditingOrder(o) }} className={`p-2 rounded-xl border ${dark ? "border-gray-700 text-gray-400 hover:border-orange-500/50 hover:text-orange-400" : "border-gray-200 text-gray-400 hover:border-orange-300"}`}><Edit3 size={15} /></button>}
+                    {!selectMode && canWrite && <button onClick={e => { e.stopPropagation(); setEditingOrder(o) }} className={`p-2 rounded-xl border ${dark ? "border-gray-700 text-gray-400 hover:border-orange-500/50 hover:text-orange-400" : "border-gray-200 text-gray-400 hover:border-orange-300"}`}><Edit3 size={15} /></button>}
                     {!selectMode && <button onClick={e => { e.stopPropagation(); togOrderOpen(o.id); }} className={`px-2 py-1.5 rounded-xl border text-xs font-bold transition-all ${openOrderIds.has(o.id) ? (dark ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "bg-orange-50 text-orange-600 border-orange-200") : (dark ? "bg-gray-800 text-gray-300 border-gray-700" : "bg-gray-100 text-gray-700 border-gray-200")}`}>{openOrderIds.has(o.id) ? "Ocultar Itens" : "Ver Itens"}</button>}
                   </div>
                 </div>
@@ -1599,7 +1587,7 @@ function DashboardTab({ data, dark, goTo }) {
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
           system: "Você é um consultor de gestão industrial sênior. Analise os dados e forneça 3 insights estratégicos curtos e acionáveis para o diretor da empresa. Retorne APENAS os 3 pontos em formato de lista, sem introdução.",
-          messages: [{ role: "user", content: `Analise estes dados da AGS Brinquedos:\n${JSON.stringify(statsSummary)}` }]
+          messages: [{ role: "user", content: `Analise estes dados da fábrica:\n${JSON.stringify(statsSummary)}` }]
         })
       });
       const d = await res.json();
@@ -1660,7 +1648,7 @@ function DashboardTab({ data, dark, goTo }) {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"><Zap size={18} /></div>
-              <h3 className="font-black text-sm uppercase tracking-wider text-indigo-500">AGS Inteligência AI</h3>
+              <h3 className="font-black text-sm uppercase tracking-wider text-indigo-500">Inflatudo IA</h3>
             </div>
             {aiInsights ? (
               <div className={`text-sm leading-relaxed space-y-2 font-medium ${dark ? "text-indigo-200" : "text-indigo-900"}`}>
@@ -1813,7 +1801,8 @@ function DashboardTab({ data, dark, goTo }) {
   );
 }
 
-function ClientsTab({ data, setData, dark }) {
+function ClientsTab({ data, setData, dark, user }) {
+  const canWrite = canEdit(user, "clients");
   const [search, setSearch] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
   const [openClient, setOpenClient] = useState(null);
@@ -1888,9 +1877,9 @@ function ClientsTab({ data, setData, dark }) {
                     <div className={`text-lg font-black ${dark ? "text-white" : "text-gray-900"}`}>R$ {total.toLocaleString("pt-BR")}</div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); setEditingClient(c); }} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:text-orange-400 hover:border-orange-500/50" : "border-gray-200 text-gray-500 hover:text-orange-500 hover:bg-orange-50"} `}>
+                    {canWrite && <button onClick={(e) => { e.stopPropagation(); setEditingClient(c); }} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:text-orange-400 hover:border-orange-500/50" : "border-gray-200 text-gray-500 hover:text-orange-500 hover:bg-orange-50"} `}>
                       <Edit3 size={18} />
-                    </button>
+                    </button>}
                     <button onClick={() => setOpenClient(isOpen ? null : c.id)} className={`p-2 rounded-xl border transition-all ${dark ? "border-gray-700 text-gray-400 hover:bg-gray-800" : "border-gray-200 text-gray-500 hover:bg-gray-50"} ${isOpen ? (dark ? "bg-gray-800" : "bg-gray-100") : ""}`}>
                       {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </button>
@@ -2011,11 +2000,42 @@ function ClientsTab({ data, setData, dark }) {
 }
 
 // ─── TEAM TAB ─────────────────────────────────────────────────────────────────
+// Converte o formato antigo (lista) para { aba: "view" | "edit" }
+function toPermObj(p) {
+  if (Array.isArray(p)) return Object.fromEntries(p.filter(k => EMPLOYEE_TABS.includes(k)).map(k => [k, "edit"]));
+  return { ...(p || {}) };
+}
+const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', routes: 'Mapa', clients: 'Clientes' };
+function PermissionGrid({ value, onChange, dark, compact = false }) {
+  const perms = toPermObj(value);
+  const opts = [["", "Sem acesso"], ["view", "Só ver"], ["edit", "Ver e editar"]];
+  const set = (tab, lvl) => { const n = { ...perms }; if (lvl) n[tab] = lvl; else delete n[tab]; onChange(n); };
+  return (
+    <div className={`grid gap-1.5 ${compact ? 'sm:grid-cols-2' : ''}`}>
+      {EMPLOYEE_TABS.map(tab => (
+        <div key={tab} className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg ${dark ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+          <span className='text-xs font-bold'>{PERM_TAB_LABELS[tab]}</span>
+          <div className={`flex rounded-lg p-0.5 ${dark ? 'bg-gray-900' : 'bg-white border border-gray-200'}`}>
+            {opts.map(([lvl, label]) => {
+              const on = (perms[tab] || "") === lvl;
+              const color = lvl === "edit" ? "bg-emerald-500 text-white" : lvl === "view" ? "bg-sky-500 text-white" : (dark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-700");
+              return <button type='button' key={lvl || 'none'} onClick={() => set(tab, lvl)} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${on ? color : dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>{label}</button>;
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TeamTab({ data, setData, dark, user }) {
   const [activeSubTab, setActiveSubTab] = useState('members'); 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
-  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', permissions: ['orders'] });
+  const EMPTY_USER = { name: '', email: '', password: '', permissions: { production: 'edit' } };
+  const [userForm, setUserForm] = useState(EMPTY_USER);
+  const [openUser, setOpenUser] = useState(null);
+  const [showPw, setShowPw] = useState({});
   const [showUserForm, setShowUserForm] = useState(false);
   const [sellerForm, setSellerForm] = useState({ name: '', color: '#3b82f6' });
   const [showSellerForm, setShowSellerForm] = useState(false);
@@ -2030,15 +2050,15 @@ function TeamTab({ data, setData, dark, user }) {
   const [copied, setCopied] = useState(false);
   const accessLink = `${window.location.origin}/?empresa=${user?.company_id || ""}`;
   const copyLink = async () => { try { await navigator.clipboard.writeText(accessLink); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", accessLink); } };
-  const togglePerm = (k) => setUserForm(f => ({ ...f, permissions: f.permissions.includes(k) ? f.permissions.filter(x => x !== k) : [...f.permissions, k] }));
-  const toggleUserPerm = (uid, k) => { const nd = { ...data }; nd.users = nd.users.map(u => u.id !== uid ? u : { ...u, permissions: (u.permissions || []).includes(k) ? u.permissions.filter(x => x !== k) : [...(u.permissions || []), k] }); setData(nd); saveData(nd); };
+  const updateUser = (uid, patch) => { const nd = { ...data }; nd.users = nd.users.map(u => u.id !== uid ? u : { ...u, ...patch }); setData(nd); saveData(nd); };
+  const permSummary = (p) => { const o = toPermObj(p); const e = Object.keys(o).filter(k => o[k] === 'edit').map(k => PERM_TAB_LABELS[k]); const v = Object.keys(o).filter(k => o[k] === 'view').map(k => PERM_TAB_LABELS[k]); return [e.length ? `Edita: ${e.join(', ')}` : '', v.length ? `Vê: ${v.join(', ')}` : ''].filter(Boolean).join(' · ') || 'Sem acesso a nenhuma aba'; };
   const toggleMemberStatus = (id) => { const nd = { ...data }; nd.team = nd.team.map(m => m.id !== id ? m : { ...m, status: m.status === 'ativo' ? 'inativo' : 'ativo' }); setData(nd); saveData(nd); };
 
   const addUser = () => {
     if (!userForm.name || !userForm.email || !userForm.password) { alert('Preencha nome, usuário e senha.'); return; }
     if ((data.users || []).some(u => (u.email || '').toLowerCase() === userForm.email.trim().toLowerCase())) { alert('Esse usuário já existe.'); return; }
-    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: userForm.permissions });
-    setData(nd); saveData(nd); setUserForm({ name: '', email: '', password: '', permissions: ['orders'] }); setShowUserForm(false);
+    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: toPermObj(userForm.permissions) });
+    setData(nd); saveData(nd); setUserForm(EMPTY_USER); setShowUserForm(false);
   };
 
   const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`;
@@ -2112,16 +2132,9 @@ function TeamTab({ data, setData, dark, user }) {
                 <input placeholder='Senha' type='password' value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} className={ic} />
               </div>
               <div className='mb-4'>
-                <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>Abas que este login pode acessar</div>
-                <div className='flex flex-wrap gap-2'>
-                  {ALL_TABS.filter(k => k !== 'team').map(k => (
-                    <label key={k} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer ${userForm.permissions.includes(k) ? 'border-orange-500 bg-orange-500/10 text-orange-500' : dark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-                      <input type='checkbox' className='hidden' checked={userForm.permissions.includes(k)} onChange={() => togglePerm(k)} />
-                      {userForm.permissions.includes(k) && <Check size={12} />}{TAB_LABELS[k]}
-                    </label>
-                  ))}
-                </div>
-                <p className='text-[11px] text-slate-500 mt-2'>Quem tem acesso a Produção ou Finalização também pode editar essas etapas.</p>
+                <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>O que este funcionário pode fazer</div>
+                <PermissionGrid value={userForm.permissions} onChange={(p) => setUserForm({ ...userForm, permissions: p })} dark={dark} compact />
+                <p className='text-[11px] text-slate-500 mt-2'>A aba Equipe (logins, colaboradores e vendedores) é só do gerente.</p>
               </div>
               <div className='flex gap-2'><button onClick={addUser} className='btn-brand'>Criar Acesso</button><button onClick={() => setShowUserForm(false)} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>Cancelar</button></div>
             </div>
@@ -2129,19 +2142,20 @@ function TeamTab({ data, setData, dark, user }) {
           <div className='space-y-2'>
             {(data.users || []).length === 0 && <div className='text-center py-10 text-sm text-slate-500'>Nenhum login de funcionário criado ainda.</div>}
             {(data.users || []).map(u => (
-              <div key={u.id} className='card-surface p-4 flex items-center justify-between gap-3 flex-wrap'>
-                <div className='min-w-0'>
-                  <p className='font-bold text-sm'>{u.name}</p><p className='text-xs text-slate-500'>usuário: {u.email}</p>
-                  <div className='flex flex-wrap gap-1.5 mt-2'>
-                    {ALL_TABS.filter(k => k !== 'team').map(k => {
-                      const on = (u.permissions || []).includes(k);
-                      return <button key={k} onClick={() => toggleUserPerm(u.id, k)} title={on ? 'Clique para remover o acesso' : 'Clique para liberar o acesso'} className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${on ? 'border-orange-500/50 bg-orange-500/10 text-orange-500' : dark ? 'border-gray-800 text-gray-600' : 'border-gray-200 text-gray-400'}`}>{TAB_LABELS[k]}</button>;
-                    })}
+              <div key={u.id} className='card-surface p-4'>
+                <div className='flex items-center justify-between gap-3 flex-wrap'>
+                  <div className='min-w-0'>
+                    <p className='font-bold text-sm'>{u.name}</p>
+                    <p className='text-xs text-slate-500'>usuário: <b>{u.email}</b> · senha: <span className='font-mono'>{showPw[u.id] ? u.password : '••••'}</span> <button onClick={() => setShowPw({ ...showPw, [u.id]: !showPw[u.id] })} className='underline ml-1'>{showPw[u.id] ? 'ocultar' : 'mostrar'}</button></p>
+                    <p className='text-[11px] text-slate-500 mt-1'>{permSummary(u.permissions)}</p>
+                  </div>
+                  <div className='flex gap-2'>
+                    <button onClick={() => setOpenUser(openUser === u.id ? null : u.id)} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${openUser === u.id ? 'border-orange-500 text-orange-500' : dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>{openUser === u.id ? 'Fechar' : 'Permissões'}</button>
+                    <button onClick={() => { const np = window.prompt(`Nova senha para ${u.name}:`); if (np && np.trim()) updateUser(u.id, { password: np.trim() }); }} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>Trocar senha</button>
+                    <button onClick={() => { if (!window.confirm(`Excluir o acesso de ${u.name}?`)) return; const nd={...data}; nd.users=nd.users.filter(x=>x.id!==u.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
                   </div>
                 </div>
-                <div className='flex gap-2'>
-                  <button onClick={() => { const nd={...data}; nd.users=nd.users.filter(x=>x.id!==u.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
-                </div>
+                {openUser === u.id && <div className='mt-3'><PermissionGrid value={u.permissions} onChange={(p) => updateUser(u.id, { permissions: p })} dark={dark} compact /><p className='text-[11px] text-slate-500 mt-2'>As mudanças são salvas na hora e valem na próxima vez que o funcionário abrir o app.</p></div>}
               </div>
             ))}
           </div>
@@ -2214,7 +2228,8 @@ function normalizeState(s) {
 }
 const clientUF = (client) => normalizeState(client?.state) || normalizeState(client?.city);
 
-function RoutesTab({ data, setData, dark }) {
+function RoutesTab({ data, setData, dark, user }) {
+  const canFix = canEdit(user, "clients") || canEdit(user, "routes");
   const [mapFilter, setMapFilter] = useState('producao');
   const [selectedState, setSelectedState] = useState(null);
   const [hover, setHover] = useState(null);
@@ -2281,7 +2296,7 @@ function RoutesTab({ data, setData, dark }) {
         </div>
       </div>
 
-      {noStateClients.length > 0 && (
+      {noStateClients.length > 0 && canFix && (
         <div className={`rounded-2xl border p-4 ${dark ? 'bg-amber-500/5 border-amber-500/30' : 'bg-amber-50 border-amber-200'}`}>
           <div className='flex items-center gap-2 text-sm font-bold text-amber-500 mb-1'><AlertTriangle size={16} /> {noState.length} pedido{noState.length > 1 ? 's' : ''} fora do mapa: cliente sem estado cadastrado</div>
           <p className={`text-xs mb-3 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>Escolha o estado de cada cliente abaixo e ele aparece no mapa na hora.</p>
@@ -2431,24 +2446,23 @@ function loadSession() {
 const allowedTabs = (user) => {
   if (!user) return [];
   if (user.role === "admin") return Object.keys(TAB_META);
-  const p = user.permissions || [];
-  return Object.keys(TAB_META).filter(k => p.includes(k));
+  return Object.keys(TAB_META).filter(k => k !== "team" && permLevel(user, k));
 };
 
 function MainApp() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
   const [user, setUser] = useState(loadSession);
-  const [data, setData] = useState(INITIAL_DATA);
+  const [data, setData] = useState(emptyData);
   const [tab, setTab] = useState(() => allowedTabs(loadSession())[0] || 'orders');
   const login = (u) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
-    setLoadingServer(true);
+    setData(emptyData()); setLoadingServer(true);
     setTab(allowedTabs(u).includes("dashboard") ? "dashboard" : (allowedTabs(u)[0] || "orders"));
     setUser(u);
   };
   const logout = () => {
     try { localStorage.removeItem(SESSION_KEY); } catch { }
-    CURRENT_COMPANY_ID = null; setData(INITIAL_DATA); setUser(null);
+    CURRENT_COMPANY_ID = null; setData(emptyData()); setUser(null);
   };
   useEffect(() => { try { localStorage.setItem("ags_dark", dark ? "1" : "0"); } catch { } }, [dark]);
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 900);
@@ -2466,9 +2480,18 @@ function MainApp() {
         const { data: remote, error } = await supabase.from('companies').select('app_data, plan_id, status, trial_ends_at').eq('id', user.company_id).single();
         if (error) throw error;
         if (remote && remote.app_data) {
-          const merged = { ...INITIAL_DATA, ...remote.app_data };
+          const merged = { ...emptyData(), ...JSON.parse(JSON.stringify(remote.app_data)) };
           setData(merged);
           try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
+        }
+        if (remote && user.role === "employee") {
+          const me = (remote.app_data?.users || []).find(u => String(u.id) === String(user.id));
+          if (!me) { try { localStorage.removeItem(SESSION_KEY); } catch { } setUser(null); return; }
+          if (JSON.stringify(me.permissions) !== JSON.stringify(user.permissions)) {
+            const u = { ...user, permissions: me.permissions };
+            try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
+            setUser(u);
+          }
         }
         if (remote && user.role === "admin" && (remote.plan_id !== user.plan || remote.status !== user.status)) {
           const u = { ...user, plan: remote.plan_id, status: remote.status, trial_ends_at: remote.trial_ends_at };
@@ -2477,12 +2500,12 @@ function MainApp() {
       } catch (err) {
         console.error(err);
         // Sem internet / falha no banco: usa a última cópia salva neste aparelho
-        try { const c = localStorage.getItem(`ags_v3_${user.company_id}`); if (c) setData({ ...INITIAL_DATA, ...JSON.parse(c) }); } catch { }
+        try { const c = localStorage.getItem(`ags_v3_${user.company_id}`); if (c) setData({ ...emptyData(), ...JSON.parse(c) }); } catch { }
       }
       finally { setLoadingServer(false); }
     }
     fetchState();
-  }, [user]);
+  }, [user?.company_id, user?.id]);
 
   if (!user) return <LoginScreen onLogin={login} dark={dark} />;
   if (loadingServer) return <div className='flex items-center justify-center h-screen bg-gray-950'><div className='animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500'></div></div>;
@@ -2508,8 +2531,8 @@ function MainApp() {
       {/* SIDEBAR */}
       <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
         <div className={`${sidebarOpen ? 'p-6' : 'p-3 md:p-5 justify-center'} flex items-center gap-3 overflow-hidden`}>
-          <div className='w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex-shrink-0 shadow-lg shadow-orange-500/20 flex items-center justify-center text-white'><Package size={24} /></div>
-          {sidebarOpen && <div className='min-w-0'><h1 className='text-xl font-black tracking-tight'>AGS<span className='text-orange-500'>.ind</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
+          <img src={logoMark} alt='Inflatudo' className='w-10 h-10 flex-shrink-0 drop-shadow-lg' />
+          {sidebarOpen && <div className='min-w-0'><h1 className='text-xl font-black tracking-tight'>Infla<span className='text-orange-500'>tudo</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
         </div>
 
         <nav className='flex-1 px-3 space-y-1 py-4'>
