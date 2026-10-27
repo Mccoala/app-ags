@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend, LineChart, Line } from "recharts";
 import { DollarSign, Package, TrendingUp, AlertTriangle, Factory, CheckCircle, Users, Trophy, Clock, MapPin, Scissors, Layers, ChevronRight, Flame } from "lucide-react";
 import BrainAI from "../components/BrainAI";
@@ -42,6 +42,9 @@ function Panel({ title, icon: Icon, right, children, dark, className = "", subti
 }
 
 export default function DashboardTab({ data, dark, goTo, persist, setData, user }) {
+  // O cérebro grande do painel aparece só no computador (no celular fica o botão flutuante)
+  const [isDesktop, setIsDesktop] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
+  useEffect(() => { const f = () => setIsDesktop(window.innerWidth >= 768); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const [period, setPeriod] = useState("mes");
   const [custom, setCustom] = useState({});
   const orders = data.orders || [];
@@ -113,7 +116,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
         <p className="text-sm text-slate-500 mt-1 font-medium">Vendas, produção e equipe num lugar só</p>
       </div>
 
-      <BrainAI data={data} dark={dark} user={user} persist={persist || ((nd) => setData && setData(nd))} canWrite={user?.role === "admin" || user?.permissions?.dashboard === "edit" || (Array.isArray(user?.permissions) && user.permissions.includes("dashboard"))} />
+      {isDesktop && <div className="hidden md:block"><BrainAI data={data} dark={dark} user={user} persist={persist || ((nd) => setData && setData(nd))} canWrite={user?.role === "admin" || user?.permissions?.dashboard === "edit" || (Array.isArray(user?.permissions) && user.permissions.includes("dashboard"))} /></div>}
 
       <PeriodBar value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} range={range} dark={dark} />
 

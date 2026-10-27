@@ -1269,18 +1269,24 @@ function ProgressRing({ pct, color, dark, size = 64 }) {
 }
 
 // ─── CARDS COMPACTOS ──────────────────────────────────────────────────────────
-// Só um card aberto por vez; ele fecha sozinho quando a pessoa rola a tela um pouco.
+// Só um card aberto por vez; ele fecha sozinho quando o fim dele passa do topo da tela.
 function useAutoCollapse() {
   const [openId, setOpenId] = useState(null);
   useEffect(() => {
     if (!openId) return;
-    const start = new Map(), t0 = Date.now();
-    const onScroll = (e) => {
+    const t0 = Date.now();
+    const onScroll = () => {
       if (Date.now() - t0 < 400) return; // ignora o ajuste da própria abertura
-      const el = e.target === document ? document.scrollingElement : e.target;
-      if (!el || typeof el.scrollTop !== "number" || el.closest?.("[data-card-open]")) return;
-      if (!start.has(el)) { start.set(el, el.scrollTop); return; }
-      if (Math.abs(el.scrollTop - start.get(el)) > 120) setOpenId(null);
+      const card = document.querySelector("[data-card-open]"); if (!card) return;
+      const r = card.getBoundingClientRect();
+      // topo visível = topo da área que rola (no computador a lista rola numa caixa própria; no celular, a página)
+      let sp = card.parentElement;
+      while (sp && sp !== document.body && !/(auto|scroll)/.test(getComputedStyle(sp).overflowY)) sp = sp.parentElement;
+      const top = Math.max(sp && sp !== document.body ? sp.getBoundingClientRect().top : 0, document.querySelector("main header")?.getBoundingClientRect().bottom || 0);
+      const topLimit = top + 70;
+      // fecha quando o fim do card (Montagem / botões da finalização) chega quase no topo,
+      // ou quando o card some por baixo da tela
+      if (r.bottom < topLimit || r.top > window.innerHeight - 40) setOpenId(null);
     };
     window.addEventListener("scroll", onScroll, true);
     return () => window.removeEventListener("scroll", onScroll, true);
@@ -1883,8 +1889,8 @@ function toPermObj(p) {
   if (Array.isArray(p)) return Object.fromEntries(p.filter(k => EMPLOYEE_TABS.includes(k)).map(k => [k, "edit"]));
   return { ...(p || {}) };
 }
-const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', routes: 'Mapa', clients: 'Clientes', sales: 'Área dos Vendedores' };
-const PERM_TAB_HINT = { dashboard: 'números da empresa e IA do gerente', orders: 'criar, editar e excluir pedidos', production: 'escolher responsáveis das etapas', finalization: 'finalizando / finalizado', routes: 'mapa, filtros, rotas e fábrica', clients: 'dados e estado dos clientes', sales: 'clientes, vendas, CRM e IA de vendas' };
+const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', photos: 'Fotos', routes: 'Mapa', clients: 'Clientes', sales: 'Área dos Vendedores' };
+const PERM_TAB_HINT = { dashboard: 'números da empresa e IA do gerente', orders: 'criar, editar e excluir pedidos', production: 'escolher responsáveis das etapas', finalization: 'finalizando / finalizado', routes: 'mapa, filtros, rotas e fábrica', clients: 'dados e estado dos clientes', sales: 'clientes, vendas, CRM e IA de vendas' , photos: 'ver e baixar as fotos dos brinquedos finalizados (editar = apagar fotos)'};
 function PermissionGrid({ value, onChange, dark }) {
   const perms = toPermObj(value);
   const opts = [["", "Sem acesso", "#64748b"], ["view", "Só visualizar", "#0ea5e9"], ["edit", "Visualizar e editar", "#10b981"]];
@@ -1931,7 +1937,7 @@ function TeamTab({ data, setData, dark, user }) {
   const [sellerMsg, setSellerMsg] = useState('');
 
   const ALL_TABS = ['orders', 'production', 'finalization', 'dashboard', 'routes', 'clients', 'team'];
-  const TAB_LABELS = { 'orders': 'Pedidos', 'production': 'Produção', 'finalization': 'Finalização', 'dashboard': 'Dashboard', 'routes': 'MAPA', 'clients': 'Clientes', 'team': 'Equipe' };
+  const TAB_LABELS = { 'orders': 'Pedidos', 'production': 'Produção', 'finalization': 'Finalização', 'photos': 'Fotos', 'dashboard': 'Dashboard', 'routes': 'MAPA', 'clients': 'Clientes', 'team': 'Equipe' };
 
   const addMember = () => { if (!form.name) return; const nd = { ...data }; nd.team.push({ id: Date.now(), ...form }); setData(nd); saveData(nd); setForm({ name: '', role: 'Corte', status: 'ativo' }); setShowForm(false); };
   const persistTeam = (nd) => { const fixed = ensureSellers(nd); setData(fixed); saveData(fixed); };
