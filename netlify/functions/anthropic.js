@@ -38,22 +38,23 @@ export const handler = async function(event, context) {
 
     const requestBody = JSON.parse(event.body);
 
-    // User specifically requested claude-sonnet-4-6
-    let model = requestBody.model || "claude-sonnet-4-6";
-    if (model.includes("claude-3-5") || model.includes("claude-sonnet-3.5")) {
-       model = "claude-sonnet-4-6";
+    // Tenta o modelo pedido e, se ele não existir na conta, cai para os próximos
+    const wanted = requestBody.model && !/claude-3/.test(requestBody.model) ? requestBody.model : "claude-sonnet-4-6";
+    const candidates = [...new Set([wanted, "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"])];
+    let response;
+    for (const model of candidates) {
+      requestBody.model = model;
+      response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify(requestBody)
+      });
+      if (response.status !== 404) break;
     }
-    requestBody.model = model;
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify(requestBody)
-    });
 
     const data = await response.json();
 

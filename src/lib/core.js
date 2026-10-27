@@ -1,0 +1,158 @@
+// Funções compartilhadas do Inflatudo (busca, vendedores, IA, formatação)
+
+export const SELLER_PALETTE = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#ec4899", "#eab308", "#14b8a6", "#ef4444", "#6366f1", "#84cc16", "#06b6d4", "#f43f5e"];
+
+export const moneyBR = (v) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}`;
+export const dateBR = (ds) => {
+  if (!ds) return "—";
+  const [y, m, d] = String(ds).split("T")[0].split("-").map(Number);
+  if (!y) return ds;
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR");
+};
+export const todayStr = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
+export const daysBetween = (a, b = todayStr()) => {
+  if (!a) return null;
+  const p = (s) => { const [y, m, d] = String(s).split("T")[0].split("-").map(Number); return new Date(y, m - 1, d).getTime(); };
+  return Math.round((p(b) - p(a)) / 86400000);
+};
+
+// Texto "normalizado": minúsculo, sem acento, "10 x 5" -> "10x5", pontuação vira espaço
+export function norm(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/(\d)\s*[x×*]\s*(\d)/g, "$1x$2")
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/[^a-z0-9.x]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Número do pedido sem prefixo e sem zeros à esquerda: "PED-01515" -> "1515"
+export const orderNumber = (id) => {
+  const digits = String(id ?? "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  return digits || String(id ?? "");
+};
+
+// Limpa o número que veio do documento: mantém exatamente como está escrito (sem inventar "PED-")
+export function cleanOrderNumber(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const m = s.match(/\d[\d./-]*/);
+  if (!m) return s;
+  return m[0].replace(/[./-]+$/, "").replace(/^0+(?=\d)/, "");
+}
+
+const STOP = new Set(["ped", "pedido", "pedidos", "n", "no", "num", "numero", "nro", "de", "da", "do", "das", "dos", "e", "o", "a", "com", "para", "pra", "em", "cor", "cores"]);
+
+// Junta tudo que pode ser buscado de um pedido num texto só
+export function orderHaystack(o, extra = {}) {
+  const items = (o.items || []).map(it => [it.toy, Array.isArray(it.colors) ? it.colors.join(" ") : it.colors, it.observations, it.isMotor ? "motor soprador" : ""].join(" ")).join(" ");
+  const fin = extra.finalizer || "";
+  const prod = extra.prod ? [extra.prod.cutter, extra.prod.tailor, extra.prod.prep, extra.prod.assembler].join(" ") : "";
+  return norm([o.id, orderNumber(o.id), o.clientName, o.seller, o.voltage, o.status === "concluido" ? "concluido" : o.status, o.priority ? "prioridade urgente" : "", extra.city || "", extra.state || "", items, fin, prod].join(" "));
+}
+
+// Busca "inteligente": aceita "ped 1505", "n 1505", "fut 10x5", "multi park luan", "escorrega: azul parede: roxo", "com logo"...
+export function matchQuery(haystackNorm, idOfOrder, query) {
+  const q = norm(query);
+  if (!q) return true;
+  const numIntent = q.match(/^(?:ped|pedido|n|no|num|numero|nro)\s*(\d+)$/) || q.match(/^(\d{2,})$/);
+  if (numIntent) {
+    const n = numIntent[1].replace(/^0+(?=\d)/, "");
+    if (orderNumber(idOfOrder) === n) return true;
+    if (q.match(/^(?:ped|pedido|n|no|num|numero|nro)\s/)) return orderNumber(idOfOrder).includes(n);
+  }
+  const tokens = q.split(" ").filter(t => t && !STOP.has(t));
+  if (!tokens.length) return true;
+  const words = haystackNorm.split(" ");
+  return tokens.every(t => haystackNorm.includes(t) || words.some(w => w.startsWith(t)));
+}
+
+// Encontra um vendedor já cadastrado com nome parecido (ignora maiúsculas/acentos; aceita só o primeiro nome)
+export function findSeller(sellers, name) {
+  const n = norm(name);
+  if (!n) return null;
+  const list = sellers || [];
+  return list.find(s => norm(s.name) === n)
+    || list.find(s => norm(s.name).split(" ")[0] === n.split(" ")[0] && n.split(" ")[0].length > 2)
+    || null;
+}
+
+// Garante que todo vendedor que aparece nos pedidos esteja cadastrado (com cor própria)
+export function ensureSellers(data) {
+  const sellers = [...(data.sellers || [])];
+  let changed = false;
+  (data.orders || []).forEach(o => {
+    if (!o.seller || !String(o.seller).trim()) return;
+    if (!findSeller(sellers, o.seller)) {
+      sellers.push({ id: Date.now() + sellers.length, name: String(o.seller).trim(), color: SELLER_PALETTE[sellers.length % SELLER_PALETTE.length], auto: true });
+      changed = true;
+    }
+  });
+  return changed ? { ...data, sellers } : data;
+}
+
+export function addSeller(data, name, color, extra = {}) {
+  const sellers = [...(data.sellers || [])];
+  const existing = findSeller(sellers, name);
+  if (existing) return { data, seller: existing };
+  const seller = { id: Date.now(), name: String(name).trim(), color: color || SELLER_PALETTE[sellers.length % SELLER_PALETTE.length], ...extra };
+  return { data: { ...data, sellers: [...sellers, seller] }, seller };
+}
+
+export const sellerColorOf = (data, name) => findSeller(data?.sellers, name)?.color || "#94a3b8";
+
+// WhatsApp: monta link com número brasileiro e mensagem
+export function whatsappLink(phone, text = "") {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.length <= 11 && !d.startsWith("55")) d = "55" + d;
+  return `https://wa.me/${d}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
+// ── IA ───────────────────────────────────────────────────────────────────────
+export async function askAI({ system, messages, maxTokens = 1500 }) {
+  const res = await fetch("/.netlify/functions/anthropic", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages })
+  });
+  const txt = await res.text();
+  let d;
+  try { d = JSON.parse(txt); } catch { throw new Error("Servidor da IA não respondeu (tente de novo em alguns segundos)."); }
+  if (d.error) throw new Error(typeof d.error === "string" ? d.error : (d.error.message || "Erro na IA"));
+  return (d.content || []).map(c => c.text || "").join("").trim();
+}
+
+// Chamada "crua" (com ferramentas): devolve a resposta completa da API
+export async function callClaude(body) {
+  const res = await fetch("/.netlify/functions/anthropic", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 2000, ...body })
+  });
+  const txt = await res.text();
+  let d;
+  try { d = JSON.parse(txt); } catch { throw new Error("Servidor da IA demorou ou não respondeu. Tente de novo."); }
+  if (d.error) throw new Error(typeof d.error === "string" ? d.error : (d.error.message || "Erro na IA"));
+  return d;
+}
+
+// Resumo dos dados para a IA (sem fotos, sem senhas)
+export function aiSnapshot(data, { sellerName } = {}) {
+  const orders = (data.orders || []).filter(o => !sellerName || norm(o.seller) === norm(sellerName));
+  const clientsByName = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
+  return {
+    hoje: todayStr(),
+    vendedores: (data.sellers || []).map(s => s.name),
+    equipe_producao: (data.team || []).map(t => ({ nome: t.name, funcao: t.role, status: t.status })),
+    pedidos: orders.map(o => ({
+      numero: orderNumber(o.id), cliente: o.clientName, cidade: clientsByName[o.clientName]?.city, uf: clientsByName[o.clientName]?.state,
+      vendedor: o.seller, criado: o.createdAt, prazo: o.deadline, status: o.status, prioridade: !!o.priority, valor: o.totalPrice,
+      itens: (o.items || []).map(it => ({ nome: it.toy, motor: !!it.isMotor, cores: it.colors, valor: it.price, obs: it.observations }))
+    })),
+    producao: (data.production || []).filter(p => !sellerName || orders.some(o => o.id === p.orderId)).map(p => ({ pedido: orderNumber(p.orderId), corte: p.cutter, costura: p.tailor, preparacao: p.prep, montagem: p.assembler, pronto: !!p.done })),
+    finalizacao: (data.finalization || []).filter(f => !sellerName || orders.some(o => o.id === f.orderId)).map(f => ({ pedido: orderNumber(f.orderId), finalizador: f.finalizer, etapa: f.stage || (f.done ? "finalizado" : "pendente"), data: f.finDate })),
+    clientes: (data.clients || []).filter(c => !sellerName || orders.some(o => o.clientName === c.name)).map(c => ({ nome: c.name, cidade: c.city, uf: c.state, telefone: c.phone, crm: c.crm || undefined }))
+  };
+}

@@ -1,6 +1,11 @@
 // Inflatudo — Gestão para fabricantes de infláveis - Last Update: 2026-10-26
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
 import { supabase } from "./lib/supabase";
+import { STATE_COORDS, UF_MAP, UF_NAMES, normalizeState, clientUF } from "./lib/geo";
+import MapTab from "./tabs/MapTab";
+import DashboardTab from "./tabs/DashboardTab";
+import SalesTab from "./tabs/SalesTab";
+import { whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -54,8 +59,9 @@ const TAB_META = {
   orders: { label: "Pedidos", Icon: Package },
   production: { label: "Produção", Icon: Factory },
   finalization: { label: "Finalização", Icon: CheckCircle },
-  routes: { label: "MAPA", Icon: Flag },
+  routes: { label: "Mapa", Icon: Flag },
   clients: { label: "Clientes", Icon: Users },
+  sales: { label: "Vendedores", Icon: TrendingUp },
   team: { label: "Equipe", Icon: Settings }
 };
 
@@ -81,7 +87,7 @@ function permLevel(user, tab) {
 const canEdit = (user, tab) => permLevel(user, tab) === "edit";
 const canEditProd = (user) => canEdit(user, "production");
 const canEditFin = (user) => canEdit(user, "finalization");
-const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "routes", "clients"];
+const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "routes", "clients", "sales"];
 
 // Conta nova sempre começa zerada. É uma função (e não um objeto fixo) para que
 // nenhuma lista seja compartilhada entre contas diferentes no mesmo navegador.
@@ -139,16 +145,14 @@ function sellerNames(data, current) {
   if (current && !names.includes(current)) names.push(current);
   return names;
 }
-const sellerColor = (data, name) => (data?.sellers || []).find(s => s.name === name)?.color || SELLER_COLORS[name] || "#9ca3af";
+const sellerColor = (data, name) => sellerColorOf(data, name);
 // Próximo número de pedido sem repetir (mesmo após excluir pedidos)
 function nextOrderId(orders) {
-  const max = (orders || []).reduce((m, o) => {
-    const n = parseInt(String(o.id || "").replace(/^PED-/, ""), 10);
-    return /^PED-\d+$/.test(o.id || "") && n > m ? n : m;
-  }, 0);
-  let id = `PED-${String(max + 1).padStart(3, "0")}`;
-  while ((orders || []).some(o => o.id === id)) id = `PED-${String(parseInt(id.slice(4)) + 1).padStart(3, "0")}`;
-  return id;
+  // Próximo número livre, sem prefixo (ex.: 1515 -> 1516)
+  const nums = (orders || []).map(o => parseInt(orderNumber(o.id), 10)).filter(n => !isNaN(n));
+  let n = (nums.length ? Math.max(...nums) : 0) + 1;
+  while ((orders || []).some(o => orderNumber(o.id) === String(n))) n++;
+  return String(n);
 }
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const CUR_MONTH = monthKey(TODAY);
@@ -228,7 +232,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
       const emp = users.find(u => (u.email || "").trim().toLowerCase() === login && u.password === pw);
       if (!emp) throw new Error("Usuário ou senha incorretos.");
       
-      onLogin({ id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], company_id: cData.id, company_name: cData.company_name });
+      onLogin({ id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], sellerName: emp.sellerName || "", company_id: cData.id, company_name: cData.company_name });
     } catch (e) { setErr(e.message); }
     setLoading(false);
   };
@@ -356,7 +360,7 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
     setForm({ ...form, items: a });
   };
   const save = () => {
-    const nd = { ...data }; const oi = nd.orders.findIndex(o => o.id === order.id); if (oi < 0) return; const
+    let nd = { ...data }; if (form.seller?.trim()) nd = addSeller(nd, form.seller).data; const oi = nd.orders.findIndex(o => o.id === order.id); if (oi < 0) return; const
       si = form.items.map((it, i) => ({
         ...it, itemId: it.itemId || `${order.id}-${i + 1}`, colors: typeof
           it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price), isMotor: !!it.isMotor
@@ -390,13 +394,7 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
           <div className="grid grid-cols-2 gap-3">
             <div><label className={lc}>Cliente</label><input value={form.clientName}
               onChange={e => setForm({ ...form, clientName: e.target.value })} className={ic} /></div>
-            <div><label className={lc}>Vendedor</label>
-              <select value={form.seller} onChange={e => setForm({ ...form, seller: e.target.value })}
-                className={ic}>
-                <option value="">— selecione —</option>{sellerNames(data, form.seller).map(s => <option
-                  key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+            <div><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={form.seller} onChange={v => setForm({ ...form, seller: v })} /></div>
             <div><label className={lc}>Prazo</label><input type="date" value={form.deadline}
               onChange={e => setForm({ ...form, deadline: e.target.value })} className={ic} /></div>
             <div><label className={lc}>Voltagem</label><select value={form.voltage}
@@ -489,6 +487,61 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
   );
 }
 
+// ─── VENDEDOR: seleção + cadastro rápido (popup) ───────────────────────────────
+function SellerModal({ initialName = "", dark, onSave, onClose }) {
+  const [name, setName] = useState(initialName);
+  const [color, setColor] = useState(SELLER_PALETTE[Math.floor(Math.random() * SELLER_PALETTE.length)]);
+  const [phone, setPhone] = useState("");
+  const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`;
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl border shadow-2xl p-5 space-y-3 animate-slide-up ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
+        <div className="flex items-center justify-between"><h3 className="font-black text-lg">Novo representante</h3><button onClick={onClose} className="p-1.5 rounded-lg opacity-60 hover:opacity-100"><X size={16} /></button></div>
+        <div><label className="block text-[11px] font-bold uppercase tracking-wider mb-1 text-gray-500">Nome</label><input autoFocus value={name} onChange={e => setName(e.target.value)} className={ic} placeholder="Ex.: Fernanda Rocha" /></div>
+        <div><label className="block text-[11px] font-bold uppercase tracking-wider mb-1 text-gray-500">WhatsApp (opcional)</label><input value={phone} onChange={e => setPhone(e.target.value)} className={ic} placeholder="(11) 99999-0000" /></div>
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1 text-gray-500">Cor no sistema</label>
+          <div className="flex flex-wrap gap-2">{SELLER_PALETTE.map(c => <button key={c} onClick={() => setColor(c)} className={`w-7 h-7 rounded-full transition-transform ${color === c ? "ring-2 ring-offset-2 ring-white scale-110" : ""}`} style={{ background: c }} />)}</div>
+        </div>
+        <button onClick={() => name.trim() && onSave({ name: name.trim(), color, phone })} disabled={!name.trim()} className="w-full py-2.5 rounded-xl text-sm font-black text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Cadastrar e usar</button>
+      </div>
+    </div>
+  );
+}
+
+function SellerPicker({ data, setData, value, onChange, dark, className, isNew }) {
+  const [modal, setModal] = useState(false);
+  const known = findSeller(data.sellers, value);
+  const names = sellerNames(data, value);
+  const color = known?.color || "#94a3b8";
+  const save = ({ name, color, phone }) => {
+    const { data: nd, seller } = addSeller(data, name, color, phone ? { phone } : {});
+    setData(nd); saveData(nd); onChange(seller.name); setModal(false);
+  };
+  return (
+    <div>
+      <div className="flex gap-1.5 items-stretch">
+        <div className="relative flex-1 min-w-0">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full pointer-events-none" style={{ background: value ? color : "transparent" }} />
+          <select value={value || ""} onChange={e => onChange(e.target.value)} className={className} style={{ paddingLeft: 24 }}>
+            <option value="">— selecione —</option>
+            {names.map(n => <option key={n} value={n}>{n}{!findSeller(data.sellers, n) ? " (novo)" : ""}</option>)}
+          </select>
+        </div>
+        <button type="button" onClick={() => setModal(true)} title="Cadastrar novo representante" className={`px-2.5 rounded-lg border text-xs font-black flex items-center gap-1 ${dark ? "border-gray-700 text-orange-400 hover:bg-gray-800" : "border-gray-200 text-orange-600 hover:bg-orange-50"}`}><Plus size={13} />Novo</button>
+      </div>
+      {value && !known && (
+        <div className="mt-1.5 flex items-center gap-2 text-[11px] font-bold text-amber-500">
+          <span>"{value}" ainda não está cadastrado{isNew ? " (lido do pedido)" : ""}.</span>
+          <button type="button" onClick={() => setModal(true)} className="underline">Cadastrar agora</button>
+          <span className="text-gray-500 font-medium">ou será cadastrado ao salvar</span>
+        </div>
+      )}
+      {modal && <SellerModal initialName={known ? "" : (value || "")} dark={dark} onSave={save} onClose={() => setModal(false)} />}
+    </div>
+  );
+}
+
 // ─── ORDERS TAB ───────────────────────────────────────────────────────────────
 const ORDERS_PER_PAGE = 10;
 function OrdersTab({ data, setData, dark, user }) {
@@ -521,8 +574,9 @@ function OrdersTab({ data, setData, dark, user }) {
   else if (filterType === "concluidos") baseFiltered = orders.filter(o => o.status === "concluido");
   else if (filterType === "atrasados") baseFiltered = orders.filter(o => o.status !== "concluido" && daysLeft(o.deadline) < 0);
   
-  const filtered = baseFiltered.filter(o =>
-    (o.clientName || "").toLowerCase().includes(search.toLowerCase()) || (o.items || []).some(it => (it.toy || "").toLowerCase().includes(search.toLowerCase())) || String(o.id).toLowerCase().includes(search.toLowerCase()));
+  // Busca inteligente: número, cliente, vendedor, brinquedo, medidas, cores, observações, cidade…
+  const clientMap = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
+  const filtered = baseFiltered.filter(o => matchQuery(orderHaystack(o, { city: clientMap[o.clientName]?.city, state: clientMap[o.clientName]?.state }), o.id, search));
   const totalPages = Math.ceil(filtered.length / ORDERS_PER_PAGE);
   const pagedOrders = filtered.slice((page - 1) * ORDERS_PER_PAGE, page * ORDERS_PER_PAGE);
 
@@ -564,25 +618,22 @@ function OrdersTab({ data, setData, dark, user }) {
   const callAI = async () => {
     if (!text.trim() && !pdfData) return;
     setLoading(true); setExtracted(null);
-    const sys = `Você extrai dados de pedidos de brinquedos infláveis. Retorne APENAS JSON válido sem markdown:
-            {
-            "orderNumber":"número do pedido (ex: PED-042) se encontrado",
-            "clientName":"nome do cliente/empresa",
-            "city":"cidade do cliente, se encontrada",
-            "state":"estado do cliente (preferência para sigla, ex: SP, MG), se encontrado",
-            "phone":"telefone do contato do cliente, se encontrado",
-            "email":"email do cliente, se encontrado",
-            "voltage":"110V ou 220V",
-            "deadline":"YYYY-MM-DD — ATENÇÃO: procure o prazo de FABRICAÇÃO/CONFECÇÃO. Ele aparece como 'PRAZO' seguido
-            de data nas observações. NÃO é a data de emissão. Se houver dois prazos, use o ÚLTIMO.",
-            "seller":"nome do representante/vendedor — IMPORTANTE: os vendedores cadastrados são: ${sellerNames(data).join(", ") || "(nenhum cadastrado)"}. Procure EXATAMENTE nos campos: REPRESENTANTE, Vendedor,
-            Representante, Rep., Atendente, Vendido por, Agente. Copie o nome exatamente como está. Caso não encontre nenhum deles explicitamente, aplique a lógica de dedução ou deixe em branco caso seja totalmente incerto.",
-            "items":[{"toy":"nome","colors":["cor1"],"price":0,"observations":"obs","isMotor":false}]
-            }
-            Motores/sopradores/bombas: isMotor=true. ATENÇÃO: NÃO coloque observações (observations) em motores/sopradores/bombas, deixe vazio. Coloque TODAS as observações do pedido no item do brinquedo principal. Crie um item por brinquedo.`;
+    const sys = `Você extrai dados de pedidos de brinquedos infláveis. Retorne APENAS JSON válido, sem markdown, neste formato:
+{
+ "orderNumber": "número do pedido EXATAMENTE como está escrito no documento, só os dígitos (ex.: se está escrito 'Pedido 1515' devolva '1515'; NUNCA acrescente prefixo como PED- e NUNCA acrescente zeros à esquerda)",
+ "clientName": "nome do cliente/empresa",
+ "city": "cidade do cliente", "state": "UF do cliente (sigla, ex.: SP, MG)",
+ "phone": "telefone/WhatsApp do cliente", "email": "e-mail do cliente",
+ "voltage": "110V ou 220V",
+ "deadline": "YYYY-MM-DD — prazo de FABRICAÇÃO/CONFECÇÃO (aparece como 'PRAZO' nas observações). NÃO é a data de emissão. Se houver dois prazos, use o ÚLTIMO.",
+ "seller": "nome do REPRESENTANTE/vendedor exatamente como aparece (campos REPRESENTANTE, Vendedor, Rep., Atendente, Vendido por, Agente). Vendedores já cadastrados: ${sellerNames(data).join(", ") || "nenhum"} — se for um deles, use a grafia cadastrada; se for outro, devolva o nome como está no documento.",
+ "items": [{"toy": "nome completo do item como no pedido (inclua medidas)", "quantity": 1, "colors": ["cor1"], "price": 0, "observations": "detalhes de cores por parte, logo, faixas, medidas, etc.", "isMotor": false}]
+}
+Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quantity" é a QUANTIDADE daquele item no pedido (se o pedido tem 2 motores, quantity=2). "price" é o valor UNITÁRIO. Coloque todas as observações de fabricação no item do brinquedo correspondente. Não invente dados.`;
     try {
-      const
-        content = pdfData ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: `Extraia os dados deste pedido em PDF. Busque o REPRESENTANTE para o vendedor (vendedores cadastrados: ${sellerNames(data).join(", ") || "nenhum"}). E busque o campo PRAZO nas observações para o prazo de fabricação.` }] : `Extraia os dados:\n\n${text}\n\nVendedores cadastrados: ${sellerNames(data).join(", ") || "nenhum"}.`;
+      const content = pdfData
+        ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: "Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores) e ao número do pedido exatamente como está escrito." }]
+        : `Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores):\n\n${text}`;
       const res = await fetch("/.netlify/functions/anthropic", {
         method: "POST",
         headers: {
@@ -612,15 +663,25 @@ function OrdersTab({ data, setData, dark, user }) {
       const raw = (d.content || []).map(c => c.text || "").join("").replace(/```json|```/g, "").trim();
       const p = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
       setExtracted(p);
-      setExtHeader({ orderNumber: p.orderNumber || "", clientName: p.clientName || "", city: p.city || "", state: p.state || "", phone: p.phone || "", email: p.email || "", voltage: p.voltage || "110V", deadline: p.deadline || "", seller: p.seller || "" });
-      setExtItems((p.items || []).map(it => ({ ...it, images: [], colors: Array.isArray(it.colors) ? it.colors.join(",") : (it.colors || "") })));
+      const known = findSeller(data.sellers, p.seller);
+      setExtHeader({ orderNumber: cleanOrderNumber(p.orderNumber), sellerIsNew: !!(p.seller && !known), clientName: p.clientName || "", city: p.city || "", state: p.state || "", phone: p.phone || "", email: p.email || "", voltage: p.voltage || "110V", deadline: p.deadline || "", seller: known ? known.name : (p.seller || "").trim() });
+      // Um item por unidade (ex.: 2 motores viram 2 itens); limite de 50 por linha por segurança
+      const expanded = [];
+      (p.items || []).forEach(it => {
+        const q = Math.max(1, Math.min(50, parseInt(it.quantity, 10) || 1));
+        for (let k = 0; k < q; k++) expanded.push({ ...it, quantity: undefined, images: [], colors: Array.isArray(it.colors) ? it.colors.join(", ") : (it.colors || "") });
+      });
+      setExtItems(expanded);
     } catch (err) { console.error("Extraction error:", err); setExtracted({ error: err.message || "Não foi possível extrair os dados." }); }
     setLoading(false);
   };
 
   const saveExt = () => {
-    const nd = { ...data }; const rawNum = extHeader.orderNumber?.trim(); const
-      newId = (rawNum && !nd.orders.some(o => o.id === rawNum)) ? rawNum : nextOrderId(nd.orders);
+    const rawNum = cleanOrderNumber(extHeader.orderNumber);
+    if (rawNum && data.orders.some(o => orderNumber(o.id) === orderNumber(rawNum))) { alert(`Já existe um pedido nº ${orderNumber(rawNum)}. Altere o número antes de salvar.`); return; }
+    if (!extHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
+    let nd = { ...data }; const newId = rawNum || nextOrderId(nd.orders);
+    if (extHeader.seller?.trim()) nd = addSeller(nd, extHeader.seller).data;
     const items = extItems.map((it, i) => ({
       itemId: `${newId}-${i + 1}`, toy: it.toy, colors: typeof
         it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price) || 0, observations: it.observations || "", images: it.images || [], isMotor: !!it.isMotor
@@ -641,13 +702,14 @@ function OrdersTab({ data, setData, dark, user }) {
     else {
       nd.clients.push({ id: Date.now(), name: extHeader.clientName, city: extHeader.city || "", state: extHeader.state || "", phone: extHeader.phone || "", email: extHeader.email || "", totalOrders: 1, totalSpent: total });
     }
-    setData(nd); saveData(nd); setText(""); setPdfData(null); setPdfName(""); setExtracted(null); setExtItems([]); setExtHeader({}); setView("list");
+    setData(nd); saveData(nd); setSearch(""); setFilterType("todos"); setPage(1); setText(""); setPdfData(null); setPdfName(""); setExtracted(null); setExtItems([]); setExtHeader({}); setView("list");
   };
 
   const addManual = () => {
     if (!manualHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
     if (!manualItems.some(it => it.toy?.trim())) { alert("Informe ao menos um item."); return; }
-    const nd = { ...data }; const newId = nextOrderId(nd.orders);
+    let nd = { ...data }; const newId = nextOrderId(nd.orders);
+    if (manualHeader.seller?.trim()) nd = addSeller(nd, manualHeader.seller).data;
     const
       items = manualItems.map((it, i) => ({ itemId: `${newId}-${i + 1}`, toy: it.toy, colors: it.colors.split(",").map(c => c.trim()).filter(Boolean), price: Number(it.price) || 0, observations: it.observations, images: it.images || [], isMotor: !!it.isMotor }));
     const total = items.reduce((a, b) => a + b.price, 0);
@@ -791,10 +853,7 @@ function OrdersTab({ data, setData, dark, user }) {
             <div><label className={lc}>Cliente</label><input value={manualHeader.clientName}
               onChange={e => setManualHeader({ ...manualHeader, clientName: e.target.value })}
               className={ic} /></div>
-            <div><label className={lc}>Vendedor</label><select value={manualHeader.seller}
-              onChange={e => setManualHeader({ ...manualHeader, seller: e.target.value })}
-              className={ic}><option value="">— selecione —</option>
-                {(data.sellers || []).map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}</select></div>
+            <div><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={manualHeader.seller} onChange={v => setManualHeader({ ...manualHeader, seller: v })} /></div>
             <div><label className={lc}>Prazo</label><input type="date" value={manualHeader.deadline}
               onChange={e => setManualHeader({ ...manualHeader, deadline: e.target.value })}
               className={ic} /></div>
@@ -899,8 +958,8 @@ function OrdersTab({ data, setData, dark, user }) {
                 {[["orderNumber", "Nº Pedido"], ["clientName", "Cliente"], ["deadline", "Prazo", "date"]].map(([k, l, t]) => (
                   <div key={k}><label className={lc}>{l}</label><input type={t || "text"} value={extHeader[k] || ""} onChange={e => setExtHeader({ ...extHeader, [k]: e.target.value })} className={ic} /></div>
                 ))}
-                <div><label className={lc}>Vendedor (REPRESENTANTE)</label>
-                  <select value={extHeader.seller || ""} onChange={e => setExtHeader({ ...extHeader, seller: e.target.value })} className={ic}><option value="">— selecione —</option>{(data.sellers || []).map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}</select></div>
+                <div className="md:col-span-2"><label className={lc}>Vendedor (REPRESENTANTE)</label>
+                  <SellerPicker data={data} setData={setData} dark={dark} className={ic} value={extHeader.seller || ""} isNew={extHeader.sellerIsNew} onChange={v => setExtHeader({ ...extHeader, seller: v })} /></div>
                 <div><label className={lc}>Voltagem</label><select value={extHeader.voltage || "110V"} onChange={e => setExtHeader({ ...extHeader, voltage: e.target.value })} className={ic}><option>110V</option><option>220V</option></select></div>
               </div>
               <div className="space-y-2 mb-4">
@@ -946,7 +1005,7 @@ function OrdersTab({ data, setData, dark, user }) {
         </div>
       )}
       {view === "list" && (<>
-        <div className="relative"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Buscar..." className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
+        <div className="relative"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder='Busque qualquer coisa: "ped 1505", "fut 10x5", "tobogã lateral laranja", "multi park luan", "com logo"…' className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
         <div className="space-y-4">
           {pagedOrders.map(o => {
             const s = statusBadge(o.deadline, o.status === "concluido"); const isSel = selected.has(o.id); const sc = sellerColor(data, o.seller); const ni = (o.items || []).filter(it => !it.isMotor).length; const mi = (o.items || []).filter(it => it.isMotor).length;
@@ -1020,127 +1079,178 @@ function OrdersTab({ data, setData, dark, user }) {
   );
 }
 
-// ─── SHARED PROD CARD ─────────────────────────────────────────────────────────
-function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTogglePriority, canEdit, lightbox, setLightbox }) {
-  const [obsOpen, setObsOpen] = useState(false);
+// ─── PRODUÇÃO / FINALIZAÇÃO: regras ──────────────────────────────────────────
+// Cada etapa com responsável escolhido = 25%. As 4 etapas = 100% e o item vai para a Finalização.
+// Na Finalização: pendente 0%, "Finalizando" 50%, "Finalizado" 100%.
+const STAGES = [
+  { key: "cutter", done: "cutDone", label: "Corte" },
+  { key: "tailor", done: "tailorDone", label: "Costura" },
+  { key: "prep", done: "prepDone", label: "Preparação" },
+  { key: "assembler", done: "assembleDone", label: "Montagem" },
+];
+const prodPct = (p) => STAGES.filter(st => p && p[st.key]).length * 25;
+const finStage = (f) => f?.stage || (f?.done ? "finalizado" : "");
+const finPct = (f) => ({ finalizando: 50, finalizado: 100 }[finStage(f)] || 0);
 
-  // Progress: 12.5% per assigned worker (4 stages) and 12.5% per completed stage (4 stages)
-  let points = 0;
-  if (row.cutter) points++; if (row.cutDone) points++;
-  if (row.tailor) points++; if (row.tailorDone) points++;
-  if (row.prep) points++; if (row.prepDone) points++;
-  if (row.assembler) points++; if (row.assembleDone) points++;
-  const pct = Math.round((points / 8) * 100);
+// Recalcula status do pedido a partir da produção e finalização
+function syncOrderStatus(nd, orderId) {
+  const oi = nd.orders.findIndex(o => o.id === orderId);
+  if (oi < 0) return;
+  const toys = (nd.orders[oi].items || []).filter(it => !it.isMotor);
+  const prods = nd.production.filter(p => p.orderId === orderId);
+  const fins = nd.finalization.filter(f => f.orderId === orderId);
+  const allFinal = toys.length > 0 && toys.every(it => finStage(fins.find(f => f.itemId === it.itemId)) === "finalizado");
+  const started = prods.some(p => prodPct(p) > 0) || fins.length > 0;
+  const status = allFinal ? "concluido" : started ? "producao" : "aguardando";
+  nd.orders = nd.orders.map((o, i) => i === oi ? { ...o, status } : o);
+}
 
-  const dl = daysLeft(row.deadline);
+function useSearchRows(rows, data, search) {
+  const clientsByName = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
+  return rows.filter(r => {
+    if (!search.trim()) return true;
+    const order = data.orders.find(o => o.id === r._orderId) || r;
+    const one = { ...order, items: (order.items || []).filter(it => it.itemId === r._itemId) };
+    const hay = orderHaystack(one, { city: clientsByName[order.clientName]?.city, state: clientsByName[order.clientName]?.state, prod: data.production.find(p => p.itemId === r._itemId), finalizer: r.finalizer });
+    return matchQuery(hay, r._orderId, search);
+  });
+}
+
+// Cabeçalho do card: número enorme, vendedor com a cor dele, cliente e brinquedo
+function OrderCardHead({ row, data, dark, extra }) {
+  const sc = sellerColor(data, row.seller);
   const s = statusBadge(row.deadline, row.done);
-  const progressColor = row.done ? "#22c55e" : dl < 0 ? "#ef4444" : dl <= 3 ? "#f59e0b" : "#f97316";
-  const strokeColor = row.done ? "#10b981" : (pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316");
-  const hasObs = row.observations && row.observations.trim().length > 0;
-  const hasImg = row.images && row.images.length > 0;
-  const isMulti = row._isMulti;
-
-  const StageNode = ({ label, worker, wList, field, doneField }) => (
-    <div className={`flex flex-col p-3 rounded-xl border transition-all ${dark ? "bg-gray-800/40 border-gray-700/60 hover:bg-gray-800/80" : "bg-gray-50 border-gray-200 hover:bg-gray-100"} flex-1 min-w-0`}>
-       <div className="flex items-center justify-between mb-2">
-         <span className={`text-[10px] sm:text-xs font-black uppercase tracking-widest ${row[doneField] ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
-         <button disabled={!editMode || !canEdit || !worker} onClick={() => onUpdateProd(row._itemId, doneField, !row[doneField])} 
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1 ${row[doneField] ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30" : (worker ? "bg-blue-500/20 text-blue-500 border border-blue-500/30" : (dark ? "bg-gray-800 text-gray-400 border border-gray-700" : "bg-gray-100 text-gray-500 border border-gray-200"))} ${(!editMode || !canEdit || !worker) ? "opacity-70 cursor-not-allowed" : "hover:opacity-80 active:scale-95 cursor-pointer"}`}>{row[doneField] ? <><Check size={10} strokeWidth={3}/> OK</> : (worker ? "Em Progresso" : "Pendente")}
-         </button>
-       </div>
-       <select value={worker || ""} disabled={!editMode || !canEdit} onChange={e => onUpdateProd(row._itemId, field, e.target.value)}
-          className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold outline-none transition-all border shadow-sm
-            ${worker ? (dark ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-emerald-50 border-emerald-300 text-emerald-700") : (dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900")}
-            ${(!editMode || !canEdit) ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500 focus:ring-1 focus:ring-orange-500"}
-          `}>
-          <option value="">👤 Atribuir...</option>
-          {wList.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
-          {worker && !wList.some(w => w.name === worker) && <option value={worker}>{worker}</option>}
-       </select>
-    </div>
-  );
-
   return (
-    <div className={`rounded-xl border overflow-hidden transition-all ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""} ${row.done ? "opacity-70" : ""}`}>
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap mb-0.5">
-              <span className={`font-mono text-xs font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>{row._orderId}</span>
-              {isMulti && <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>item {row._itemId?.split("-").pop()}</span>}
-              {row.priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-500/20 text-red-400 border border-red-500/30">🚨 Prioridade</span>}
-              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.color}`}>{s.label}</span>
-            </div>
-            <div className={`font-black text-base ${dark ? "text-white" : "text-gray-900"}`}>{row.toy}</div>
-            <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>{row.clientName} · {row.seller || "—"} · {row.voltage}</div>
-            {/* Colors - no bullet circles, only color swatches */}
-            {(row.colors || []).length > 0 && (
-              <div className="flex gap-1 mt-1">{(row.colors || []).map(c => <span key={c} title={c} className="w-4 h-4 rounded-full" style={{ background: COLOR_MAP[c] || "#888" }} />)}</div>
-            )}
-            {(hasObs || hasImg) && (
-              <button onClick={() => setObsOpen(!obsOpen)} className={`mt-2 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${obsOpen ? dark ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-orange-100 text-orange-700 border border-orange-300" : dark ? "bg-gray-800 text-gray-300 border border-gray-700" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
-                {obsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{hasObs && hasImg ? "📋 Obs + Foto" : hasObs ? "📋 Ver Observações" : "🖼️ Ver Foto"}
-              </button>
-            )}
-            {obsOpen && (
-              <div className={`mt-3 p-4 rounded-xl border ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-                <div className="flex gap-4">
-                  {hasObs && <div className="flex-1 min-w-0"><div className={`text-xs font-bold uppercase mb-2 ${dark ? "text-gray-400" : "text-gray-500"}`}>Observações</div><p className={`text-sm leading-relaxed ${dark ? "text-gray-200" : "text-gray-700"}`}>{row.observations}</p></div>}
-                  {hasImg && (
-                    <div className="flex-shrink-0">
-                      {hasObs && <div className={`text-xs font-bold uppercase mb-2 ${dark ? "text-gray-400" : "text-gray-500"}`}>Imagens</div>}
-                      <div className="flex flex-wrap gap-2">
-                        {row.images.map((imgUrl, imgIdx) => (
-                          <div key={imgIdx} className="relative group cursor-pointer" onClick={() => setLightbox(imgUrl)}>
-                            <img src={imgUrl} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-600" />
-                            <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white" /></div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+    <div className="min-w-0 flex-1">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="leading-none">
+          <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${dark ? "text-gray-500" : "text-gray-400"}`}>Pedido</div>
+          <div className="font-black tabular-nums tracking-tight" style={{ fontSize: "2.4rem", lineHeight: 1, color: dark ? "#fff" : "#0f172a" }}>
+            <span className="text-orange-500">Nº</span>{orderNumber(row._orderId)}
           </div>
         </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
-          <div className="relative w-14 h-14 flex items-center justify-center">
-            <svg className="w-14 h-14 transform -rotate-90 block">
-              <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" fill="none" className={dark ? "text-gray-800" : "text-gray-200"} />
-              <circle cx="28" cy="28" r="24" stroke={strokeColor} strokeWidth="4" fill="none" strokeDasharray="150.8" strokeDashoffset={150.8 - (150.8 * pct) / 100} className="transition-all duration-500 ease-out drop-shadow-sm" strokeLinecap="round" />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-               <span className={`text-[11px] font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-700"}`}>{pct}%</span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-2 flex-shrink-0">
-            {canEdit && (
-              <button onClick={() => onTogglePriority(row._itemId, row._orderId)} title={row.priority ? "Remover prioridade" : "Marcar como prioridade"}
-                className={`p-1.5 rounded-lg border transition-all ${row.priority ? "bg-red-500/20 border-red-500/40 text-red-400" : "border-gray-700 text-gray-500 hover:border-red-400 hover:text-red-400"}`}>
-                <Flag size={14} />
-              </button>
-            )}
-            <button onClick={() => canEdit && editMode && onMarkDone(row._itemId, row._orderId)} disabled={!canEdit || !editMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${row.done ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-500/20" : pct === 100 ? "border-emerald-500 text-emerald-500 animate-pulse" : dark ? "border-gray-700 text-gray-400 hover:border-emerald-500/50" : "border-gray-300 text-gray-500"} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
-              <Check size={12} />{row.done ? "Concluído" : pct === 100 ? "Enviar p/ finalização" : "Marcar feito"}
-            </button>
-          </div>
+        <div className="flex items-center gap-1.5 flex-wrap pb-1">
+          {row.seller && <span className="text-xs font-black px-2.5 py-1 rounded-full" style={{ background: `${sc}22`, color: sc, border: `1px solid ${sc}55` }}>● {row.seller}</span>}
+          {row.priority && <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-500/20 text-red-400 border border-red-500/30">🚨 Prioridade</span>}
+          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${s.color}`}>{s.label}</span>
+          {row._isMulti && <span className={`text-xs px-2 py-1 rounded-full font-bold ${dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>item {row._itemId?.split("-").pop()}</span>}
+          {extra}
+        </div>
+      </div>
+      <div className={`font-bold text-base mt-2 ${dark ? "text-gray-200" : "text-gray-800"}`}>{row.toy}</div>
+      <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>{row.clientName} · {row.voltage} · prazo {fmt(row.deadline)}</div>
+      {(row.colors || []).length > 0 && (
+        <div className="flex gap-1.5 mt-1.5 flex-wrap">{(row.colors || []).map(c => <span key={c} className={`flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-600"}`}><span className="w-2.5 h-2.5 rounded-full" style={{ background: COLOR_MAP[c] || "#888" }} />{c}</span>)}</div>
+      )}
+    </div>
+  );
+}
+
+function ObsAndPhotos({ row, dark, setLightbox }) {
+  const [open, setOpen] = useState(false);
+  const hasObs = row.observations && row.observations.trim().length > 0;
+  const hasImg = row.images && row.images.length > 0;
+  if (!hasObs && !hasImg) return null;
+  return (
+    <div className="mt-2">
+      <button onClick={() => setOpen(!open)} className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${open ? dark ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-orange-100 text-orange-700 border border-orange-300" : dark ? "bg-gray-800 text-gray-300 border border-gray-700" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{hasObs && hasImg ? "📋 Obs + Foto" : hasObs ? "📋 Ver Observações" : "🖼️ Ver Foto"}
+      </button>
+      {open && (
+        <div className={`mt-3 p-4 rounded-xl border flex flex-col sm:flex-row gap-4 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
+          {hasObs && <p className={`flex-1 text-sm leading-relaxed whitespace-pre-wrap ${dark ? "text-gray-200" : "text-gray-700"}`}>{row.observations}</p>}
+          {hasImg && <div className="flex flex-wrap gap-2">{row.images.map((u, i) => (
+            <div key={i} className="relative group cursor-pointer" onClick={() => setLightbox(u)}>
+              <img src={u} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-600" />
+              <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={22} className="text-white" /></div>
+            </div>))}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProgressRing({ pct, color, dark, size = 64 }) {
+  const r = size / 2 - 5, c = 2 * Math.PI * r;
+  return (
+    <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90 block">
+        <circle cx={size / 2} cy={size / 2} r={r} stroke={dark ? "#1f2937" : "#e5e7eb"} strokeWidth="5" fill="none" />
+        <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth="5" fill="none" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" style={{ transition: "stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1), stroke .3s" }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center"><span className={`text-sm font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-800"}`}>{pct}%</span></div>
+    </div>
+  );
+}
+
+// ─── SHARED PROD CARD ─────────────────────────────────────────────────────────
+function ProdCard({ row, data, dark, workers, onAssign, onTogglePriority, canEdit, setLightbox }) {
+  const pct = prodPct(row);
+  const color = pct === 100 ? "#10b981" : pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316";
+  return (
+    <div className={`rounded-2xl border overflow-hidden transition-all ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
+        <div className="min-w-0 flex-1">
+          <OrderCardHead row={row} data={data} dark={dark} />
+          <ObsAndPhotos row={row} dark={dark} setLightbox={setLightbox} />
+        </div>
+        <div className="flex sm:flex-col items-center sm:items-end gap-3 flex-shrink-0">
+          <ProgressRing pct={pct} color={color} dark={dark} />
+          {canEdit && (
+            <button onClick={() => onTogglePriority(row._orderId)} title={row.priority ? "Remover prioridade" : "Marcar como prioridade"}
+              className={`p-2 rounded-lg border transition-all ${row.priority ? "bg-red-500/20 border-red-500/40 text-red-400" : dark ? "border-gray-700 text-gray-500 hover:border-red-400 hover:text-red-400" : "border-gray-300 text-gray-400 hover:text-red-500"}`}><Flag size={14} /></button>
+          )}
+          {pct === 100 && <span className="text-[11px] font-black text-emerald-500 whitespace-nowrap">✓ Na finalização</span>}
         </div>
       </div>
       <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <StageNode label="Corte" worker={row.cutter} wList={workers.corte} field="cutter" doneField="cutDone" />
-          <StageNode label="Costura" worker={row.tailor} wList={workers.costura} field="tailor" doneField="tailorDone" />
-          <StageNode label="Preparação" worker={row.prep} wList={workers.prep} field="prep" doneField="prepDone" />
-          <StageNode label="Montagem" worker={row.assembler} wList={workers.montagem} field="assembler" doneField="assembleDone" />
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          {STAGES.map(st => {
+            const worker = row[st.key];
+            const list = workers[st.key] || [];
+            return (
+              <div key={st.key} className={`p-3 rounded-xl border transition-all ${worker ? (dark ? "bg-emerald-500/10 border-emerald-500/30" : "bg-emerald-50 border-emerald-200") : (dark ? "bg-gray-800/40 border-gray-700/60" : "bg-white border-gray-200")}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-xs font-black uppercase tracking-widest ${worker ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{st.label}</span>
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${worker ? "bg-emerald-500 text-white" : dark ? "bg-gray-800 text-gray-500" : "bg-gray-100 text-gray-400"}`}>{worker ? "✓ 25%" : "0%"}</span>
+                </div>
+                <select value={worker || ""} disabled={!canEdit} onChange={e => onAssign(row._itemId, st.key, e.target.value)}
+                  className={`w-full px-2 py-2 rounded-lg text-sm font-semibold outline-none border ${worker ? (dark ? "bg-gray-950 border-emerald-500/30 text-emerald-300" : "bg-white border-emerald-300 text-emerald-700") : (dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900")} ${!canEdit ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500"}`}>
+                  <option value="">👤 Escolher responsável…</option>
+                  {list.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                  {worker && !list.some(w => w.name === worker) && <option value={worker}>{worker}</option>}
+                </select>
+              </div>
+            );
+          })}
         </div>
-        
-        {/* Horizontal Progress Bar replacing the gradient */}
-        <div className="w-full h-1.5 rounded-full overflow-hidden flex" style={{ background: dark ? "#1f2937" : "#e5e7eb" }}>
-          <div className="h-full rounded-full transition-all duration-700 ease-out" style={{ width: `${pct}%`, backgroundColor: strokeColor }}></div>
+        <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: dark ? "#1f2937" : "#e5e7eb" }}>
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color, transition: "width .6s cubic-bezier(.2,.8,.2,1)" }} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatChips({ items, dark }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+      {items.map(s => (
+        <div key={s.label} className={`rounded-lg px-2.5 py-1.5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} flex items-center gap-2`}>
+          <span className="text-xl font-black leading-none tabular-nums" style={{ color: s.color }}>{s.value}</span>
+          <span className={`text-xs font-medium leading-tight ${dark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SearchBox({ value, onChange, dark }) {
+  return (
+    <div className="relative mb-2">
+      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder='Busque qualquer coisa: "ped 1505", "fut 10x5", "tobogã laranja", "luan", "com logo"…' className={`w-full pl-9 pr-9 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"} focus:border-orange-500`} />
+      {value && <button onClick={() => onChange("")} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-orange-500"><X size={14} /></button>}
     </div>
   );
 }
@@ -1148,13 +1258,10 @@ function ProdCard({ row, editMode, dark, workers, onUpdateProd, onMarkDone, onTo
 // ─── PRODUCTION TAB ───────────────────────────────────────────────────────────
 function ProductionTab({ data, setData, dark, user }) {
   const [search, setSearch] = useState("");
-  const [editMode, setEditMode] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatus, setFilterStatus] = useState("todos");
   const [lightbox, setLightbox] = useState(null);
-  const [savedState, setSavedState] = useState(null); // snapshot before edit
   const [form, setForm] = useState({ toy: "", clientName: "", deadline: "", seller: "", colors: "", voltage: "110V", observations: "" });
-
   const canEdit = canEditProd(user);
 
   const allRows = [];
@@ -1162,171 +1269,111 @@ function ProductionTab({ data, setData, dark, user }) {
     const orderItems = (order.items || []).filter(it => !it.isMotor);
     orderItems.forEach(item => {
       const prod = data.production.find(p => p.itemId === item.itemId) || {};
-      allRows.push({ ...order, ...item, ...prod, _orderId: order.id, _itemId: item.itemId, _isMulti: orderItems.length > 1, priority: order.priority || false });
+      allRows.push({ ...order, ...item, ...prod, done: prodPct(prod) === 100, _orderId: order.id, _itemId: item.itemId, _isMulti: orderItems.length > 1, priority: order.priority || false });
     });
   });
-
   const sortedRows = sortProdRows(allRows);
-  const q = search.trim().toLowerCase();
-  const matches = (r) => !q || r.clientName?.toLowerCase().includes(q) || r.toy?.toLowerCase().includes(q) || String(r._orderId || "").toLowerCase().includes(q);
-  const activeRows = sortedRows.filter(r => !r.done && r.status !== "concluido" && matches(r));
-  const doneRows = sortedRows.filter(r => (r.done || r.status === "concluido") && matches(r));
-  // Prazos do mês atual / próximo mês (calculado pela data de hoje, não mais fixo em março/abril)
-  const notDone = sortedRows.filter(r => !r.done && r.status !== "concluido");
-  const thisMon = notDone.filter(r => (r.deadline || "").startsWith(CUR_MONTH));
-  const nextMon = notDone.filter(r => (r.deadline || "").startsWith(NEXT_MONTH));
-  const doneMon = doneRows.filter(r => (r.deadline || "").startsWith(CUR_MONTH));
+  const found = useSearchRows(sortedRows, data, search);
+  const activeRows = found.filter(r => !r.done);
+  const doneRows = found.filter(r => r.done);
   const delayedRows = activeRows.filter(r => daysLeft(r.deadline) < 0);
+  const urgentRows = activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); });
+  const thisMon = sortedRows.filter(r => !r.done && (r.deadline || "").startsWith(CUR_MONTH));
+  const nextMon = sortedRows.filter(r => !r.done && (r.deadline || "").startsWith(NEXT_MONTH));
 
-  const workers = {
-    corte: data.team.filter(t => t.role === "Corte" && t.status === "ativo"),
-    costura: data.team.filter(t => t.role === "Costura" && t.status === "ativo"),
-    prep: data.team.filter(t => t.role === "Preparação" && t.status === "ativo"),
-    montagem: data.team.filter(t => (t.role === "Preparação" || t.role === "Montagem") && t.status === "ativo"),
-  };
+  const active = (role) => data.team.filter(t => t.status === "ativo" && (Array.isArray(role) ? role.includes(t.role) : t.role === role));
+  const workers = { cutter: active("Corte"), tailor: active("Costura"), prep: active("Preparação"), assembler: active(["Montagem", "Preparação"]) };
 
   const filteredRows = filterStatus === "todos" ? [...activeRows, ...doneRows]
-    : filterStatus === "atrasados" ? activeRows.filter(r => daysLeft(r.deadline) < 0)
+    : filterStatus === "atrasados" ? delayedRows
       : filterStatus === "concluidos" ? doneRows
-        : filterStatus === "urgente" ? activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); })
+        : filterStatus === "urgente" ? urgentRows
           : activeRows.filter(r => !r.priority && daysLeft(r.deadline) > 3);
 
-  const startEdit = () => { setSavedState(JSON.parse(JSON.stringify(data))); setEditMode(true); };
-  const cancelEdit = () => { if (savedState) { setData(savedState); saveData(savedState); } setEditMode(false); setSavedState(null); };
-  const saveEdit = () => { saveData(data); setEditMode(false); setSavedState(null); };
+  const persist = (nd) => { setData(nd); saveData(nd); };
 
-  const updateProd = (itemId, field, value) => {
-    const nd = { ...data };
-    const idx = nd.production.findIndex(p => p.itemId === itemId);
-    if (idx >= 0) nd.production[idx] = { ...nd.production[idx], [field]: value };
-    setData(nd);
+  // Escolher responsável = etapa concluída (25%). 4 etapas = vai direto para a Finalização.
+  const assign = (itemId, field, value) => {
+    const nd = { ...data, production: [...data.production], finalization: [...data.finalization] };
+    let idx = nd.production.findIndex(p => p.itemId === itemId);
+    const row = allRows.find(r => r._itemId === itemId);
+    if (idx < 0) { nd.production.push({ itemId, orderId: row?._orderId, cutter: "", tailor: "", prep: "", assembler: "" }); idx = nd.production.length - 1; }
+    const st = STAGES.find(x => x.key === field);
+    const prev = nd.production[idx];
+    // Guarda a DATA em que cada pessoa fez cada etapa (base para "quanto fulano costurou no mês")
+    const p = { ...prev, [field]: value, [st.done]: !!value, [`${field}At`]: value ? (prev[field] === value && prev[`${field}At`] ? prev[`${field}At`] : TODAY_STR) : "" };
+    p.done = prodPct(p) === 100;
+    nd.production[idx] = p;
+    const finIdx = nd.finalization.findIndex(f => f.itemId === itemId);
+    if (p.done && finIdx < 0) nd.finalization.push({ itemId, orderId: p.orderId, finalizer: "", stage: "", done: false, finDate: null });
+    if (!p.done && finIdx >= 0 && finStage(nd.finalization[finIdx]) !== "finalizado") nd.finalization.splice(finIdx, 1);
+    syncOrderStatus(nd, p.orderId);
+    persist(nd);
   };
 
-  const markDone = (itemId, orderId) => {
-    const nd = { ...data };
-    const prodItem = nd.production.find(p => p.itemId === itemId);
-    if (!prodItem) return;
-    if (!prodItem.done && (!prodItem.cutter || !prodItem.tailor || !prodItem.prep || !prodItem.assembler)) {
-      alert("Atribua colaboradores em todas as 4 etapas antes de finalizar o pedido."); return;
-    }
-    const idx = nd.production.findIndex(p => p.itemId === itemId);
-    if (idx >= 0) {
-      nd.production[idx].done = !nd.production[idx].done;
-      // also toggle interior checkmarks automatically for logic compatibility
-      nd.production[idx].cutDone = nd.production[idx].done;
-      nd.production[idx].tailorDone = nd.production[idx].done;
-      nd.production[idx].prepDone = nd.production[idx].done;
-      nd.production[idx].assembleDone = nd.production[idx].done;
-    }
-    
-    // if marking done: add to finalization queue
-    if (nd.production[idx].done) {
-      if (!nd.finalization.find(f => f.itemId === itemId)) {
-        nd.finalization.push({ itemId, orderId, finalizer: "", done: false, finDate: null });
-      }
-    } else {
-      nd.finalization = nd.finalization.filter(f => f.itemId !== itemId || f.done); // keep if already finalized
-    }
-    const allDone = nd.production.filter(p => p.orderId === orderId).every(p => p.done);
-    const oi = nd.orders.findIndex(o => o.id === orderId);
-    if (oi >= 0) nd.orders[oi].status = allDone ? "concluido" : "producao";
-    setData(nd); saveData(nd);
-  };
-
-  const assigned = (p) => [p.cutter, p.tailor, p.prep, p.assembler].filter(Boolean).length;
-
-  const togglePriority = (itemId, orderId) => {
-    const nd = { ...data }; const oi = nd.orders.findIndex(o => o.id === orderId);
-    if (oi >= 0) {
-      const wasPriority = nd.orders[oi].priority;
-      nd.orders[oi].priority = !wasPriority;
-      // When activating priority, jump to "urgente" filter
-      
-    }
-    setData(nd); saveData(nd);
+  const togglePriority = (orderId) => {
+    const nd = { ...data, orders: data.orders.map(o => o.id === orderId ? { ...o, priority: !o.priority } : o) };
+    persist(nd);
   };
 
   const addOrder = () => {
     if (!form.toy?.trim() || !form.clientName?.trim()) { alert("Informe o brinquedo e o cliente."); return; }
-    const nd = { ...data }; const newId = nextOrderId(nd.orders); const itemId = `${newId}-1`;
-    nd.orders.push({ id: newId, clientName: form.clientName, voltage: form.voltage, deadline: form.deadline, seller: form.seller, totalPrice: 0, status: "producao", createdAt: TODAY_STR, priority: false, items: [{ itemId, toy: form.toy, colors: form.colors.split(",").map(c => c.trim()).filter(Boolean), price: 0, observations: form.observations, image: null, isMotor: false }] });
-    nd.production.push({ itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false });
-    setData(nd); saveData(nd); setShowAdd(false); setForm({ toy: "", clientName: "", deadline: "", seller: "", colors: "", voltage: "110V", observations: "" });
+    let nd = { ...data }; const newId = nextOrderId(nd.orders); const itemId = `${newId}-1`;
+    if (form.seller?.trim()) nd = addSeller(nd, form.seller).data;
+    nd.orders = [...nd.orders, { id: newId, clientName: form.clientName, voltage: form.voltage, deadline: form.deadline, seller: form.seller, totalPrice: 0, status: "aguardando", createdAt: TODAY_STR, priority: false, items: [{ itemId, toy: form.toy, colors: form.colors.split(",").map(c => c.trim()).filter(Boolean), price: 0, observations: form.observations, images: [], isMotor: false }] }];
+    nd.production = [...nd.production, { itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }];
+    persist(nd); setShowAdd(false); setForm({ toy: "", clientName: "", deadline: "", seller: "", colors: "", voltage: "110V", observations: "" });
   };
 
   const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"}`;
-
-  // Filter labels for "Todos" dropdown
-  const filterOpts = [["todos", "Todos"], ["urgente", "Urgente"], ["atrasados", "Atrasados"], ["ok", "No prazo"], ["concluidos", "Concluídos"]];
+  const filterOpts = [["todos", "Todos", activeRows.length + doneRows.length], ["urgente", "Urgente", urgentRows.length], ["atrasados", "Atrasados", delayedRows.length], ["ok", "No prazo", null], ["concluidos", "Concluídos", doneRows.length]];
 
   return (
     <div className="flex flex-col" style={{ height: "100%" }}>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
-
-      {/* ── FROZEN HEADER — compact ── */}
-      <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "bg-gray-950 border-gray-800" : "bg-slate-100 border-gray-200"}`}>
-        {/* Row 1: title + buttons */}
+      <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
             <h2 className={`text-xl font-black leading-tight ${dark ? "text-white" : "text-gray-900"}`}>Produção</h2>
-            <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Brinquedos — motores excluídos</p>
+            <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Escolha o responsável de cada etapa — cada uma vale 25%. Ao completar 100% o item vai para a Finalização.</p>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
-            {canEdit && <button onClick={() => setShowAdd(!showAdd)} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><Plus size={13} />Adicionar</button>}
-            {canEdit && !editMode && <button onClick={startEdit} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border ${dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}><Edit3 size={13} />Editar</button>}
-            {editMode && <><button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}><Save size={13} />Salvar</button><button onClick={cancelEdit} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border ${dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}><X size={13} />Cancelar</button></>}
-          </div>
+          {canEdit && <button onClick={() => setShowAdd(!showAdd)} className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold border flex-shrink-0 ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><Plus size={13} />Adicionar</button>}
         </div>
-        {/* Row 2: stats compact */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-          {[{ label: "Atrasados", value: delayedRows.length, color: "#ef4444" }, { label: "Prazo no mês", value: thisMon.length, color: "#f97316" }, { label: "Prox. Mês", value: nextMon.length, color: "#3b82f6" }, { label: "Prontos no mês", value: doneMon.length, color: "#22c55e" }].map(s => (
-            <div key={s.label} className={`rounded-lg px-2 py-1.5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} flex items-center gap-1.5`}>
-              <span className="text-lg font-black leading-none" style={{ color: s.color }}>{s.value}</span>
-              <span className={`text-xs font-medium leading-tight ${dark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
-            </div>
-          ))}
-        </div>
-        {/* Row 3: filters */}
-        <div className="relative mb-2"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por cliente ou brinquedo..." className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`} /></div><div className="flex gap-1.5 flex-wrap">
-          {filterOpts.map(([v, l]) => (
+        <StatChips dark={dark} items={[{ label: "Atrasados", value: delayedRows.length, color: "#ef4444" }, { label: "Prazo no mês", value: thisMon.length, color: "#f97316" }, { label: "Próx. mês", value: nextMon.length, color: "#3b82f6" }, { label: "Prontos", value: doneRows.length, color: "#22c55e" }]} />
+        <SearchBox value={search} onChange={setSearch} dark={dark} />
+        <div className="flex gap-1.5 flex-wrap">
+          {filterOpts.map(([v, l, n]) => (
             <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>
-              {l}{" "}<span className="opacity-70">{v === "todos" ? `(${activeRows.length + doneRows.length})` : v === "atrasados" ? `(${delayedRows.length})` : v === "concluidos" ? `(${doneRows.length})` : v === "urgente" ? `(${activeRows.filter(r => { const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); }).length})` : ""}</span>
+              {l}{n !== null && <span className="opacity-70"> ({n})</span>}
             </button>
           ))}
         </div>
-        {editMode && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-amber-500/10 border-amber-500/30 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-700"}`}>✏️ Modo edição ativo — clique em Salvar para confirmar.</div>}
-        {!editMode && canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-gray-800/60 border-gray-700 text-gray-400" : "bg-gray-100 border-gray-200 text-gray-500"}`}>🔒 Modo leitura — clique em Editar.</div>}
-        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
+        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
       </div>
 
-      {/* ── SCROLLABLE CARDS AREA ── */}
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
         {showAdd && (
           <div className={`rounded-xl p-4 border ${dark ? "bg-gray-900 border-orange-500/30" : "bg-orange-50 border-orange-200"}`}>
             <div className="flex items-center justify-between mb-3">
               <h4 className={`font-bold ${dark ? "text-white" : "text-gray-900"}`}>Adicionar à Produção</h4>
-              <button onClick={() => setShowAdd(false)} className={`p-1.5 rounded-lg ${dark ? "hover:bg-gray-800 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}><X size={16} /></button>
+              <button onClick={() => setShowAdd(false)} className="p-1.5 rounded-lg opacity-60 hover:opacity-100"><X size={16} /></button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {[["toy", "Brinquedo"], ["clientName", "Cliente"], ["deadline", "Prazo", "date"], ["seller", "Vendedor"], ["colors", "Cores"], ["observations", "Observações"]].map(([k, l, t]) => (
-                <div key={k}><label className={`block text-xs font-semibold uppercase mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{l}</label>
-                  {k === "seller"
-                    ? <select value={form.seller} onChange={e => setForm({ ...form, seller: e.target.value })} className={ic}><option value="">— selecione —</option>{sellerNames(data).map(n => <option key={n} value={n}>{n}</option>)}</select>
-                    : <input type={t || "text"} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} className={ic} />}
-                </div>
+              {[["toy", "Brinquedo"], ["clientName", "Cliente"], ["deadline", "Prazo", "date"], ["colors", "Cores"], ["observations", "Observações"]].map(([k, l, t]) => (
+                <div key={k}><label className={`block text-xs font-semibold uppercase mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{l}</label><input type={t || "text"} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} className={ic} /></div>
               ))}
+              <div><label className={`block text-xs font-semibold uppercase mb-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={form.seller} onChange={v => setForm({ ...form, seller: v })} /></div>
             </div>
             <div className="flex gap-2 mt-3">
               <button onClick={addOrder} className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Adicionar</button>
-              <button onClick={() => setShowAdd(false)} className={`flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}><X size={14} />Cancelar</button>
+              <button onClick={() => setShowAdd(false)} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>Cancelar</button>
             </div>
           </div>
         )}
-
         {filteredRows.map((row, i) => (
-          <ProdCard key={`${row._itemId}-${i}`} row={row} editMode={editMode} dark={dark} workers={workers} onUpdateProd={updateProd} onMarkDone={markDone} onTogglePriority={togglePriority} canEdit={canEdit} lightbox={lightbox} setLightbox={setLightbox} />
+          <ProdCard key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} workers={workers} onAssign={assign} onTogglePriority={togglePriority} canEdit={canEdit} setLightbox={setLightbox} />
         ))}
-        {filteredRows.length === 0 && <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}><Factory size={36} className="mx-auto mb-3 opacity-30" /><p className="text-sm font-medium">Nenhum item nesta categoria</p></div>}
+        {filteredRows.length === 0 && <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}><Factory size={36} className="mx-auto mb-3 opacity-30" /><p className="text-sm font-medium">{search ? `Nada encontrado para "${search}"` : "Nenhum item nesta categoria"}</p></div>}
       </div>
     </div>
   );
@@ -1334,172 +1381,104 @@ function ProductionTab({ data, setData, dark, user }) {
 
 // ─── FINALIZATION TAB ─────────────────────────────────────────────────────────
 function FinalizationTab({ data, setData, dark, user }) {
-  const [editMode, setEditMode] = useState(false);
   const [lightbox, setLightbox] = useState(null);
-  const [savedState, setSavedState] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("todos");
   const canEdit = canEditFin(user);
 
-  // Only items that are done in production
   const finRows = [];
   data.finalization.forEach(fin => {
     const order = data.orders.find(o => o.id === fin.orderId);
     const item = order?.items?.find(it => it.itemId === fin.itemId);
     const prod = data.production.find(p => p.itemId === fin.itemId);
-    if (order && item && prod?.done) {
-      finRows.push({ ...order, ...item, ...fin, _orderId: order.id, _itemId: fin.itemId, priority: order.priority || false });
+    if (order && item && (prodPct(prod) === 100 || prod?.done)) {
+      const toys = (order.items || []).filter(it => !it.isMotor);
+      finRows.push({ ...order, ...item, ...fin, stage: finStage(fin), done: finStage(fin) === "finalizado", _orderId: order.id, _itemId: fin.itemId, _isMulti: toys.length > 1, priority: order.priority || false });
     }
   });
   const sorted = sortProdRows(finRows);
-  const activeF = sorted.filter(r => !r.done);
-  const doneF = sorted.filter(r => r.done);
-  const delayed = activeF.filter(r => r.deadline && daysLeft(r.deadline) < 0);
-  const [filterStatus, setFilterStatus] = useState("todos");
-  const [obsOpenIds, setObsOpenIds] = useState(new Set());
-  const toggleObs = (id) => { const next = new Set(obsOpenIds); if (next.has(id)) next.delete(id); else next.add(id); setObsOpenIds(next); };
-
+  const found = useSearchRows(sorted, data, search);
+  const pending = found.filter(r => r.stage === "");
+  const doing = found.filter(r => r.stage === "finalizando");
+  const doneF = found.filter(r => r.stage === "finalizado");
+  const delayed = found.filter(r => !r.done && r.deadline && daysLeft(r.deadline) < 0);
   const finWorkers = data.team.filter(t => t.role === "Finalizador" && t.status === "ativo");
 
-  const filteredRows = filterStatus === "todos" ? sorted
-    : filterStatus === "atrasados" ? activeF.filter(r => r.deadline && daysLeft(r.deadline) < 0)
-      : filterStatus === "concluidos" ? doneF
-        : filterStatus === "urgente" ? activeF.filter(r => { if (!r.deadline) return r.priority; const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); })
-          : activeF.filter(r => !r.priority && (!r.deadline || daysLeft(r.deadline) > 3));
+  const filteredRows = filterStatus === "todos" ? [...pending, ...doing, ...doneF]
+    : filterStatus === "pendentes" ? pending
+      : filterStatus === "finalizando" ? doing
+        : filterStatus === "atrasados" ? delayed
+          : doneF;
 
-  const startEdit = () => { setSavedState(JSON.parse(JSON.stringify(data))); setEditMode(true); };
-  const cancelEdit = () => { if (savedState) { setData(savedState); saveData(savedState); } setEditMode(false); setSavedState(null); };
-  const saveEdit = () => { saveData(data); setEditMode(false); setSavedState(null); };
-
-  const updateFin = (itemId, field, value) => {
-    const nd = { ...data }; const idx = nd.finalization.findIndex(f => f.itemId === itemId);
-    if (idx >= 0) nd.finalization[idx] = { ...nd.finalization[idx], [field]: value };
-    setData(nd);
+  const persist = (nd) => { setData(nd); saveData(nd); };
+  const update = (itemId, patch) => {
+    const nd = { ...data, finalization: data.finalization.map(f => f.itemId === itemId ? { ...f, ...patch } : f) };
+    const f = nd.finalization.find(x => x.itemId === itemId);
+    if (f) syncOrderStatus(nd, f.orderId);
+    persist(nd);
   };
-
-  const markFinDone = (itemId) => {
-    const nd = { ...data }; const idx = nd.finalization.findIndex(f => f.itemId === itemId);
-    if (idx < 0) return;
-    const fin = nd.finalization[idx];
-    if (!fin.done && !fin.finalizer) { alert("Selecione um finalizador antes de marcar como concluído."); return; }
-    nd.finalization[idx] = { ...fin, done: !fin.done, finDate: !fin.done ? TODAY_STR : null };
-    setData(nd); saveData(nd);
+  const setStage = (row, stage) => {
+    if (stage === "finalizado" && !row.finalizer) { alert("Escolha quem finalizou antes de marcar como Finalizado."); return; }
+    const next = row.stage === stage ? "" : stage;
+    update(row._itemId, { stage: next, done: next === "finalizado", finDate: next === "finalizado" ? TODAY_STR : null, finalizingAt: next === "finalizando" ? TODAY_STR : (row.finalizingAt || null) });
   };
 
   return (
     <div className="flex flex-col" style={{ height: "100%" }}>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
-      {/* ── FROZEN HEADER compact ── */}
-      <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "bg-gray-950 border-gray-800" : "bg-slate-100 border-gray-200"}`}>
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-          <div>
-            <h2 className={`text-xl font-black leading-tight ${dark ? "text-white" : "text-gray-900"}`}>Finalização</h2>
-            <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Apenas itens concluídos na produção</p>
-          </div>
-          <div className="flex gap-2">
-            {canEdit && !editMode && <button onClick={startEdit} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border ${dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}><Edit3 size={13} />Editar</button>}
-            {editMode && <><button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}><Save size={13} />Salvar</button><button onClick={cancelEdit} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold border ${dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}><X size={13} />Cancelar</button></>}
-          </div>
+      <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
+        <div className="mb-3">
+          <h2 className={`text-xl font-black leading-tight ${dark ? "text-white" : "text-gray-900"}`}>Finalização</h2>
+          <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Itens que saíram da produção. Pendente 0% · Finalizando 50% · Finalizado 100%</p>
         </div>
-        <div className="grid grid-cols-3 gap-2 mb-2">
-          {[{ label: "A Finalizar", value: activeF.length, color: "#f97316" }, { label: "Atrasados", value: delayed.length, color: "#ef4444" }, { label: "Finalizados", value: doneF.length, color: "#22c55e" }].map(s => (
-            <div key={s.label} className={`rounded-lg px-2 py-1.5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} flex items-center gap-1.5`}>
-              <span className="text-lg font-black leading-none" style={{ color: s.color }}>{s.value}</span>
-              <span className={`text-xs font-medium ${dark ? "text-gray-400" : "text-gray-500"}`}>{s.label}</span>
-            </div>
-          ))}
-        </div>
+        <StatChips dark={dark} items={[{ label: "Pendentes", value: pending.length, color: "#f97316" }, { label: "Finalizando", value: doing.length, color: "#eab308" }, { label: "Atrasados", value: delayed.length, color: "#ef4444" }, { label: "Finalizados", value: doneF.length, color: "#22c55e" }]} />
+        <SearchBox value={search} onChange={setSearch} dark={dark} />
         <div className="flex gap-1.5 flex-wrap">
-          {[["todos", "Todos"], ["urgente", "Urgente"], ["atrasados", "Atrasados"], ["ok", "No prazo"], ["concluidos", "Concluídos"]].map(([v, l]) => (
-            <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>
-              {l}{" "}<span className="opacity-70">{v === "todos" ? `(${sorted.length})` : v === "atrasados" ? `(${delayed.length})` : v === "concluidos" ? `(${doneF.length})` : v === "urgente" ? `(${activeF.filter(r => { if (!r.deadline) return r.priority; const d = daysLeft(r.deadline); return r.priority || (d >= 0 && d <= 3); }).length})` : ""}</span>
-            </button>
+          {[["todos", "Todos", found.length], ["pendentes", "Pendentes", pending.length], ["finalizando", "Finalizando", doing.length], ["atrasados", "Atrasados", delayed.length], ["finalizados", "Finalizados", doneF.length]].map(([v, l, n]) => (
+            <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>{l} <span className="opacity-70">({n})</span></button>
           ))}
         </div>
-        {editMode && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-amber-500/10 border-amber-500/30 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-700"}`}>✏️ Modo edição ativo.</div>}
-        {!editMode && canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-gray-800/60 border-gray-700 text-gray-400" : "bg-gray-100 border-gray-200 text-gray-500"}`}>🔒 Modo leitura — clique em Editar.</div>}
-        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
+        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
       </div>
 
-      {/* ── SCROLLABLE CARDS ── */}
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
         {filteredRows.map((row, i) => {
-          const s = statusBadge(row.deadline || "", row.done);
-          const pct = row.finalizer ? 100 : 0;
-          const progressColor = row.done ? "#22c55e" : (!row.deadline || daysLeft(row.deadline) >= 0) ? "#f97316" : "#ef4444";
-          const hasObs = row.observations && row.observations.trim().length > 0;
-          const hasImg = row.images && row.images.length > 0;
-          const obsOpen = obsOpenIds.has(row._itemId);
+          const pct = finPct(row);
+          const color = pct === 100 ? "#10b981" : pct === 50 ? "#eab308" : "#f97316";
           return (
-            <div key={`${row._itemId}-${i}`} className={`rounded-xl border overflow-hidden ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.done ? "opacity-70" : ""}`}>
-              <div className="flex items-start justify-between p-4 gap-3">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  <div className="relative flex-shrink-0 w-12 h-12">
-                    <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
-                      <circle cx="18" cy="18" r="15" fill="none" stroke={dark ? "#1f2937" : "#e5e7eb"} strokeWidth="2.5" />
-                      <circle cx="18" cy="18" r="15" fill="none" stroke={progressColor} strokeWidth="2.5" strokeDasharray={`${pct * 0.942} 94.2`} strokeLinecap="round" />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-black" style={{ color: progressColor }}>{pct}%</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                      <span className={`font-mono text-xs font-bold ${dark ? "text-orange-400" : "text-orange-600"}`}>{row._orderId}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.color}`}>{s.label}</span>
-                      {row.done && row.finDate && <span className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>✓ {fmt(row.finDate)}</span>}
-                    </div>
-                    <div className={`font-black text-base ${dark ? "text-white" : "text-gray-900"}`}>{row.toy}</div>
-                    <div className={`text-xs mt-0.5 ${dark ? "text-gray-400" : "text-gray-500"}`}>{row.clientName} · {row.seller || "—"} · {row.voltage}</div>
-                    {(row.colors || []).length > 0 && <div className="flex gap-1 mt-1">{(row.colors || []).map(c => <span key={c} className="w-4 h-4 rounded-full" style={{ background: COLOR_MAP[c] || "#888" }} title={c} />)}</div>}
-                    {(hasObs || hasImg) && (
-                      <button onClick={() => toggleObs(row._itemId)} className={`mt-2 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${obsOpen ? dark ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-orange-100 text-orange-700" : dark ? "bg-gray-800 text-gray-300 border border-gray-700" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
-                        {obsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{hasObs && hasImg ? "📋 Obs + Fotos" : hasObs ? "📋 Observações" : "🖼️ Fotos"}
-                      </button>
-                    )}
-                    {obsOpen && (
-                      <div className={`mt-3 p-4 rounded-xl border flex flex-col gap-3 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-                        {hasObs && <div><p className={`text-sm ${dark ? "text-gray-200" : "text-gray-700"}`}>{row.observations}</p></div>}
-                        {hasImg && (
-                          <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                            {row.images.map((imgUrl, imgIdx) => (
-                              <div key={imgIdx} className="flex-shrink-0 cursor-pointer relative group" onClick={() => setLightbox(imgUrl)}>
-                                <img src={imgUrl} alt="" className="w-28 h-28 rounded-xl object-cover border-2 border-gray-600" />
-                                <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={24} className="text-white" /></div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+            <div key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
+                <div className="min-w-0 flex-1">
+                  <OrderCardHead row={row} data={data} dark={dark} extra={row.done && row.finDate ? <span className="text-xs font-bold text-emerald-500">✓ {fmt(row.finDate)}</span> : null} />
+                  <ObsAndPhotos row={row} dark={dark} setLightbox={setLightbox} />
                 </div>
-                <div className="flex-shrink-0">
-                  <button onClick={() => canEdit && editMode && markFinDone(row._itemId)} disabled={!canEdit || !editMode}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${row.done ? "bg-emerald-500 text-white" : (dark ? "bg-gray-800 text-gray-400 hover:text-emerald-400 border border-gray-700" : "bg-gray-100 text-gray-500 hover:text-emerald-600 border border-gray-200")} ${(!canEdit || !editMode) ? "opacity-40 cursor-not-allowed" : ""}`}>
-                    {row.done ? <><Check size={16} /> Finalizado</> : "Finalizar Item"}
-                  </button>
-                </div>
+                <ProgressRing pct={pct} color={color} dark={dark} />
               </div>
-              <div className={`h-1.5 ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: row.done ? "#22c55e" : "linear-gradient(90deg,#f97316,#eab308)" }} />
-              </div>
-              <div className={`p-4 border-t ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${row.finalizer ? "bg-emerald-500" : "bg-gray-600"}`} />
-                    <span className={`text-xs font-bold ${row.finalizer ? "text-emerald-400" : dark ? "text-gray-400" : "text-gray-500"}`}>Finalizador</span>
-                  </div>
-                  <select value={row.finalizer || ""} disabled={!editMode || !canEdit} onChange={e => updateFin(row._itemId, "finalizer", e.target.value)}
-                    className={`px-2 py-1.5 rounded-lg text-xs border outline-none w-full max-w-xs ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-900"} ${(!editMode || !canEdit) ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <option value="">— selecione —</option>
-                    {finWorkers.map(w => <option key={w.id}>{w.name}</option>)}
+              <div className={`p-4 border-t flex flex-col md:flex-row md:items-end gap-3 ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
+                <div className="flex-1 max-w-xs">
+                  <div className={`text-xs font-black uppercase tracking-widest mb-1.5 ${row.finalizer ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>Finalizador</div>
+                  <select value={row.finalizer || ""} disabled={!canEdit} onChange={e => update(row._itemId, { finalizer: e.target.value })}
+                    className={`w-full px-2 py-2 rounded-lg text-sm font-semibold border outline-none ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"} ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}>
+                    <option value="">👤 Escolher…</option>
+                    {finWorkers.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                    {row.finalizer && !finWorkers.some(w => w.name === row.finalizer) && <option value={row.finalizer}>{row.finalizer}</option>}
                   </select>
                 </div>
+                <div className={`flex rounded-xl p-1 gap-1 ${dark ? "bg-gray-950 border border-gray-800" : "bg-white border border-gray-200"}`}>
+                  {[["finalizando", "Finalizando · 50%", "#eab308"], ["finalizado", "Finalizado · 100%", "#10b981"]].map(([st, label, c]) => {
+                    const on = row.stage === st;
+                    return <button key={st} disabled={!canEdit} onClick={() => setStage(row, st)} className={`px-4 py-2 rounded-lg text-sm font-black transition-all ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
+                  })}
+                </div>
               </div>
+              <div className="h-1.5" style={{ background: dark ? "#1f2937" : "#e5e7eb" }}><div className="h-full" style={{ width: `${pct}%`, background: color, transition: "width .6s cubic-bezier(.2,.8,.2,1)" }} /></div>
             </div>
           );
         })}
-        {sorted.length === 0 && (
+        {filteredRows.length === 0 && (
           <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}>
             <Sparkles size={36} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">Nenhum brinquedo aguardando finalização</p>
+            <p className="text-sm font-medium">{search ? `Nada encontrado para "${search}"` : "Nenhum brinquedo aguardando finalização"}</p>
           </div>
         )}
       </div>
@@ -1507,299 +1486,7 @@ function FinalizationTab({ data, setData, dark, user }) {
   );
 }
 
-// ─── DASHBOARD TAB ────────────────────────────────────────────────────────────
-function DashboardTab({ data, dark, goTo }) {
-  const [salesPeriod, setSalesPeriod] = useState("mes");
-  const [calMonth, setCalMonth] = useState(new Date().getMonth());
-  const [calYear, setCalYear] = useState(new Date().getFullYear());
-  const [calDate, setCalDate] = useState(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiInsights, setAiInsights] = useState(null);
-
-  const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-  
-  const orders = data.orders || [];
-  const sellers = data.sellers || [];
-  const production = data.production || [];
-  const clients = data.clients || [];
-
-  // ─── CALCULATIONS ─────────────────────────────────────────────────────────
-  const now = new Date();
-  const currentMonthStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`;
-  
-  // Faturamento do mês atual x mês anterior (comparação real, antes era um "+12,5%" fixo)
-  const revenueOf = (mk) => orders.filter(o => o.createdAt?.startsWith(mk)).reduce((a, o) => a + (Number(o.totalPrice) || 0), 0);
-  const monthOrders = orders.filter(o => o.createdAt?.startsWith(CUR_MONTH));
-  const monthRevenue = revenueOf(CUR_MONTH);
-  const prevRevenue = revenueOf(PREV_MONTH);
-  const growth = prevRevenue > 0 ? ((monthRevenue - prevRevenue) / prevRevenue) * 100 : null;
-  const totalRevenue = orders.reduce((a, o) => a + (o.totalPrice || 0), 0);
-  
-  const activeOrders = orders.filter(o => o.status !== "concluido");
-  const lateOrders = activeOrders.filter(o => daysLeft(o.deadline) < 0);
-  
-  const sectorData = [
-    { name: "Corte", done: production.filter(p => p.cutDone).length, pending: production.filter(p => !p.cutDone).length, color: "#3b82f6" },
-    { name: "Costura", done: production.filter(p => p.tailorDone).length, pending: production.filter(p => !p.tailorDone).length, color: "#a855f7" },
-    { name: "Preparo", done: production.filter(p => p.prepDone).length, pending: production.filter(p => !p.prepDone).length, color: "#f59e0b" },
-    { name: "Montagem", done: production.filter(p => p.assembleDone).length, pending: production.filter(p => !p.assembleDone).length, color: "#22c55e" },
-  ];
-
-  const salesBySeller = (sellers.length > 0 ? sellers : [{name: "Sem Vendedor", color: "#94a3b8"}]).map(s => {
-    const sOrders = orders.filter(o => o.seller === s.name);
-    return {
-      name: s.name,
-      value: sOrders.reduce((a, o) => a + (o.totalPrice || 0), 0),
-      count: sOrders.length,
-      color: s.color || "#3b82f6"
-    };
-  }).sort((a, b) => b.value - a.value);
-
-  // Calendar logic
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(calYear, calMonth, 1).getDay();
-  const calendarDays = [];
-  for (let i = 0; i < firstDayOfMonth; i++) calendarDays.push(null);
-  for (let i = 1; i <= daysInMonth; i++) calendarDays.push(i);
-
-  const getOrdersForDay = (day) => {
-    if (!day) return [];
-    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return orders.filter(o => o.deadline === dateStr);
-  };
-
-  const generateAIInsights = async () => {
-    setAiLoading(true);
-    try {
-      const statsSummary = {
-        totalRevenue,
-        monthRevenue,
-        activeOrders: activeOrders.length,
-        lateOrders: lateOrders.length,
-        topSeller: salesBySeller[0]?.name || "N/A",
-        productionStatus: sectorData.map(s => `${s.name}: ${s.done} prontos, ${s.pending} pendentes`).join(", ")
-      };
-
-      const res = await fetch("/.netlify/functions/anthropic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: "Você é um consultor de gestão industrial sênior. Analise os dados e forneça 3 insights estratégicos curtos e acionáveis para o diretor da empresa. Retorne APENAS os 3 pontos em formato de lista, sem introdução.",
-          messages: [{ role: "user", content: `Analise estes dados da fábrica:\n${JSON.stringify(statsSummary)}` }]
-        })
-      });
-      const d = await res.json();
-      if (d.error || !d.content) throw new Error(d.error?.message || "Resposta inválida");
-      setAiInsights(d.content.map(c => c.text || "").join("\n").trim());
-    } catch (err) {
-      setAiInsights(`Não foi possível gerar insights agora (${err.message}). Confira a chave ANTHROPIC_API_KEY no painel da Netlify.`);
-    }
-    setAiLoading(false);
-  };
-
-  const tt = {
-    backgroundColor: dark ? "#0f172a" : "#fff",
-    border: `1px solid ${dark ? "#1e293b" : "#e2e8f0"}`,
-    borderRadius: "12px",
-    padding: "10px",
-    boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)"
-  };
-
-  return (
-    <div className="space-y-6 animate-slide-up pb-10">
-      {/* ─── HEADER & AI INSIGHTS ─── */}
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1">
-          <h2 className="page-title page-title-underline">Dashboard Estratégico</h2>
-          <p className="text-sm text-slate-500 mt-1 font-medium italic">Inteligência Industrial & Performance de Vendas</p>
-          
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="stat-card stat-card-orange p-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Faturamento Mensal</span>
-                <DollarSign size={16} className="text-orange-500" />
-              </div>
-              <div className="text-2xl font-black tabular-nums text-orange-500">R$ {monthRevenue.toLocaleString("pt-BR")}</div>
-              <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                {growth === null
-                  ? <>{monthOrders.length} pedido{monthOrders.length === 1 ? "" : "s"} este mês · sem vendas no mês anterior para comparar</>
-                  : <>{growth >= 0 ? <TrendingUp size={12} className="text-emerald-500" /> : <TrendingDown size={12} className="text-red-500" />} {growth >= 0 ? "+" : ""}{growth.toFixed(1).replace(".", ",")}% em relação ao mês anterior ({money(prevRevenue)})</>}
-              </div>
-            </div>
-            <div className="stat-card stat-card-blue p-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Pedidos em Aberto</span>
-                <Package size={16} className="text-blue-500" />
-              </div>
-              <div className="text-2xl font-black tabular-nums">{activeOrders.length}</div>
-              <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                <AlertTriangle size={12} className={lateOrders.length > 0 ? "text-red-500" : "text-emerald-500"} /> 
-                {lateOrders.length} pedidos com prazo ultrapassado
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* AI INSIGHTS BOX */}
-        <div className={`lg:w-1/3 rounded-3xl p-6 border flex flex-col justify-between relative overflow-hidden ${dark ? "bg-indigo-950/20 border-indigo-500/30" : "bg-indigo-50 border-indigo-200"}`}>
-          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Sparkles size={80} className="text-indigo-500" /></div>
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"><Zap size={18} /></div>
-              <h3 className="font-black text-sm uppercase tracking-wider text-indigo-500">Inflatudo IA</h3>
-            </div>
-            {aiInsights ? (
-              <div className={`text-sm leading-relaxed space-y-2 font-medium ${dark ? "text-indigo-200" : "text-indigo-900"}`}>
-                {aiInsights.split('\n').map((line, i) => <p key={i}>{line}</p>)}
-              </div>
-            ) : (
-              <p className={`text-sm font-medium ${dark ? "text-slate-400" : "text-slate-500"}`}>Clique para analisar o desempenho atual da sua produção e vendas com IA.</p>
-            )}
-          </div>
-          <button onClick={generateAIInsights} disabled={aiLoading} className="mt-6 w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2">
-            {aiLoading ? <RefreshCw size={14} className="animate-spin" /> : <><Sparkles size={14} /> Gerar Insights</>}
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* PRODUCTION CHART */}
-        <div className="lg:col-span-2 card-surface p-6">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="font-black text-lg">Fluxo de Produção</h3>
-              <p className="text-xs text-slate-500 font-bold uppercase">Status por setor industrial</p>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={sectorData} margin={{ left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12, fontWeight: 700 }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 12 }} />
-              <Tooltip cursor={{ fill: dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.02)" }} contentStyle={tt} />
-              <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: '20px' }} />
-              <Bar name="Concluído" dataKey="done" fill="#22c55e" radius={[4, 4, 0, 0]} barSize={40} />
-              <Bar name="Pendente" dataKey="pending" fill={dark ? "#1e293b" : "#e2e8f0"} radius={[4, 4, 0, 0]} barSize={40} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* TOP SELLERS */}
-        <div className="card-surface p-6">
-          <h3 className="font-black text-lg mb-6">Top Vendedores</h3>
-          <div className="space-y-5">
-            {salesBySeller.slice(0, 5).map((s, i) => (
-              <div key={s.name} className="flex flex-col gap-2">
-                <div className="flex justify-between items-end">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs text-white" style={{ background: s.color }}>{i + 1}</div>
-                    <span className="font-bold text-sm">{s.name}</span>
-                  </div>
-                  <span className="font-black text-sm tabular-nums">R$ {s.value.toLocaleString("pt-BR")}</span>
-                </div>
-                <div className={`w-full h-1.5 rounded-full overflow-hidden ${dark ? "bg-slate-800" : "bg-slate-100"}`}>
-                  <div className="h-full transition-all duration-1000" style={{ width: `${(s.value / (salesBySeller[0]?.value || 1)) * 100}%`, backgroundColor: s.color }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* SALES CALENDAR */}
-        <div className="card-surface p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-black text-lg">Agenda de Entregas</h3>
-            <div className="flex items-center gap-2">
-              <button onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(calMonth - 1); }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft size={16}/></button>
-              <span className="text-xs font-black uppercase tracking-widest w-28 text-center">{monthNames[calMonth]} {calYear}</span>
-              <button onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(calMonth + 1); }} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronRight size={16}/></button>
-            </div>
-          </div>
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(d => <div key={d} className="text-center text-[10px] font-black text-slate-400 uppercase">{d}</div>)}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map((day, i) => {
-              const dayOrders = getOrdersForDay(day);
-              const isToday = day === now.getDate() && calMonth === now.getMonth() && calYear === now.getFullYear();
-              return (
-                <div key={i} onClick={() => day && dayOrders.length > 0 && setCalDate(`${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)} 
-                  className={`aspect-square rounded-xl border flex flex-col items-center justify-center relative transition-all ${!day ? "border-transparent" : dark ? "border-gray-800 hover:border-orange-500/50 cursor-pointer" : "border-gray-100 hover:border-orange-500/50 cursor-pointer"} ${isToday ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20 border-transparent" : ""}`}>
-                  {day && <span className="text-xs font-bold">{day}</span>}
-                  {dayOrders.length > 0 && !isToday && <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-orange-500" />}
-                  {dayOrders.length > 0 && (
-                    <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] font-black flex items-center justify-center border-2 border-white dark:border-gray-900">{dayOrders.length}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* REGIONAL PERFORMANCE SUMMARY */}
-        <div className="card-surface p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-black text-lg">Performance Regional</h3>
-            {goTo && <button onClick={() => goTo("routes")} className="text-[10px] font-black uppercase text-orange-500 hover:underline">Ver no Mapa</button>}
-          </div>
-          <div className="space-y-4">
-             {/* Mini ranking of states */}
-             {Object.entries(
-                orders.reduce((acc, o) => {
-                  const client = clients.find(c => c.name === o.clientName);
-                  const uf = clientUF(client) || "N/A";
-                  if (!acc[uf]) acc[uf] = 0;
-                  acc[uf] += (o.totalPrice || 0);
-                  return acc;
-                }, {})
-             ).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([uf, val], i) => (
-                <div key={uf} className="flex items-center justify-between p-3 rounded-2xl bg-slate-500/5 border border-transparent hover:border-slate-500/20 transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-black text-sm">{uf}</div>
-                    <div className="text-sm font-bold">{uf === "N/A" ? "Estado não definido" : (UF_NAMES[uf] || uf)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-black tabular-nums">R$ {val.toLocaleString("pt-BR")}</div>
-                    {i === 0 && uf !== "N/A" && <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Líder Regional</div>}
-                  </div>
-                </div>
-             ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Day Details Modal */}
-      {calDate && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => setCalDate(null)}>
-          <div className={`w-full max-w-md p-6 rounded-3xl border shadow-2xl ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"}`} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-black text-xl">Entregas do dia {calDate.split('-').reverse().join('/')}</h3>
-              <button onClick={() => setCalDate(null)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"><X size={20} /></button>
-            </div>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-              {getOrdersForDay(parseInt(calDate.split('-')[2])).map(o => (
-                <div key={o.id} className={`p-4 rounded-2xl border ${dark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-mono text-xs font-black text-orange-400">{o.id}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${o.status === "concluido" ? "bg-emerald-500/20 text-emerald-400" : "bg-blue-500/20 text-blue-400"}`}>{STATUS_LABEL[o.status] || o.status}</span>
-                  </div>
-                  <div className="font-black text-base truncate">{o.clientName}</div>
-                  <div className="text-xs text-slate-500 font-bold mt-1">
-                    {(o.items || []).filter(it => !it.isMotor).length} brinquedo(s) · {money(o.totalPrice)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// Dashboard: ver src/tabs/DashboardTab.jsx
 
 function ClientsTab({ data, setData, dark, user }) {
   const canWrite = canEdit(user, "clients");
@@ -1830,7 +1517,8 @@ function ClientsTab({ data, setData, dark, user }) {
 
   const filtered = data.clients.filter(c => {
     const q = search.toLowerCase();
-    const matchName = (c.name || "").toLowerCase().includes(q) || c.city?.toLowerCase().includes(q) || (clientUF(c) || "").toLowerCase() === q;
+    const hay = norm([c.name, c.city, c.state, clientUF(c), c.phone, c.email, ...clientOrders(c.name).map(o => orderHaystack(o))].join(" "));
+    const matchName = matchQuery(hay, "", search);
     const lastSeller = getSellerForClient(c.name);
     const matchSeller = !sellerFilter || (lastSeller === sellerFilter);
     const matchSearch = !q || matchName;
@@ -1859,8 +1547,9 @@ function ClientsTab({ data, setData, dark, user }) {
                   <div className="flex flex-col gap-0.5">
                     <div className={`font-bold text-lg ${dark ? "text-white" : "text-gray-900"}`}>{c.name}</div>
                     <div className={`text-xs font-medium ${dark ? "text-gray-300" : "text-gray-600"}`}>
-                      {c.city || "S/ Cidade"} {clientUF(c) ? `- ${clientUF(c)}` : <span className="text-amber-500 font-bold">· sem estado</span>}
+                      {c.city || "S/ Cidade"} {clientUF(c) ? (normalizeState((c.city || "").split(/[-\/,]/).pop()) === clientUF(c) && /[-\/,]/.test(c.city || "") ? "" : `- ${clientUF(c)}`) : <span className="text-amber-500 font-bold">· sem estado</span>}
                       {c.phone && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">📞 {c.phone}</span>}
+                      {whatsappLink(c.phone) && <a href={whatsappLink(c.phone, `Olá ${c.name}! 👋🎈`)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="ml-2 px-2 py-0.5 rounded-full bg-[#25D366] text-white text-[10px] font-black">💬 WhatsApp</a>}
                       {c.email && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">✉️ {c.email}</span>}
                     </div>
                     <div className="flex items-center gap-2 mt-1.5">
@@ -2005,21 +1694,29 @@ function toPermObj(p) {
   if (Array.isArray(p)) return Object.fromEntries(p.filter(k => EMPLOYEE_TABS.includes(k)).map(k => [k, "edit"]));
   return { ...(p || {}) };
 }
-const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', routes: 'Mapa', clients: 'Clientes' };
-function PermissionGrid({ value, onChange, dark, compact = false }) {
+const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', routes: 'Mapa', clients: 'Clientes', sales: 'Área dos Vendedores' };
+const PERM_TAB_HINT = { dashboard: 'números da empresa e IA do gerente', orders: 'criar, editar e excluir pedidos', production: 'escolher responsáveis das etapas', finalization: 'finalizando / finalizado', routes: 'mapa, filtros, rotas e fábrica', clients: 'dados e estado dos clientes', sales: 'clientes, vendas, CRM e IA de vendas' };
+function PermissionGrid({ value, onChange, dark }) {
   const perms = toPermObj(value);
-  const opts = [["", "Sem acesso"], ["view", "Só ver"], ["edit", "Ver e editar"]];
+  const opts = [["", "Sem acesso", "#64748b"], ["view", "Só visualizar", "#0ea5e9"], ["edit", "Visualizar e editar", "#10b981"]];
   const set = (tab, lvl) => { const n = { ...perms }; if (lvl) n[tab] = lvl; else delete n[tab]; onChange(n); };
+  const all = (lvl) => onChange(lvl ? Object.fromEntries(EMPLOYEE_TABS.map(t => [t, lvl])) : {});
   return (
-    <div className={`grid gap-1.5 ${compact ? 'sm:grid-cols-2' : ''}`}>
-      {EMPLOYEE_TABS.map(tab => (
-        <div key={tab} className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg ${dark ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
-          <span className='text-xs font-bold'>{PERM_TAB_LABELS[tab]}</span>
-          <div className={`flex rounded-lg p-0.5 ${dark ? 'bg-gray-900' : 'bg-white border border-gray-200'}`}>
-            {opts.map(([lvl, label]) => {
+    <div className={`rounded-xl border overflow-hidden ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
+      <div className={`flex items-center justify-between gap-2 px-3 py-2 text-[11px] font-bold ${dark ? 'bg-gray-800/60 text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
+        <span>Aplicar a todas:</span>
+        <div className='flex gap-1'>{opts.map(([lvl, label, c]) => <button type='button' key={lvl || 'none'} onClick={() => all(lvl)} className='px-2 py-0.5 rounded-md border' style={{ borderColor: `${c}66`, color: c }}>{label}</button>)}</div>
+      </div>
+      {EMPLOYEE_TABS.map((tab, i) => (
+        <div key={tab} className={`flex flex-col md:flex-row md:items-center justify-between gap-2 px-3 py-2.5 ${i ? (dark ? 'border-t border-gray-800' : 'border-t border-gray-100') : ''}`}>
+          <div className='min-w-0'>
+            <div className='text-sm font-black'>{PERM_TAB_LABELS[tab]}</div>
+            <div className='text-[11px] text-slate-500'>{PERM_TAB_HINT[tab]}</div>
+          </div>
+          <div className={`grid grid-cols-3 gap-1 p-1 rounded-xl flex-shrink-0 md:w-[380px] ${dark ? 'bg-gray-950' : 'bg-gray-100'}`}>
+            {opts.map(([lvl, label, c]) => {
               const on = (perms[tab] || "") === lvl;
-              const color = lvl === "edit" ? "bg-emerald-500 text-white" : lvl === "view" ? "bg-sky-500 text-white" : (dark ? "bg-gray-700 text-gray-200" : "bg-gray-200 text-gray-700");
-              return <button type='button' key={lvl || 'none'} onClick={() => set(tab, lvl)} className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${on ? color : dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}>{label}</button>;
+              return <button type='button' key={lvl || 'none'} onClick={() => set(tab, lvl)} className={`px-2 py-2 rounded-lg text-xs font-black transition-all ${on ? 'text-white shadow' : dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-500 hover:text-gray-800'}`} style={on ? { background: c } : {}}>{on && '✓ '}{label}</button>;
             })}
           </div>
         </div>
@@ -2057,7 +1754,7 @@ function TeamTab({ data, setData, dark, user }) {
   const addUser = () => {
     if (!userForm.name || !userForm.email || !userForm.password) { alert('Preencha nome, usuário e senha.'); return; }
     if ((data.users || []).some(u => (u.email || '').toLowerCase() === userForm.email.trim().toLowerCase())) { alert('Esse usuário já existe.'); return; }
-    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: toPermObj(userForm.permissions) });
+    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: toPermObj(userForm.permissions), sellerName: userForm.sellerName || '' });
     setData(nd); saveData(nd); setUserForm(EMPTY_USER); setShowUserForm(false);
   };
 
@@ -2133,7 +1830,14 @@ function TeamTab({ data, setData, dark, user }) {
               </div>
               <div className='mb-4'>
                 <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>O que este funcionário pode fazer</div>
-                <PermissionGrid value={userForm.permissions} onChange={(p) => setUserForm({ ...userForm, permissions: p })} dark={dark} compact />
+                <PermissionGrid value={userForm.permissions} onChange={(p) => setUserForm({ ...userForm, permissions: p })} dark={dark} />
+                <div className='mt-3'>
+                  <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1'>Este login é de um vendedor?</div>
+                  <select value={userForm.sellerName || ''} onChange={e => setUserForm({ ...userForm, sellerName: e.target.value })} className={ic}>
+                    <option value=''>Não — é da fábrica/escritório</option>
+                    {(data.sellers || []).map(sv => <option key={sv.id || sv.name} value={sv.name}>Sim — {sv.name} (vê só os próprios clientes e vendas)</option>)}
+                  </select>
+                </div>
                 <p className='text-[11px] text-slate-500 mt-2'>A aba Equipe (logins, colaboradores e vendedores) é só do gerente.</p>
               </div>
               <div className='flex gap-2'><button onClick={addUser} className='btn-brand'>Criar Acesso</button><button onClick={() => setShowUserForm(false)} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>Cancelar</button></div>
@@ -2147,7 +1851,7 @@ function TeamTab({ data, setData, dark, user }) {
                   <div className='min-w-0'>
                     <p className='font-bold text-sm'>{u.name}</p>
                     <p className='text-xs text-slate-500'>usuário: <b>{u.email}</b> · senha: <span className='font-mono'>{showPw[u.id] ? u.password : '••••'}</span> <button onClick={() => setShowPw({ ...showPw, [u.id]: !showPw[u.id] })} className='underline ml-1'>{showPw[u.id] ? 'ocultar' : 'mostrar'}</button></p>
-                    <p className='text-[11px] text-slate-500 mt-1'>{permSummary(u.permissions)}</p>
+                    <p className='text-[11px] text-slate-500 mt-1'>{permSummary(u.permissions)}{u.sellerName ? ` · vendedor: ${u.sellerName}` : ''}</p>
                   </div>
                   <div className='flex gap-2'>
                     <button onClick={() => setOpenUser(openUser === u.id ? null : u.id)} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${openUser === u.id ? 'border-orange-500 text-orange-500' : dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>{openUser === u.id ? 'Fechar' : 'Permissões'}</button>
@@ -2155,7 +1859,11 @@ function TeamTab({ data, setData, dark, user }) {
                     <button onClick={() => { if (!window.confirm(`Excluir o acesso de ${u.name}?`)) return; const nd={...data}; nd.users=nd.users.filter(x=>x.id!==u.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
                   </div>
                 </div>
-                {openUser === u.id && <div className='mt-3'><PermissionGrid value={u.permissions} onChange={(p) => updateUser(u.id, { permissions: p })} dark={dark} compact /><p className='text-[11px] text-slate-500 mt-2'>As mudanças são salvas na hora e valem na próxima vez que o funcionário abrir o app.</p></div>}
+                {openUser === u.id && <div className='mt-3'><PermissionGrid value={u.permissions} onChange={(p) => updateUser(u.id, { permissions: p })} dark={dark} />
+                  <div className='mt-3 flex items-center gap-2 flex-wrap'><span className='text-[11px] font-bold uppercase tracking-wider text-slate-500'>Vendedor vinculado:</span>
+                    <select value={u.sellerName || ''} onChange={e => updateUser(u.id, { sellerName: e.target.value })} className={`${ic} !w-auto`}>
+                      <option value=''>Nenhum</option>{(data.sellers || []).map(sv => <option key={sv.id || sv.name} value={sv.name}>{sv.name}</option>)}
+                    </select></div><p className='text-[11px] text-slate-500 mt-2'>As mudanças são salvas na hora e valem na próxima vez que o funcionário abrir o app.</p></div>}
               </div>
             ))}
           </div>
@@ -2190,253 +1898,7 @@ function TeamTab({ data, setData, dark, user }) {
     </div>
   );
 }
-const STATE_COORDS = {
-  'AC': [-70.5, -9.0], 'AL': [-36.5, -9.6], 'AM': [-64.0, -3.4], 'AP': [-51.0, 1.4],
-  'BA': [-41.7, -12.5], 'CE': [-39.5, -5.2], 'DF': [-47.9, -15.8], 'ES': [-40.3, -19.1],
-  'GO': [-49.3, -15.9], 'MA': [-45.2, -5.4], 'MG': [-44.5, -18.5], 'MS': [-54.6, -20.4],
-  'MT': [-55.9, -12.6], 'PA': [-52.3, -3.9], 'PB': [-36.7, -7.1], 'PE': [-37.9, -8.3],
-  'PI': [-42.7, -7.6], 'PR': [-51.6, -24.8], 'RJ': [-43.2, -22.9], 'RN': [-36.5, -5.8],
-  'RO': [-63.0, -10.8], 'RR': [-61.3, 1.9], 'RS': [-53.8, -30.0], 'SC': [-50.9, -27.2],
-  'SE': [-37.1, -10.6], 'SP': [-48.6, -23.5], 'TO': [-48.3, -10.2]
-};
-
-const UF_MAP = {
-  'ACRE': 'AC', 'ALAGOAS': 'AL', 'AMAPA': 'AP', 'AMAZONAS': 'AM', 'BAHIA': 'BA', 'CEARA': 'CE', 'DISTRITO FEDERAL': 'DF',
-  'ESPIRITO SANTO': 'ES', 'GOIAS': 'GO', 'MARANHAO': 'MA', 'MATO GROSSO': 'MT', 'MATO GROSSO DO SUL': 'MS',
-  'MINAS GERAIS': 'MG', 'PARA': 'PA', 'PARAIBA': 'PB', 'PARANA': 'PR', 'PERNAMBUCO': 'PE', 'PIAUI': 'PI',
-  'RIO DE JANEIRO': 'RJ', 'RIO GRANDE DO NORTE': 'RN', 'RIO GRANDE DO SUL': 'RS', 'RONDONIA': 'RO',
-  'RORAIMA': 'RR', 'SANTA CATARINA': 'SC', 'SAO PAULO': 'SP', 'SERGIPE': 'SE', 'TOCANTINS': 'TO'
-};
-
-const UF_NAMES = {
-  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo',
-  GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba',
-  PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul',
-  RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins'
-};
-
-// Aceita "SP", "sp", "São Paulo", "Sao Paulo/SP", "Campinas - SP"... devolve a sigla ou "" se não reconhecer
-function normalizeState(s) {
-  if (!s) return '';
-  const clean = String(s).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (STATE_COORDS[clean]) return clean;
-  if (UF_MAP[clean]) return UF_MAP[clean];
-  const tail = clean.match(/(?:^|[\s\/\-,(])([A-Z]{2})\)?\s*$/);
-  if (tail && STATE_COORDS[tail[1]]) return tail[1];
-  const byName = Object.keys(UF_MAP).sort((a, b) => b.length - a.length).find(n => clean.includes(n));
-  return byName ? UF_MAP[byName] : '';
-}
-const clientUF = (client) => normalizeState(client?.state) || normalizeState(client?.city);
-
-function RoutesTab({ data, setData, dark, user }) {
-  const canFix = canEdit(user, "clients") || canEdit(user, "routes");
-  const [mapFilter, setMapFilter] = useState('producao');
-  const [selectedState, setSelectedState] = useState(null);
-  const [hover, setHover] = useState(null);
-
-  const orders = data.orders || [];
-  const clients = data.clients || [];
-  const findClient = (name) => clients.find(c => (c.name || '').trim().toLowerCase() === (name || '').trim().toLowerCase());
-
-  const filteredOrders = orders.filter(o => {
-    if (mapFilter === 'concluidos') return o.status === 'concluido';
-    if (mapFilter === 'producao') return o.status !== 'concluido';
-    return true;
-  });
-
-  const stateData = {};
-  const noState = []; // pedidos cujo cliente não tem estado cadastrado
-  filteredOrders.forEach(o => {
-    const clientRow = findClient(o.clientName);
-    const uf = clientUF(clientRow);
-    if (!uf) { noState.push({ ...o, client: clientRow }); return; }
-    if (!stateData[uf]) stateData[uf] = { orders: 0, value: 0, orderList: [] };
-    stateData[uf].orders += 1;
-    stateData[uf].orderList.push({ ...o, clientCity: clientRow?.city });
-    stateData[uf].value += Number(o.totalPrice) || 0;
-  });
-  const noStateClients = [...new Map(noState.map(o => [o.clientName, o])).values()];
-
-  const maxValue = Math.max(...Object.values(stateData).map(d => d.value), 100);
-  const colorScale = scaleLinear().domain([0, maxValue]).range(dark ? ['#3b2416', '#f97316'] : ['#fed7aa', '#ea580c']);
-  const totalMapped = Object.values(stateData).reduce((a, d) => a + d.orders, 0);
-
-  // Espalha os pontos dos pedidos em volta do centro do estado (sem sobrepor)
-  const markerPos = (uf, idx, total) => {
-    const [x, y] = STATE_COORDS[uf];
-    if (total <= 1) return [x, y];
-    const ring = Math.floor(idx / 8) + 1, ang = (idx % 8) / 8 * Math.PI * 2 + ring;
-    const r = 0.45 * ring;
-    return [x + Math.cos(ang) * r, y + Math.sin(ang) * r];
-  };
-
-  const setClientState = (clientName, uf) => {
-    if (!uf) return;
-    const nd = { ...data };
-    const idx = nd.clients.findIndex(c => (c.name || '').trim().toLowerCase() === (clientName || '').trim().toLowerCase());
-    if (idx >= 0) nd.clients[idx] = { ...nd.clients[idx], state: uf };
-    else nd.clients = [...nd.clients, { id: Date.now(), name: clientName, city: '', state: uf, phone: '', email: '', totalOrders: 1, totalSpent: 0 }];
-    setData(nd); saveData(nd);
-  };
-
-  const selectedStateInfo = selectedState ? stateData[selectedState] : null;
-  const sel = `px-2 py-1 rounded-lg text-xs font-bold border outline-none ${dark ? 'bg-gray-800 text-white border-gray-700' : 'bg-white border-gray-200 text-gray-900'}`;
-
-  return (
-    <div className='space-y-6 animate-slide-up'>
-      <div className='flex items-center justify-between flex-wrap gap-3'>
-        <div>
-          <h2 className='page-title page-title-underline'>MAPA Estratégico</h2>
-          <p className='text-sm text-slate-500 mt-1 font-medium'>Onde estão seus clientes e quanto cada estado compra</p>
-        </div>
-        <div className={`flex gap-1 p-1 rounded-xl border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-          {[['producao', 'Em produção'], ['concluidos', 'Concluídos'], ['todos', 'Todos']].map(([v, l]) => (
-            <button key={v} onClick={() => { setMapFilter(v); setSelectedState(null); }} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${mapFilter === v ? 'bg-orange-500 text-white' : dark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      {noStateClients.length > 0 && canFix && (
-        <div className={`rounded-2xl border p-4 ${dark ? 'bg-amber-500/5 border-amber-500/30' : 'bg-amber-50 border-amber-200'}`}>
-          <div className='flex items-center gap-2 text-sm font-bold text-amber-500 mb-1'><AlertTriangle size={16} /> {noState.length} pedido{noState.length > 1 ? 's' : ''} fora do mapa: cliente sem estado cadastrado</div>
-          <p className={`text-xs mb-3 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>Escolha o estado de cada cliente abaixo e ele aparece no mapa na hora.</p>
-          <div className='flex flex-wrap gap-2'>
-            {noStateClients.slice(0, 12).map(o => (
-              <div key={o.clientName} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-                <span className='text-xs font-bold truncate max-w-[160px]'>{o.clientName || 'Sem nome'}</span>
-                <select defaultValue='' onChange={e => setClientState(o.clientName, e.target.value)} className={sel}>
-                  <option value=''>UF</option>
-                  {Object.keys(UF_NAMES).sort().map(uf => <option key={uf} value={uf}>{uf}</option>)}
-                </select>
-              </div>
-            ))}
-            {noStateClients.length > 12 && <span className='text-xs text-slate-500 self-center'>+{noStateClients.length - 12} na aba Clientes</span>}
-          </div>
-        </div>
-      )}
-
-      <div className='flex flex-col lg:flex-row gap-6'>
-        {/* MAPA */}
-        <div className='lg:w-2/3 card-surface p-4 relative overflow-hidden' style={{ minHeight: 420 }}>
-          <div className={`absolute top-4 left-4 z-10 p-3 rounded-xl border backdrop-blur-md ${dark ? 'bg-gray-900/80 border-gray-700' : 'bg-white/80 border-gray-200'}`}>
-            <div className="text-[10px] font-black uppercase text-slate-500 mb-1">Volume vendido</div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-400">R$ 0</span>
-              <div className="w-20 h-2 rounded-full" style={{ background: `linear-gradient(90deg, ${colorScale(0)}, ${colorScale(maxValue)})` }} />
-              <span className="text-[10px] font-bold text-slate-400">{money(maxValue)}</span>
-            </div>
-            <div className="flex items-center gap-3 mt-2 text-[10px] font-bold text-slate-500">
-              <span className='flex items-center gap-1'><span className='w-2 h-2 rounded-full bg-orange-500 inline-block' />Em produção</span>
-              <span className='flex items-center gap-1'><span className='w-2 h-2 rounded-full bg-emerald-500 inline-block' />Concluído</span>
-            </div>
-          </div>
-
-          {hover && (
-            <div className={`absolute top-4 right-4 z-10 px-3 py-2 rounded-xl border text-xs pointer-events-none ${dark ? 'bg-gray-900/90 border-gray-700' : 'bg-white/90 border-gray-200'}`}>
-              <div className='font-black'>{UF_NAMES[hover] || hover}</div>
-              <div className='text-slate-500 font-bold'>{stateData[hover] ? `${stateData[hover].orders} pedido${stateData[hover].orders > 1 ? 's' : ''} · ${money(stateData[hover].value)}` : 'Sem pedidos'}</div>
-            </div>
-          )}
-
-            <ComposableMap projection='geoMercator' projectionConfig={{ scale: 750, center: [-53, -15] }} width={800} height={700} style={{ width: "100%", height: "auto" }}>
-              <Geographies geography={GEO_URL}>
-                {({ geographies }) => geographies.map(geo => {
-                  const uf = geo.properties.sigla || normalizeState(geo.properties.name);
-                  const sdata = stateData[uf];
-                  const isSelected = selectedState === uf;
-                  const fill = isSelected ? '#f97316' : (sdata ? colorScale(sdata.value) : (dark ? '#1f2937' : '#f1f5f9'));
-                  return (
-                    <Geography key={geo.rsmKey} geography={geo}
-                      fill={fill}
-                      stroke={isSelected ? '#fff' : (dark ? '#0b1220' : '#cbd5e1')}
-                      strokeWidth={isSelected ? 1.5 : 0.6}
-                      onClick={() => setSelectedState(isSelected ? null : uf)}
-                      onMouseEnter={() => setHover(uf)}
-                      onMouseLeave={() => setHover(null)}
-                      style={{
-                        default: { outline: 'none' },
-                        hover: { fill: isSelected ? '#f97316' : '#fb923c', cursor: 'pointer', outline: 'none' },
-                        pressed: { outline: 'none' }
-                      }}
-                    />
-                  );
-                })}
-              </Geographies>
-
-              {Object.entries(stateData).map(([uf, sd]) => sd.orderList.map((order, idx) => (
-                <Marker key={`${uf}-${order.id}-${idx}`} coordinates={markerPos(uf, idx, sd.orderList.length)} onClick={() => setSelectedState(uf)}>
-                  <circle r={4} fill={order.status === 'concluido' ? '#22c55e' : '#f97316'} stroke={dark ? '#0b1220' : '#fff'} strokeWidth={1} style={{ cursor: 'pointer' }}>
-                    <title>{`${order.id} · ${order.clientName} · ${money(order.totalPrice)}`}</title>
-                  </circle>
-                </Marker>
-              )))}
-            </ComposableMap>
-          <div className='text-[11px] text-slate-500 font-bold text-center mt-1'>{totalMapped} pedido{totalMapped === 1 ? '' : 's'} no mapa · clique num estado para ver os pedidos</div>
-        </div>
-
-        {/* PAINEL LATERAL */}
-        <div className='lg:w-1/3 flex flex-col gap-4' style={{ maxHeight: 640 }}>
-          {selectedState ? (
-            <div className='card-surface p-5 border-orange-500/30 animate-slide-up flex flex-col h-full min-h-0'>
-              <div className='flex items-center justify-between mb-4'>
-                <div>
-                  <h3 className='font-black text-2xl text-orange-500'>{UF_NAMES[selectedState] || selectedState}</h3>
-                  <p className='text-xs text-slate-500 font-bold uppercase'>{selectedStateInfo?.orders || 0} pedidos no estado</p>
-                </div>
-                <button onClick={() => setSelectedState(null)} className={`p-2 rounded-xl ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}><X size={20}/></button>
-              </div>
-              <div className='bg-orange-500/10 rounded-2xl p-4 mb-4 border border-orange-500/20'>
-                <div className='text-[10px] font-black uppercase text-orange-500/70 mb-1'>Volume total</div>
-                <div className='text-2xl font-black tabular-nums'>{money(selectedStateInfo?.value)}</div>
-              </div>
-              <div className='flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 min-h-0'>
-                {(selectedStateInfo?.orderList || []).map(o => (
-                  <div key={o.id} className={`p-3 rounded-xl border ${dark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-                    <div className='flex justify-between items-start mb-1'>
-                      <span className='font-mono text-[10px] font-black text-orange-400'>{o.id}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.status === 'concluido' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-blue-500/20 text-blue-400'}`}>{STATUS_LABEL[o.status] || o.status}</span>
-                    </div>
-                    <div className='text-sm font-black truncate'>{o.clientName}</div>
-                    <div className='text-[10px] text-slate-500 font-bold'>{o.clientCity || 'Cidade não informada'} · {money(o.totalPrice)} · prazo {fmt(o.deadline)}</div>
-                  </div>
-                ))}
-                {(!selectedStateInfo || selectedStateInfo.orderList.length === 0) && (
-                  <div className='text-center py-10 opacity-40'><Package size={40} className='mx-auto mb-2'/><p className='text-sm font-bold'>Nenhum pedido neste filtro</p></div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className='card-surface p-5 flex flex-col h-full min-h-0'>
-              <h3 className='font-black text-sm uppercase tracking-widest text-slate-500 mb-4'>Ranking por estado</h3>
-              <div className='space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0'>
-                {Object.entries(stateData).sort((a, b) => b[1].value - a[1].value).map(([uf, s], i) => (
-                  <div key={uf} onClick={() => setSelectedState(uf)} className='group cursor-pointer p-3 rounded-2xl border border-transparent hover:border-orange-500/30 hover:bg-orange-500/5 transition-all'>
-                    <div className='flex justify-between items-center'>
-                      <div className='flex items-center gap-3'>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${i === 0 ? 'bg-orange-500 text-white' : dark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>{uf}</div>
-                        <div>
-                          <div className='font-black text-sm'>{UF_NAMES[uf] || uf}</div>
-                          <div className='text-[10px] font-bold text-slate-500'>{s.orders} pedido{s.orders > 1 ? 's' : ''}</div>
-                        </div>
-                      </div>
-                      <div className='font-black text-sm text-orange-500 tabular-nums'>{money(s.value)}</div>
-                    </div>
-                    <div className={`mt-2 w-full h-1 rounded-full overflow-hidden ${dark ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                      <div className='h-full bg-orange-500 rounded-full transition-all duration-700' style={{ width: `${(s.value / maxValue * 100)}%` }} />
-                    </div>
-                  </div>
-                ))}
-                {Object.keys(stateData).length === 0 && (
-                  <div className='text-center py-16 opacity-40'><Layers size={40} className='mx-auto mb-3'/><p className='font-black text-sm'>Nenhum pedido com estado definido</p><p className='text-xs mt-1'>Cadastre o estado dos clientes para eles aparecerem aqui.</p></div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+// MAPA: ver src/tabs/MapTab.jsx
 
 const SESSION_KEY = "ags_session";
 function loadSession() {
@@ -2465,8 +1927,15 @@ function MainApp() {
     CURRENT_COMPANY_ID = null; setData(emptyData()); setUser(null);
   };
   useEffect(() => { try { localStorage.setItem("ags_dark", dark ? "1" : "0"); } catch { } }, [dark]);
+  const persist = (nd) => { setData(nd); saveData(nd); };
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 900);
   const [loadingServer, setLoadingServer] = useState(true);
+  // Todo vendedor que aparece em pedido fica cadastrado automaticamente (com cor própria)
+  useEffect(() => {
+    if (!user || loadingServer) return;
+    const fixed = ensureSellers(data);
+    if (fixed !== data) { setData(fixed); saveData(fixed); }
+  }, [data, user, loadingServer]); // eslint-disable-line
   const [showPlans, setShowPlans] = useState(false);
 
   useEffect(() => {
@@ -2487,8 +1956,8 @@ function MainApp() {
         if (remote && user.role === "employee") {
           const me = (remote.app_data?.users || []).find(u => String(u.id) === String(user.id));
           if (!me) { try { localStorage.removeItem(SESSION_KEY); } catch { } setUser(null); return; }
-          if (JSON.stringify(me.permissions) !== JSON.stringify(user.permissions)) {
-            const u = { ...user, permissions: me.permissions };
+          if (JSON.stringify(me.permissions) !== JSON.stringify(user.permissions) || (me.sellerName || "") !== (user.sellerName || "")) {
+            const u = { ...user, permissions: me.permissions, sellerName: me.sellerName || "" };
             try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
             setUser(u);
           }
@@ -2517,9 +1986,10 @@ function MainApp() {
     production: ProductionTab, 
     finalization: FinalizationTab, 
     dashboard: DashboardTab, 
-    routes: RoutesTab, 
+    routes: MapTab, 
     clients: ClientsTab, 
-    team: TeamTab 
+    team: TeamTab,
+    sales: SalesTab
   }[currentTab];
 
   const isAdmin = user.role === 'admin';
@@ -2577,7 +2047,7 @@ function MainApp() {
         )}
 
         <div className='flex-1 overflow-y-auto p-4 md:p-8'>
-          {ActiveTab ? <ActiveTab data={data} setData={setData} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
+          {ActiveTab ? <ActiveTab data={data} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
         {showPlans && (
