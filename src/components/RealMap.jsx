@@ -6,7 +6,7 @@ import { Factory, Navigation, Route, Trash2, MapPin, Search, X, Crosshair, Exter
 import { moneyBR, norm, sellerColorOf, whatsappLink, orderNumber } from "../lib/core";
 import { normalizeState, UF_NAMES } from "../lib/geo";
 
-import { loadCities, locateCity } from "../lib/cities";
+import { loadCities, locateCity, nearestCity } from "../lib/cities";
 
 const km = (a, b) => {
   const R = 6371, toR = (x) => (x * Math.PI) / 180;
@@ -43,9 +43,20 @@ function FitTo({ points, trigger }) {
   }, [trigger]); // eslint-disable-line
   return null;
 }
+// Modo "marcar no mapa": trava o arraste para qualquer clique/toque contar (antes, um tremido do mouse virava arraste e o clique se perdia)
 function ClickToPlace({ active, onPick }) {
-  useMapEvents({ click(e) { if (active) onPick(e.latlng); } });
+  const map = useMapEvents({ click(e) { if (active) onPick(e.latlng); } });
+  useEffect(() => {
+    if (!active) return;
+    map.dragging.disable(); map.doubleClickZoom.disable();
+    const el = map.getContainer(); el.style.cursor = "crosshair";
+    return () => { map.dragging.enable(); map.doubleClickZoom.enable(); el.style.cursor = ""; };
+  }, [active, map]);
   return null;
+}
+function CenterPicker({ onPick }) {
+  const map = useMap();
+  return <button onClick={(e) => { e.stopPropagation(); const c = map.getCenter(); onPick(c); }} className="ml-2 px-2 py-0.5 rounded-lg bg-white/25 font-black">usar o centro</button>;
 }
 
 export default function RealMap({ data, save, dark, orders, canEdit }) {
@@ -60,6 +71,7 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
   const [fitKey, setFitKey] = useState(0);
   const [focus, setFocus] = useState(null);
   const [picked, setPicked] = useState(null);
+  const mapBoxRef = useRef(null);
 
   useEffect(() => { loadCities().then(setCities).catch(() => setCities({ rows: [], byKey: new Map(), byName: new Map() })); }, []);
   const factory = data.settings?.factory || null;
@@ -99,6 +111,12 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
   useEffect(() => { setRouteGeo(null); setRouteInfo(null); }, [route.join("|"), factory?.lat, factory?.lng]);
 
   const saveFactory = (f) => { save({ ...data, settings: { ...(data.settings || {}), factory: f } }); setFactoryForm(false); setPlacing(false); setCityQuery(""); setFitKey(k => k + 1); };
+  // Fábrica marcada/arrastada no mapa: o nome da cidade acompanha o ponto (cidade mais próxima)
+  const placeFactoryAt = (lat, lng) => {
+    const la = +Number(lat).toFixed(5), ln = +Number(lng).toFixed(5);
+    const near = nearestCity(cities, la, ln);
+    saveFactory({ name: factory?.name || "Minha fábrica", lat: la, lng: ln, city: near ? `${near.name} - ${near.uf}` : `${la.toFixed(3)}, ${ln.toFixed(3)}` });
+  };
   const cityMatches = useMemo(() => {
     if (!cities || cityQuery.trim().length < 2) return [];
     const q = norm(cityQuery);
@@ -149,15 +167,21 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
     <div className="flex flex-col xl:flex-row gap-5">
       <style>{`@keyframes pinPulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.6);opacity:0}} .leaflet-container{font-family:Inter,system-ui,sans-serif;border-radius:16px}${dark ? ' .osm-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.7)}' : ''} .leaflet-popup-content-wrapper{border-radius:14px} .route-dash{stroke-dasharray:10 8;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}`}</style>
 
-      <div className={`xl:w-[68%] rounded-2xl border p-2 relative ${card}`}>
-        {(placing) && <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-black shadow-xl">Clique no mapa onde fica a sua fábrica <button onClick={() => setPlacing(false)} className="ml-2 underline">cancelar</button></div>}
+      <div ref={mapBoxRef} className={`xl:w-[68%] rounded-2xl border p-2 relative scroll-mt-4 ${card}`}>
         <MapContainer className={dark ? "osm-dark" : ""} center={[-15, -50]} zoom={4} minZoom={3} maxZoom={18} scrollWheelZoom style={{ height: "min(620px, 72vh)", width: "100%", cursor: placing ? "crosshair" : undefined }}>
           <TileLayer url={tiles.url} attribution={tiles.attr} maxZoom={19} />
           <FitTo points={allPts} trigger={fitKey} />
-          <ClickToPlace active={placing} onPick={(ll) => saveFactory({ name: factory?.name || "Minha fábrica", lat: +ll.lat.toFixed(5), lng: +ll.lng.toFixed(5), city: factory?.city || "" })} />
+          <ClickToPlace active={placing} onPick={(ll) => placeFactoryAt(ll.lat, ll.lng)} />
+          {placing && <div className="leaflet-top leaflet-left" style={{ left: "50%", transform: "translateX(-50%)", pointerEvents: "auto", top: 12, width: "max-content", maxWidth: "calc(100% - 24px)" }}>
+            <div className="px-3 py-2 rounded-xl bg-emerald-500 text-white text-sm font-black shadow-xl flex items-center flex-wrap justify-center gap-y-1" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+              📍 Toque/clique onde fica a fábrica
+              <CenterPicker onPick={(ll) => placeFactoryAt(ll.lat, ll.lng)} />
+              <button onClick={(e) => { e.stopPropagation(); setPlacing(false); }} className="ml-2 underline">cancelar</button>
+            </div>
+          </div>}
           {focus && <FocusOn pos={focus} />}
           {factory && (
-            <Marker position={[factory.lat, factory.lng]} icon={factoryIcon} draggable={canEdit} eventHandlers={{ dragend: (e) => saveFactory({ ...factory, ...e.target.getLatLng() }) }}>
+            <Marker position={[factory.lat, factory.lng]} icon={factoryIcon} draggable={canEdit} eventHandlers={{ dragend: (e) => { const ll = e.target.getLatLng(); placeFactoryAt(ll.lat, ll.lng); } }}>
               <Tooltip direction="top" offset={[0, -20]}>{factory.name || "Fábrica"}</Tooltip>
             </Marker>
           )}
@@ -227,8 +251,8 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
                 )}
               </div>
               <div className="flex gap-2 flex-wrap">
-                <button onClick={() => { setPlacing(true); }} className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white flex items-center gap-1"><MapPin size={13} />Marcar no mapa</button>
-                <button onClick={() => navigator.geolocation?.getCurrentPosition(p => saveFactory({ name: factory?.name || "Minha fábrica", city: "Localização atual", lat: +p.coords.latitude.toFixed(5), lng: +p.coords.longitude.toFixed(5) }), () => alert("Não foi possível pegar sua localização. Digite a cidade ou marque no mapa."))} className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1 ${dark ? "border-gray-700" : "border-gray-300"}`}><Crosshair size={13} />Estou na fábrica</button>
+                <button onClick={() => { setPlacing(true); setTimeout(() => mapBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-white flex items-center gap-1"><MapPin size={13} />Marcar no mapa</button>
+                <button onClick={() => navigator.geolocation?.getCurrentPosition(p => placeFactoryAt(p.coords.latitude, p.coords.longitude), () => alert("Não foi possível pegar sua localização. Digite a cidade ou marque no mapa."))} className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center gap-1 ${dark ? "border-gray-700" : "border-gray-300"}`}><Crosshair size={13} />Estou na fábrica</button>
                 {factory && <button onClick={() => setFactoryForm(false)} className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500">Fechar</button>}
               </div>
               {factory && <p className="text-[11px] text-slate-500">Dica: você também pode arrastar o ícone 🏭 no mapa.</p>}

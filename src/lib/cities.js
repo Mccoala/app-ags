@@ -37,3 +37,15 @@ export const distanceKm = (a, b) => {
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 };
+
+// Cidade mais próxima de um ponto do mapa (usado ao marcar/arrastar a fábrica)
+export function nearestCity(cities, lat, lng) {
+  if (!cities?.rows?.length) return null;
+  let best = null, bd = Infinity;
+  const cos = Math.cos((lat * Math.PI) / 180);
+  for (const c of cities.rows) {
+    const dx = (c.lng - lng) * cos, dy = c.lat - lat, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best ? { ...best, km: Math.round(distanceKm({ lat, lng }, best)) } : null;
+}

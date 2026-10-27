@@ -3,9 +3,10 @@ import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps
 import { scaleLinear } from "d3-scale";
 import { X, AlertTriangle, Package, Layers, Users, DollarSign, Navigation, Filter, RefreshCw, MapPin, TrendingUp } from "lucide-react";
 import { STATE_COORDS, UF_NAMES, clientUF } from "../lib/geo";
+import { lazyRetry } from "../lib/safeImport";
 import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf } from "../lib/core";
 
-const RealMap = lazy(() => import("../components/RealMap"));
+const RealMap = lazyRetry(() => import("../components/RealMap"));
 const GEO_URL = "/brazil-states.json";
 const STATUS_LABEL = { aguardando: "Aguardando", producao: "Em produção", concluido: "Concluído" };
 
@@ -36,7 +37,8 @@ function CountUp({ value, format = (v) => v, duration = 700 }) {
 }
 
 export default function MapTab({ data, setData, persist, dark, user }) {
-  const [view, setView] = useState("estados"); // "estados" | "real"
+  const [view, setView] = useState(() => { try { return sessionStorage.getItem("inflatudo-mapview") || "estados"; } catch { return "estados"; } }); // "estados" | "real"
+  useEffect(() => { try { sessionStorage.setItem("inflatudo-mapview", view); } catch { } }, [view]);
   const [metric, setMetric] = useState("clients");
   const [status, setStatus] = useState("todos");
   // Vendedor logado vê só os próprios clientes no mapa

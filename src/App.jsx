@@ -9,35 +9,58 @@ import FloatingBrain from "./components/FloatingBrain";
 import PhotosTab from "./tabs/PhotosTab";
 import PhotoCapture from "./components/PhotoCapture";
 import { photoRecords } from "./lib/photos";
+import { isChunkError, reloadForNewVersion } from "./lib/safeImport";
 import { Camera as CameraIcon } from "lucide-react";
 import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, info: null };
+    this.state = { hasError: false, error: null, info: null, updating: false };
   }
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
   componentDidCatch(error, info) {
+    // Versão nova publicada com o app aberto: recarrega sozinho
+    if (isChunkError(error) && reloadForNewVersion()) { this.setState({ updating: true }); return; }
     this.setState({ info });
   }
   render() {
     if (this.state.hasError) {
+      const updating = this.state.updating || isChunkError(this.state.error);
       return (
-        <div style={{ padding: "2rem", color: "red", background: "#111", minHeight: "100vh" }}>
-          <h2>Oops, a tela quebrou!</h2>
-          <details style={{ whiteSpace: "pre-wrap" }}>
-            <summary>Clique aqui para ver o erro (tire print disso):</summary>
-            {this.state.error && this.state.error.toString()}
-            <br />
-            {this.state.info && this.state.info.componentStack}
-          </details>
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#030712", color: "#e5e7eb", padding: 24, fontFamily: "Inter,system-ui,sans-serif" }}>
+          <div style={{ maxWidth: 420, textAlign: "center" }}>
+            <img src={logoMark} alt="" style={{ width: 56, height: 56, margin: "0 auto 16px" }} />
+            <h2 style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>{updating ? "Atualizando o Inflatudo…" : "Algo deu errado nesta tela"}</h2>
+            <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 18 }}>{updating ? "Saiu uma versão nova. Só um instante." : "Seus dados estão salvos. Toque em recarregar para continuar."}</p>
+            <button onClick={() => window.location.reload()} style={{ background: "linear-gradient(135deg,#f97316,#ea580c)", color: "#fff", fontWeight: 900, padding: "12px 22px", borderRadius: 14, border: 0, fontSize: 15 }}>Recarregar</button>
+            {!updating && <details style={{ marginTop: 18, fontSize: 11, color: "#6b7280", textAlign: "left", whiteSpace: "pre-wrap" }}><summary>Detalhes técnicos</summary>{String(this.state.error)}{"\n"}{this.state.info?.componentStack}</details>}
+          </div>
         </div>
       );
     }
     return this.props.children;
+  }
+}
+
+// Erro numa aba não derruba o app inteiro: só aquela aba mostra o aviso
+class TabBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error) { if (isChunkError(error)) reloadForNewVersion(); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const chunk = isChunkError(this.state.error);
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-20 px-4 gap-3">
+        <AlertTriangle size={36} className="text-orange-500" />
+        <div className="text-lg font-black">{chunk ? "Atualizando para a versão nova…" : "Esta tela teve um problema"}</div>
+        <p className="text-sm text-gray-500 max-w-sm">{chunk ? "Saiu uma atualização do app. Se não recarregar sozinho, toque no botão." : "Seus dados estão salvos. Recarregue para continuar."}</p>
+        <button onClick={() => window.location.reload()} className="px-5 py-2.5 rounded-xl font-black text-white" style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>Recarregar</button>
+      </div>
+    );
   }
 }
 import {
@@ -2150,7 +2173,9 @@ function MainApp() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
   const [user, setUser] = useState(loadSession);
   const [data, setData] = useState(emptyData);
-  const [tab, setTab] = useState(() => firstTab(loadSession()));
+  // Lembra a aba aberta (ao recarregar, volta para onde estava)
+  const [tab, setTab] = useState(() => { try { const t = sessionStorage.getItem("inflatudo-tab"); const u = loadSession(); if (t && allowedTabs(u).includes(t)) return t; } catch { } return firstTab(loadSession()); });
+  useEffect(() => { try { sessionStorage.setItem("inflatudo-tab", tab); } catch { } }, [tab]);
   const login = (u) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
     setData(emptyData()); setLoadingServer(true);
@@ -2325,7 +2350,7 @@ function MainApp() {
           </header>
         )}
         <div className={`flex-1 overflow-y-auto p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}>
-          {ActiveTab ? <ActiveTab data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
+          {ActiveTab ? <TabBoundary key={currentTab}><ActiveTab data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
         {showPlans && (

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { orderNumber } from "./core";
+import { importRetry } from "./safeImport";
 
 // ── Fotos dos brinquedos finalizados ─────────────────────────────────────────
 // A foto é reduzida no próprio celular (lado maior 1280px, JPEG ~70%) → normalmente 120–300 KB.
@@ -96,7 +97,7 @@ export async function downloadOne(photo, index = 1) {
 // Baixa várias fotos num .zip. Se vierem de mais de um pedido, cria uma pasta por pedido.
 export async function downloadZip(photos, zipName, onProgress) {
   if (photos.length === 1) return downloadOne(photos[0]);
-  const { default: JSZip } = await import("jszip");
+  const { default: JSZip } = await importRetry(() => import("jszip"));
   const zip = new JSZip();
   const multi = new Set(photos.map(p => p.pedido)).size > 1;
   const counter = {};
