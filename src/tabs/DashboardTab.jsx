@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend, LineChart, Line } from "recharts";
 import { DollarSign, Package, TrendingUp, TrendingDown, AlertTriangle, Factory, CheckCircle, Users, Trophy, Clock, Sparkles, MapPin, Scissors } from "lucide-react";
 import BrainAI from "../components/BrainAI";
-import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween } from "../lib/core";
+import { finalizersOf, sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween } from "../lib/core";
 import { clientUF, UF_NAMES } from "../lib/geo";
 
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -66,7 +66,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
     const team = (data.team || []).map(t => {
       const stages = {}; let total = 0;
       STAGES.forEach(([k, label]) => { const n = prod.filter(p => p[k] === t.name).length; if (n) { stages[label] = n; total += n; } });
-      const finals = fin.filter(f => f.finalizer === t.name).length;
+      const finals = fin.filter(f => finalizersOf(f).includes(t.name)).length;
       const openNow = prod.filter(p => STAGES.some(([k]) => p[k] === t.name) && pctOf(p) < 100).length;
       return { ...t, stages, total: total + finals, finals, openNow };
     }).sort((a, b) => b.total - a.total);
@@ -218,7 +218,7 @@ function TeamPerformance({ data, dark, goTo }) {
   const now = new Date();
   const [sector, setSector] = useState("tailor");
   const [month, setMonth] = useState(mk(now));
-  const [focus, setFocus] = useState("");
+  const [picked, setPicked] = useState(null); // null = todos do setor
   const shift = (m, d) => { const [y, mm] = m.split("-").map(Number); return mk(new Date(y, mm - 1 + d, 1)); };
   const label = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
   const prevM = shift(month, -1);
@@ -227,7 +227,7 @@ function TeamPerformance({ data, dark, goTo }) {
   // registros: { pessoa, mes|null }
   const records = useMemo(() => {
     const out = [];
-    if (sector === "fin") (data.finalization || []).forEach(f => { const st = f.stage || (f.done ? "finalizado" : ""); if (f.finalizer && st === "finalizado") out.push({ p: f.finalizer, m: (f.finDate || "").slice(0, 7) || null }); });
+    if (sector === "fin") (data.finalization || []).forEach(f => { const st = f.stage || (f.done ? "finalizado" : ""); if (st === "finalizado") finalizersOf(f).forEach(n => out.push({ p: n, m: (f.finDate || "").slice(0, 7) || null })); });
     else (data.production || []).forEach(p => { if (p[sector]) out.push({ p: p[sector], m: (p[`${sector}At`] || "").slice(0, 7) || null }); });
     return out;
   }, [data, sector]);
@@ -243,10 +243,15 @@ function TeamPerformance({ data, dark, goTo }) {
   const avg = active.length ? active.reduce((s, r) => s + r.cur, 0) / active.length : 0;
   const undatedAll = records.filter(r => !r.m).length;
   const chart = rows.map(r => ({ nome: r.p.split(" ")[0], [label(month)]: r.cur, [label(prevM)]: r.prev }));
-  const who = focus || rows[0]?.p || "";
+  const chosen = picked === null ? people : people.filter(p => picked.includes(p));
+  const togglePerson = (p) => setPicked(prev => { const base = prev === null ? [...people] : prev; return base.includes(p) ? base.filter(x => x !== p) : [...base, p]; });
+  const LINE_COLORS = ["#f97316", "#38bdf8", "#a855f7", "#22c55e", "#ec4899", "#eab308", "#14b8a6", "#ef4444", "#6366f1", "#84cc16"];
+  const colorOfP = (p) => LINE_COLORS[people.indexOf(p) % LINE_COLORS.length];
   const trend = months6.map(m => {
     const per = people.map(p => count(p, m)).filter(n => n > 0);
-    return { mes: label(m), [who || "pessoa"]: who ? count(who, m) : 0, "média do setor": per.length ? +(per.reduce((s, n) => s + n, 0) / per.length).toFixed(1) : 0 };
+    const row = { mes: label(m), "média do setor": per.length ? +(per.reduce((s, n) => s + n, 0) / per.length).toFixed(1) : 0 };
+    chosen.forEach(p => { row[p] = count(p, m); });
+    return row;
   });
   const tt = { backgroundColor: dark ? "#0f172a" : "#fff", border: `1px solid ${dark ? "#1e293b" : "#e2e8f0"}`, borderRadius: 12, fontSize: 12 };
   const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
@@ -258,7 +263,7 @@ function TeamPerformance({ data, dark, goTo }) {
         <h3 className="font-black text-base flex items-center gap-2"><Scissors size={17} className="text-orange-500" />Rendimento da equipe</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <div className={`flex p-0.5 rounded-lg ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
-            {SECTORS.map(([k, l]) => <button key={k} onClick={() => { setSector(k); setFocus(""); }} className={`px-2.5 py-1 rounded-md text-[11px] font-black ${sector === k ? "bg-orange-500 text-white" : "text-slate-500"}`}>{l}</button>)}
+            {SECTORS.map(([k, l]) => <button key={k} onClick={() => { setSector(k); setPicked(null); }} className={`px-2.5 py-1 rounded-md text-[11px] font-black ${sector === k ? "bg-orange-500 text-white" : "text-slate-500"}`}>{l}</button>)}
           </div>
           <div className="flex items-center gap-1"><button onClick={() => setMonth(shift(month, -1))} className="px-1.5 font-black text-slate-400">‹</button><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className={inp} /><button onClick={() => setMonth(shift(month, 1))} className="px-1.5 font-black text-slate-400">›</button></div>
           <button onClick={() => goTo && goTo("team")} className="text-[11px] font-black text-orange-500 hover:underline">Gerenciar equipe</button>
@@ -286,7 +291,7 @@ function TeamPerformance({ data, dark, goTo }) {
                 <tbody>{rows.map(r => {
                   const vsAvg = avg && r.cur ? ((r.cur - avg) / avg) * 100 : null;
                   return (
-                    <tr key={r.p} onClick={() => setFocus(r.p)} className={`cursor-pointer border-t ${dark ? "border-gray-800 hover:bg-gray-800/50" : "border-gray-100 hover:bg-gray-50"} ${who === r.p ? "text-orange-500" : ""}`}>
+                    <tr key={r.p} onClick={() => togglePerson(r.p)} className={`cursor-pointer border-t ${dark ? "border-gray-800 hover:bg-gray-800/50" : "border-gray-100 hover:bg-gray-50"} ${chosen.includes(r.p) ? "" : "opacity-40"}`}>
                       <td className="py-1.5 pr-2 font-bold truncate max-w-[140px]">{r.p}</td>
                       <td className="pr-2 text-right font-black tabular-nums">{r.cur}</td>
                       <td className="pr-2 text-right tabular-nums text-slate-500">{r.prev}</td>
@@ -301,8 +306,21 @@ function TeamPerformance({ data, dark, goTo }) {
           </div>
           <div>
             <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-              <div className="text-xs font-black text-slate-500">Evolução de <span className="text-orange-500">{who || "—"}</span> x média do setor (6 meses)</div>
-              <select value={who} onChange={e => setFocus(e.target.value)} className={inp}>{rows.map(r => <option key={r.p} value={r.p}>{r.p}</option>)}</select>
+              <div className="text-xs font-black text-slate-500">Comparar {roleName.toLowerCase()} — últimos 6 meses</div>
+              <div className="flex gap-1 text-[11px] font-black">
+                <button onClick={() => setPicked(null)} className={`px-2 py-0.5 rounded-md ${picked === null ? "bg-orange-500 text-white" : "text-slate-500"}`}>Todos</button>
+                <button onClick={() => setPicked([])} className="px-2 py-0.5 rounded-md text-slate-500">Nenhum</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {people.map(p => {
+                const on = chosen.includes(p); const c = colorOfP(p);
+                return (
+                  <label key={p} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-bold cursor-pointer select-none ${on ? "" : dark ? "border-gray-700 text-gray-500" : "border-gray-200 text-gray-400"}`} style={on ? { borderColor: c, color: c, background: `${c}18` } : {}}>
+                    <input type="checkbox" checked={on} onChange={() => togglePerson(p)} className="w-3.5 h-3.5" style={{ accentColor: c }} />{p}
+                  </label>
+                );
+              })}
             </div>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={trend} margin={{ left: -18, right: 10, top: 6 }}>
@@ -311,8 +329,8 @@ function TeamPerformance({ data, dark, goTo }) {
                 <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <Tooltip contentStyle={tt} />
                 <Legend wrapperStyle={{ fontSize: 11, fontWeight: 800 }} />
-                <Line type="monotone" dataKey={who || "pessoa"} stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} animationDuration={900} />
-                <Line type="monotone" dataKey="média do setor" stroke="#38bdf8" strokeWidth={2} strokeDasharray="5 4" dot={false} animationDuration={1100} />
+                {chosen.map(p => <Line key={p} type="monotone" dataKey={p} stroke={colorOfP(p)} strokeWidth={2.5} dot={{ r: 3 }} animationDuration={800} />)}
+                <Line type="monotone" dataKey="média do setor" stroke={dark ? "#e2e8f0" : "#334155"} strokeWidth={2} strokeDasharray="5 4" dot={false} animationDuration={1000} />
               </LineChart>
             </ResponsiveContainer>
             <div className={`mt-3 p-3 rounded-xl text-xs ${dark ? "bg-gray-800/50 text-slate-400" : "bg-gray-50 text-slate-500"}`}>

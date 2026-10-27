@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Factory, Navigation, Route, Trash2, MapPin, Search, X, Crosshair, ExternalLink, Edit3, Check } from "lucide-react";
@@ -17,7 +17,10 @@ const km = (a, b) => {
 const fmtKm = (v) => `${Math.round(v).toLocaleString("pt-BR")} km`;
 const fmtTime = (s) => { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h}h${String(m).padStart(2, "0")}` : `${m} min`; };
 
-const pinIcon = (color, label, selected) => L.divIcon({
+// Ícones guardados para não serem recriados a cada atualização da tela (recriar "engole" o clique)
+const ICONS = new Map();
+const pinIcon = (color, label, selected) => { const k = `${color}|${label}|${selected}`; if (!ICONS.has(k)) ICONS.set(k, makePin(color, label, selected)); return ICONS.get(k); };
+const makePin = (color, label, selected) => L.divIcon({
   className: "",
   iconSize: [34, 42], iconAnchor: [17, 40], popupAnchor: [0, -36],
   html: `<div style="position:relative;width:34px;height:42px;filter:drop-shadow(0 6px 10px rgba(0,0,0,.35))">
@@ -56,6 +59,7 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
   const [cityQuery, setCityQuery] = useState("");
   const [fitKey, setFitKey] = useState(0);
   const [focus, setFocus] = useState(null);
+  const [picked, setPicked] = useState(null);
 
   useEffect(() => { loadCities().then(setCities).catch(() => setCities({ rows: [], byKey: new Map(), byName: new Map() })); }, []);
   const factory = data.settings?.factory || null;
@@ -73,7 +77,8 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
     const out = [];
     byClient.forEach(({ name, orders: os }) => {
       const c = (data.clients || []).find(x => norm(x.name) === norm(name));
-      let pos = c?.lat && c?.lng ? { lat: c.lat, lng: c.lng, exact: true } : null;
+      // A posição vem sempre da cidade/estado cadastrados (mudou na aba Clientes → muda aqui)
+      let pos = null;
       const city = locateCity(cities, c?.city, c?.state);
       if (!pos && city) pos = { lat: city.lat, lng: city.lng };
       const last = [...os].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
@@ -132,10 +137,7 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
   };
   const gmapsUrl = factory && routePoints.length ? `https://www.google.com/maps/dir/${[factory, ...routePoints.map(p => p.pos), factory].map(p => `${p.lat},${p.lng}`).join("/")}` : null;
 
-  const setExactPos = (p, latlng) => {
-    if (!canEdit || !p.client) return;
-    save({ ...data, clients: (data.clients || []).map(c => c === p.client ? { ...c, lat: +latlng.lat.toFixed(5), lng: +latlng.lng.toFixed(5) } : c) });
-  };
+
 
   const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   const inp = `w-full px-3 py-2 rounded-xl text-sm border outline-none ${dark ? "bg-gray-800 text-white border-gray-700" : "bg-white border-gray-200 text-gray-900"} focus:border-emerald-500`;
@@ -162,33 +164,39 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
           {routeGeo && <Polyline positions={routeGeo} pathOptions={{ color: "#10b981", weight: 5, opacity: 0.9, className: routeInfo?.roads ? "" : "route-dash" }} />}
           {located.map(p => {
             const inRoute = route.indexOf(p.name);
-            const dist = factory ? km(factory, p.pos) : null;
-            const wa = whatsappLink(p.client?.phone, `Olá ${p.name}! 🎈 Aqui é da fábrica. Tudo certo com os seus brinquedos? 😊`);
             return (
-              <Marker key={p.name} position={[p.pos.lat, p.pos.lng]} icon={pinIcon(p.color, inRoute >= 0 ? inRoute + 1 : p.orders.length, inRoute >= 0)} draggable={canEdit && !!p.client}
-                eventHandlers={{ dragend: (e) => setExactPos(p, e.target.getLatLng()) }}>
+              <Marker key={p.name} position={[p.pos.lat, p.pos.lng]} icon={pinIcon(p.color, inRoute >= 0 ? inRoute + 1 : p.orders.length, inRoute >= 0 || picked === p.name)}
+                eventHandlers={{ click: () => setPicked(p.name) }}>
                 <Tooltip direction="top" offset={[0, -34]}>{p.name}</Tooltip>
-                <Popup>
-                  <div style={{ minWidth: 210 }}>
-                    <div style={{ fontWeight: 900, fontSize: 15 }}>{p.name}</div>
-                    <div style={{ color: "#64748b", fontWeight: 600, fontSize: 12 }}>{p.city ? `${p.city.name} - ${p.city.uf}` : (p.client?.city || "")}{p.pos.exact ? " · local exato" : " · centro da cidade"}</div>
-                    <div style={{ margin: "8px 0", fontSize: 12, lineHeight: 1.6 }}>
-                      <div><b>{p.orders.length}</b> pedido(s) · <b>{moneyBR(p.revenue)}</b></div>
-                      {p.seller && <div>Vendedor: <b style={{ color: p.color }}>{p.seller}</b></div>}
-                      {dist !== null && <div>Da fábrica: <b>{fmtKm(dist)}</b> em linha reta</div>}
-                      <div style={{ color: "#64748b" }}>Pedidos: {p.orders.map(o => orderNumber(o.id)).join(", ")}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button onClick={() => toggleRoute(p.name)} style={{ background: inRoute >= 0 ? "#ef4444" : "#10b981", color: "#fff", border: 0, borderRadius: 8, padding: "6px 10px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>{inRoute >= 0 ? "Tirar da rota" : "➕ Adicionar à rota"}</button>
-                      {wa && <a href={wa} target="_blank" rel="noreferrer" style={{ background: "#25D366", color: "#fff", borderRadius: 8, padding: "6px 10px", fontWeight: 800, fontSize: 12, textDecoration: "none" }}>💬 WhatsApp</a>}
-                    </div>
-                    {canEdit && p.client && <div style={{ marginTop: 6, fontSize: 10, color: "#94a3b8" }}>Arraste o pino para marcar o endereço exato.</div>}
-                  </div>
-                </Popup>
               </Marker>
             );
           })}
         </MapContainer>
+        {(() => {
+          const p = located.find(x => x.name === picked); if (!p) return null;
+          const inRoute = route.indexOf(p.name);
+          const dist = factory ? km(factory, p.pos) : null;
+          const wa = whatsappLink(p.client?.phone, `Olá ${p.name}! 🎈 Aqui é da fábrica. Tudo certo com os seus brinquedos? 😊`);
+          return (
+            <div className={`absolute top-3 right-3 z-[500] w-[270px] max-w-[calc(100%-24px)] p-3.5 rounded-2xl border shadow-2xl animate-slide-up ${dark ? "bg-gray-950/95 border-gray-700 text-slate-200" : "bg-white/95 border-gray-200 text-gray-900"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0"><div className="font-black text-sm leading-tight">{p.name}</div><div className="text-[11px] text-slate-500 font-semibold">{p.city ? `${p.city.name} - ${p.city.uf}` : (p.client?.city || "")}</div></div>
+                <button onClick={() => setPicked(null)} className="opacity-60 hover:opacity-100 flex-shrink-0"><X size={15} /></button>
+              </div>
+              <div className="text-xs mt-2 space-y-0.5">
+                <div><b>{p.orders.length}</b> pedido(s) · <b>{moneyBR(p.revenue)}</b></div>
+                {p.seller && <div>Vendedor: <b style={{ color: p.color }}>{p.seller}</b></div>}
+                {dist !== null && <div>Da fábrica: <b>{fmtKm(dist)}</b> em linha reta</div>}
+                <div className="text-slate-500">Pedidos: {p.orders.map(o => orderNumber(o.id)).join(", ")}</div>
+              </div>
+              <div className="flex gap-1.5 flex-wrap mt-2.5">
+                <button onClick={() => toggleRoute(p.name)} className={`px-2.5 py-1.5 rounded-lg text-xs font-black text-white ${inRoute >= 0 ? "bg-red-500" : "bg-emerald-500"}`}>{inRoute >= 0 ? "Tirar da rota" : "➕ Adicionar à rota"}</button>
+                {wa && <a href={wa} target="_blank" rel="noreferrer" className="px-2.5 py-1.5 rounded-lg text-xs font-black text-white bg-[#25D366]">💬 WhatsApp</a>}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-2">A localização vem da cidade e do estado do cliente. Para corrigir, edite na aba Clientes.</div>
+            </div>
+          );
+        })()}
         <div className="text-[11px] text-slate-500 font-bold text-center mt-2">{located.length} cliente{located.length === 1 ? "" : "s"} no mapa · role para dar zoom e ver as cidades vizinhas · cor do pino = vendedor</div>
       </div>
 
@@ -238,7 +246,7 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
               return (
                 <div key={n} className={`flex items-center gap-2 p-2 rounded-xl ${dark ? "bg-gray-800/60" : "bg-gray-50"}`}>
                   <span className="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-black flex items-center justify-center flex-shrink-0">{i + 1}</span>
-                  <button onClick={() => p && setFocus({ ...p.pos, t: Date.now() })} className="flex-1 min-w-0 text-left"><div className="text-sm font-bold truncate">{n}</div><div className="text-[10px] text-slate-500">{p?.city ? `${p.city.name} - ${p.city.uf}` : ""}{factory && p ? ` · ${fmtKm(km(factory, p.pos))} da fábrica` : ""}</div></button>
+                  <button onClick={() => { if (p) { setFocus({ ...p.pos, t: Date.now() }); setPicked(p.name); } }} className="flex-1 min-w-0 text-left"><div className="text-sm font-bold truncate">{n}</div><div className="text-[10px] text-slate-500">{p?.city ? `${p.city.name} - ${p.city.uf}` : ""}{factory && p ? ` · ${fmtKm(km(factory, p.pos))} da fábrica` : ""}</div></button>
                   <button onClick={() => move(i, -1)} className="px-1 text-slate-500 hover:text-white">▲</button>
                   <button onClick={() => move(i, 1)} className="px-1 text-slate-500 hover:text-white">▼</button>
                   <button onClick={() => toggleRoute(n)} className="p-1 text-slate-500 hover:text-red-500"><X size={14} /></button>
@@ -273,7 +281,7 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
             {[...located].sort((a, b) => factory ? km(factory, a.pos) - km(factory, b.pos) : b.revenue - a.revenue).map(p => (
               <div key={p.name} className={`flex items-center gap-2 p-2 rounded-lg ${dark ? "hover:bg-gray-800" : "hover:bg-gray-50"}`}>
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: p.color }} />
-                <button onClick={() => setFocus({ ...p.pos, t: Date.now() })} className="flex-1 min-w-0 text-left"><div className="text-sm font-bold truncate">{p.name}</div><div className="text-[10px] text-slate-500">{p.city ? `${p.city.name} - ${p.city.uf}` : ""}{factory ? ` · ${fmtKm(km(factory, p.pos))}` : ""}</div></button>
+                <button onClick={() => { setFocus({ ...p.pos, t: Date.now() }); setPicked(p.name); }} className="flex-1 min-w-0 text-left"><div className="text-sm font-bold truncate">{p.name}</div><div className="text-[10px] text-slate-500">{p.city ? `${p.city.name} - ${p.city.uf}` : ""}{factory ? ` · ${fmtKm(km(factory, p.pos))}` : ""}</div></button>
                 <button onClick={() => toggleRoute(p.name)} title="Adicionar à rota" className={`text-xs font-black px-2 py-1 rounded-lg ${route.includes(p.name) ? "bg-emerald-500 text-white" : "text-emerald-500"}`}>{route.includes(p.name) ? <Check size={12} /> : "+ rota"}</button>
               </div>
             ))}

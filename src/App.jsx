@@ -5,7 +5,7 @@ import { STATE_COORDS, UF_MAP, UF_NAMES, normalizeState, clientUF } from "./lib/
 import MapTab from "./tabs/MapTab";
 import DashboardTab from "./tabs/DashboardTab";
 import SalesTab from "./tabs/SalesTab";
-import { sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
+import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -1423,8 +1423,16 @@ function FinalizationTab({ data, setData, dark, user }) {
     if (f) syncOrderStatus(nd, f.orderId);
     persist(nd);
   };
+  // Vários finalizadores por item: guardados em "finalizers" (lista) e em "finalizer" (texto, para compatibilidade)
+  const toggleFinalizer = (row, name) => {
+    const cur = finalizersOf(row);
+    const next = cur.includes(name) ? cur.filter(x => x !== name) : [...cur, name];
+    const patch = { finalizers: next, finalizer: next.join(", ") };
+    if (!next.length && row.stage) Object.assign(patch, { stage: "", done: false, finDate: null }); // sem finalizador volta para 0%
+    update(row._itemId, patch);
+  };
   const setStage = (row, stage) => {
-    if (stage === "finalizado" && !row.finalizer) { alert("Escolha quem finalizou antes de marcar como Finalizado."); return; }
+    if (!finalizersOf(row).length) return; // só depois de escolher quem está finalizando
     const next = row.stage === stage ? "" : stage;
     update(row._itemId, { stage: next, done: next === "finalizado", finDate: next === "finalizado" ? TODAY_STR : null, finalizingAt: next === "finalizando" ? TODAY_STR : (row.finalizingAt || null) });
   };
@@ -1460,20 +1468,26 @@ function FinalizationTab({ data, setData, dark, user }) {
                 </div>
                 <ProgressRing pct={pct} color={color} dark={dark} size={56} />
               </div>
-              <div className={`p-4 border-t flex flex-col md:flex-row md:items-end gap-3 ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
-                <div className="flex-1 max-w-xs">
-                  <div className={`text-xs font-black uppercase tracking-widest mb-1.5 ${row.finalizer ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>Finalizador</div>
-                  <select value={row.finalizer || ""} disabled={!canEdit} onChange={e => update(row._itemId, { finalizer: e.target.value })}
-                    className={`w-full px-2 py-2 rounded-lg text-sm font-semibold border outline-none ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"} ${!canEdit ? "opacity-60 cursor-not-allowed" : ""}`}>
-                    <option value="">👤 Escolher…</option>
-                    {finWorkers.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
-                    {row.finalizer && !finWorkers.some(w => w.name === row.finalizer) && <option value={row.finalizer}>{row.finalizer}</option>}
-                  </select>
+              <div className={`p-4 border-t flex flex-col lg:flex-row lg:items-end gap-3 ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-xs font-black uppercase tracking-widest mb-1.5 ${finalizersOf(row).length ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>Finalizador(es) <span className="normal-case tracking-normal font-bold text-slate-500">— marque um ou mais</span></div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...finWorkers.map(w => w.name), ...finalizersOf(row).filter(n => !finWorkers.some(w => w.name === n))].map(name => {
+                      const on = finalizersOf(row).includes(name);
+                      return (
+                        <label key={name} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm font-bold select-none ${canEdit ? "cursor-pointer" : "opacity-60 cursor-not-allowed"} ${on ? "border-emerald-500 bg-emerald-500/15 text-emerald-500" : dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}>
+                          <input type="checkbox" className="accent-emerald-500 w-4 h-4" checked={on} disabled={!canEdit} onChange={() => toggleFinalizer(row, name)} />{name}
+                        </label>
+                      );
+                    })}
+                    {!finWorkers.length && !finalizersOf(row).length && <span className="text-xs text-slate-500">Cadastre finalizadores em Equipe → Colaboradores (função Finalizador).</span>}
+                  </div>
                 </div>
                 <div className={`flex rounded-xl p-1 gap-1 ${dark ? "bg-gray-950 border border-gray-800" : "bg-white border border-gray-200"}`}>
                   {[["finalizando", "Finalizando · 50%", "#eab308"], ["finalizado", "Finalizado · 100%", "#10b981"]].map(([st, label, c]) => {
                     const on = row.stage === st;
-                    return <button key={st} disabled={!canEdit} onClick={() => setStage(row, st)} className={`px-4 py-2 rounded-lg text-sm font-black transition-all ${!canEdit ? "opacity-50 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
+                    const blocked = !canEdit || !finalizersOf(row).length;
+                    return <button key={st} disabled={blocked} title={!finalizersOf(row).length ? "Marque o finalizador primeiro" : ""} onClick={() => setStage(row, st)} className={`px-4 py-2 rounded-lg text-sm font-black transition-all whitespace-nowrap ${blocked ? "opacity-40 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
                   })}
                 </div>
               </div>

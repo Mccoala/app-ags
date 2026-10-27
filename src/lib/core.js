@@ -182,6 +182,9 @@ export async function askAI({ system, messages, maxTokens = 1500 }) {
   return (d.content || []).map(c => c.text || "").join("").trim();
 }
 
+// Lista de finalizadores de um item (aceita o formato antigo com um nome só)
+export const finalizersOf = (f) => Array.isArray(f?.finalizers) ? f.finalizers.filter(Boolean) : (f?.finalizer ? String(f.finalizer).split(",").map(x => x.trim()).filter(Boolean) : []);
+
 // Chamada "crua" (com ferramentas): devolve a resposta completa da API
 export async function callClaude(body) {
   const res = await fetch("/.netlify/functions/anthropic", {

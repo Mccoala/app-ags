@@ -1,6 +1,6 @@
 // Ferramentas que a IA usa para consultar os dados do app com números EXATOS.
 // A IA decide qual chamar; o cálculo é feito aqui no navegador (sem estimativa).
-import { sameSeller, norm, orderNumber, matchQuery, todayStr, daysBetween } from "./core";
+import { finalizersOf, sameSeller, norm, orderNumber, matchQuery, todayStr, daysBetween } from "./core";
 import { clientUF, UF_NAMES } from "./geo";
 import { loadCities, locateCity, distanceKm } from "./cities";
 
@@ -26,7 +26,7 @@ export function itemRows(data) {
         uf: clientUF(c) || "", cidade: c.city || "",
         corte: p.cutter || "", costura: p.tailor || "", preparacao: p.prep || "", montagem: p.assembler || "",
         producao_pct: STAGES.filter(([k]) => p[k]).length * 25,
-        finalizador: f?.finalizer || "", finalizacao: it.isMotor ? "" : finStage(f), data_finalizado: f?.finDate || "",
+        finalizador: finalizersOf(f).join(", "), finalizacao: it.isMotor ? "" : finStage(f), data_finalizado: f?.finDate || "",
         _hay: norm([it.toy, colors, it.observations, it.isMotor ? "motor" : ""].join(" ")),
       });
     });
@@ -160,7 +160,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
       else if (meses.includes(m)) e[m] = (e[m] || 0) + 1;
     };
     (data.production || []).forEach(p => STAGES.forEach(([k, etapa]) => p[k] && add(p[k], etapa, p[`${k}At`])));
-    (data.finalization || []).forEach(f => f.finalizer && finStage(f) === "finalizado" && add(f.finalizer, "finalizacao", f.finDate));
+    (data.finalization || []).forEach(f => finStage(f) === "finalizado" && finalizersOf(f).forEach(n => add(n, "finalizacao", f.finDate)));
     const team = (data.team || []).map(t => ({ nome: t.name, funcao: t.role, status: t.status }));
     return { meses_comparados: meses, por_pessoa: res, equipe: team, nota: "Cada número é a quantidade de itens (brinquedos) em que a pessoa foi responsável pela etapa naquele mês." };
   }
