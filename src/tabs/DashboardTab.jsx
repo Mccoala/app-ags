@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, Legend, LineChart, Line } from "recharts";
 import { DollarSign, Package, TrendingUp, TrendingDown, AlertTriangle, Factory, CheckCircle, Users, Trophy, Clock, Sparkles, MapPin, Scissors } from "lucide-react";
 import BrainAI from "../components/BrainAI";
-import { moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween } from "../lib/core";
+import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween } from "../lib/core";
 import { clientUF, UF_NAMES } from "../lib/geo";
 
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -57,7 +57,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
     // vendedores
     const sellerNames = [...new Set([...(data.sellers || []).map(s => s.name), ...orders.map(o => o.seller).filter(Boolean)])];
     const sellers = sellerNames.map(name => {
-      const os = orders.filter(o => norm(o.seller) === norm(name));
+      const os = orders.filter(o => sameSeller(data.sellers, o.seller, name));
       const osM = os.filter(o => (o.createdAt || "").startsWith(curM));
       return { name, color: sellerColorOf(data, name), total: rev(os), month: rev(osM), orders: os.length, ordersMonth: osM.length, toys: os.reduce((a, o) => a + toys(o).length, 0), clients: new Set(os.map(o => norm(o.clientName))).size, open: os.filter(o => o.status !== "concluido").length };
     }).sort((a, b) => (sellerPeriod === "mes" ? b.month - a.month : b.total - a.total));
@@ -162,24 +162,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
           </Panel>
 
           </div>
-          <Panel dark={dark} title="Equipe de produção" icon={Scissors} right={<button onClick={() => go("team")} className="text-[11px] font-black text-orange-500 hover:underline">Gerenciar equipe</button>}>
-            {m.team.length === 0 && <p className="text-sm text-slate-500">Cadastre os colaboradores em Equipe para acompanhar quem fez cada etapa.</p>}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
-              {m.team.map(t => (
-                <div key={t.id} className={`rounded-xl p-3 border flex items-center gap-3 ${dark ? "border-gray-800" : "border-gray-100"} ${t.status !== "ativo" ? "opacity-50" : ""}`}>
-                  <div className="w-10 h-10 rounded-full bg-orange-500/15 text-orange-500 flex items-center justify-center font-black">{(t.name || "?")[0]}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between"><span className="font-black text-sm truncate">{t.name}</span><span className="text-xs font-black tabular-nums">{t.total} <span className="text-slate-500 font-bold">etapas</span></span></div>
-                    <div className="text-[10px] font-bold text-slate-500">{t.role}{t.status !== "ativo" ? " · inativo" : ""}{t.openNow ? ` · ${t.openNow} em andamento` : ""}</div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {Object.entries(t.stages).map(([k, n]) => <span key={k} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-600"}`}>{k} {n}</span>)}
-                      {t.finals > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-500">Finalização {t.finals}</span>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Panel>
+          <TeamPerformance data={data} dark={dark} goTo={go} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <Panel dark={dark} title="Esteira de produção" icon={Factory}>
@@ -225,6 +208,120 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
         </div>
 
       </div>
+    </div>
+  );
+}
+
+// ── Rendimento da equipe: cada pessoa comparada com ela mesma (mês a mês) e com o setor ──
+const SECTORS = [["cutter", "Corte"], ["tailor", "Costura"], ["prep", "Preparação"], ["assembler", "Montagem"], ["fin", "Finalização"]];
+function TeamPerformance({ data, dark, goTo }) {
+  const now = new Date();
+  const [sector, setSector] = useState("tailor");
+  const [month, setMonth] = useState(mk(now));
+  const [focus, setFocus] = useState("");
+  const shift = (m, d) => { const [y, mm] = m.split("-").map(Number); return mk(new Date(y, mm - 1 + d, 1)); };
+  const label = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
+  const prevM = shift(month, -1);
+  const months6 = Array.from({ length: 6 }, (_, i) => shift(month, i - 5));
+
+  // registros: { pessoa, mes|null }
+  const records = useMemo(() => {
+    const out = [];
+    if (sector === "fin") (data.finalization || []).forEach(f => { const st = f.stage || (f.done ? "finalizado" : ""); if (f.finalizer && st === "finalizado") out.push({ p: f.finalizer, m: (f.finDate || "").slice(0, 7) || null }); });
+    else (data.production || []).forEach(p => { if (p[sector]) out.push({ p: p[sector], m: (p[`${sector}At`] || "").slice(0, 7) || null }); });
+    return out;
+  }, [data, sector]);
+  const roleName = SECTORS.find(s => s[0] === sector)[1];
+  const roleMatch = (t) => sector === "fin" ? t.role === "Finalizador" : sector === "assembler" ? ["Montagem", "Preparação"].includes(t.role) : t.role === roleName;
+  const people = [...new Set([...(data.team || []).filter(roleMatch).map(t => t.name), ...records.map(r => r.p)])];
+  const count = (p, m) => records.filter(r => r.p === p && r.m === m).length;
+  const rows = people.map(p => {
+    const cur = count(p, month), prev = count(p, prevM);
+    return { p, cur, prev, total: records.filter(r => r.p === p).length, undated: records.filter(r => r.p === p && !r.m).length, var: prev ? ((cur - prev) / prev) * 100 : null };
+  }).sort((a, b) => b.cur - a.cur || b.total - a.total);
+  const active = rows.filter(r => r.cur > 0);
+  const avg = active.length ? active.reduce((s, r) => s + r.cur, 0) / active.length : 0;
+  const undatedAll = records.filter(r => !r.m).length;
+  const chart = rows.map(r => ({ nome: r.p.split(" ")[0], [label(month)]: r.cur, [label(prevM)]: r.prev }));
+  const who = focus || rows[0]?.p || "";
+  const trend = months6.map(m => {
+    const per = people.map(p => count(p, m)).filter(n => n > 0);
+    return { mes: label(m), [who || "pessoa"]: who ? count(who, m) : 0, "média do setor": per.length ? +(per.reduce((s, n) => s + n, 0) / per.length).toFixed(1) : 0 };
+  });
+  const tt = { backgroundColor: dark ? "#0f172a" : "#fff", border: `1px solid ${dark ? "#1e293b" : "#e2e8f0"}`, borderRadius: 12, fontSize: 12 };
+  const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
+  const inp = `px-2.5 py-1.5 rounded-lg text-xs font-bold border outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-200"}`;
+
+  return (
+    <div className={`rounded-2xl border p-5 ${card}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
+        <h3 className="font-black text-base flex items-center gap-2"><Scissors size={17} className="text-orange-500" />Rendimento da equipe</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className={`flex p-0.5 rounded-lg ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
+            {SECTORS.map(([k, l]) => <button key={k} onClick={() => { setSector(k); setFocus(""); }} className={`px-2.5 py-1 rounded-md text-[11px] font-black ${sector === k ? "bg-orange-500 text-white" : "text-slate-500"}`}>{l}</button>)}
+          </div>
+          <div className="flex items-center gap-1"><button onClick={() => setMonth(shift(month, -1))} className="px-1.5 font-black text-slate-400">‹</button><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className={inp} /><button onClick={() => setMonth(shift(month, 1))} className="px-1.5 font-black text-slate-400">›</button></div>
+          <button onClick={() => goTo && goTo("team")} className="text-[11px] font-black text-orange-500 hover:underline">Gerenciar equipe</button>
+        </div>
+      </div>
+
+      {people.length === 0 ? <p className="text-sm text-slate-500">Ninguém cadastrado em {roleName}. Cadastre na aba Equipe.</p> : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div>
+            <div className="text-xs font-black text-slate-500 mb-2">{roleName}: {label(month)} x {label(prevM)} (itens feitos)</div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={chart} margin={{ left: -18, right: 6, top: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
+                <XAxis dataKey="nome" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={tt} cursor={{ fill: dark ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.03)" }} />
+                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 800 }} />
+                <Bar dataKey={label(prevM)} fill={dark ? "#475569" : "#cbd5e1"} radius={[5, 5, 0, 0]} animationDuration={700} />
+                <Bar dataKey={label(month)} fill="#f97316" radius={[5, 5, 0, 0]} animationDuration={900} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="overflow-x-auto mt-2">
+              <table className="w-full text-xs">
+                <thead><tr className="text-slate-500 text-left"><th className="py-1.5 pr-2">Pessoa</th><th className="pr-2 text-right">{label(month)}</th><th className="pr-2 text-right">{label(prevM)}</th><th className="pr-2 text-right">Variação</th><th className="pr-2 text-right">vs média</th><th className="text-right">Total</th></tr></thead>
+                <tbody>{rows.map(r => {
+                  const vsAvg = avg && r.cur ? ((r.cur - avg) / avg) * 100 : null;
+                  return (
+                    <tr key={r.p} onClick={() => setFocus(r.p)} className={`cursor-pointer border-t ${dark ? "border-gray-800 hover:bg-gray-800/50" : "border-gray-100 hover:bg-gray-50"} ${who === r.p ? "text-orange-500" : ""}`}>
+                      <td className="py-1.5 pr-2 font-bold truncate max-w-[140px]">{r.p}</td>
+                      <td className="pr-2 text-right font-black tabular-nums">{r.cur}</td>
+                      <td className="pr-2 text-right tabular-nums text-slate-500">{r.prev}</td>
+                      <td className={`pr-2 text-right font-black tabular-nums ${r.var === null ? "text-slate-500" : r.var >= 0 ? "text-emerald-500" : "text-red-500"}`}>{r.var === null ? (r.cur ? "novo" : "—") : `${r.var >= 0 ? "▲" : "▼"} ${Math.abs(r.var).toFixed(0)}%`}</td>
+                      <td className={`pr-2 text-right font-bold tabular-nums ${vsAvg === null ? "text-slate-500" : vsAvg >= 0 ? "text-emerald-500" : "text-amber-500"}`}>{vsAvg === null ? "—" : `${vsAvg >= 0 ? "+" : ""}${vsAvg.toFixed(0)}%`}</td>
+                      <td className="text-right tabular-nums">{r.total}{r.undated ? <span className="text-slate-500"> ({r.undated} s/ data)</span> : ""}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div className="text-xs font-black text-slate-500">Evolução de <span className="text-orange-500">{who || "—"}</span> x média do setor (6 meses)</div>
+              <select value={who} onChange={e => setFocus(e.target.value)} className={inp}>{rows.map(r => <option key={r.p} value={r.p}>{r.p}</option>)}</select>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trend} margin={{ left: -18, right: 10, top: 6 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
+                <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip contentStyle={tt} />
+                <Legend wrapperStyle={{ fontSize: 11, fontWeight: 800 }} />
+                <Line type="monotone" dataKey={who || "pessoa"} stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} animationDuration={900} />
+                <Line type="monotone" dataKey="média do setor" stroke="#38bdf8" strokeWidth={2} strokeDasharray="5 4" dot={false} animationDuration={1100} />
+              </LineChart>
+            </ResponsiveContainer>
+            <div className={`mt-3 p-3 rounded-xl text-xs ${dark ? "bg-gray-800/50 text-slate-400" : "bg-gray-50 text-slate-500"}`}>
+              Média do setor em {label(month)}: <b className={dark ? "text-white" : "text-gray-900"}>{avg.toFixed(1).replace(".", ",")}</b> itens por pessoa (só quem trabalhou no mês).
+              {undatedAll > 0 && <> · <b>{undatedAll}</b> registro(s) antigos sem data contam só no total — as datas passaram a ser gravadas em 26/10/2026.</>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

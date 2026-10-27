@@ -5,7 +5,7 @@ import { STATE_COORDS, UF_MAP, UF_NAMES, normalizeState, clientUF } from "./lib/
 import MapTab from "./tabs/MapTab";
 import DashboardTab from "./tabs/DashboardTab";
 import SalesTab from "./tabs/SalesTab";
-import { whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
+import { sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -680,7 +680,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
     const rawNum = cleanOrderNumber(extHeader.orderNumber);
     if (rawNum && data.orders.some(o => orderNumber(o.id) === orderNumber(rawNum))) { alert(`Já existe um pedido nº ${orderNumber(rawNum)}. Altere o número antes de salvar.`); return; }
     if (!extHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
-    let nd = { ...data }; const newId = rawNum || nextOrderId(nd.orders);
+    let nd = { ...data, orders: [...data.orders], production: [...data.production] }; const newId = rawNum || nextOrderId(nd.orders);
     if (extHeader.seller?.trim()) nd = addSeller(nd, extHeader.seller).data;
     const items = extItems.map((it, i) => ({
       itemId: `${newId}-${i + 1}`, toy: it.toy, colors: typeof
@@ -689,18 +689,17 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
     const total = items.reduce((a, b) => a + b.price, 0);
     nd.orders.push({ id: newId, clientName: extHeader.clientName, voltage: extHeader.voltage, deadline: extHeader.deadline, seller: extHeader.seller, totalPrice: total, status: "aguardando", createdAt: TODAY_STR, priority: false, items });
     items.filter(it => !it.isMotor).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
-    const ci = nd.clients.findIndex(c => c.name.toLowerCase() === extHeader.clientName?.toLowerCase());
-    if (ci >= 0) { 
+    nd.clients = [...nd.clients];
+    const ci = nd.clients.findIndex(c => norm(c.name) === norm(extHeader.clientName));
+    if (ci >= 0) { nd.clients[ci] = { ...nd.clients[ci] };
         nd.clients[ci].totalOrders = (nd.clients[ci].totalOrders || 0) + 1; 
         nd.clients[ci].totalSpent = (nd.clients[ci].totalSpent || 0) + total; 
-        // merge AI extracted info into existing client
-        if (!nd.clients[ci].city && extHeader.city) nd.clients[ci].city = extHeader.city;
-        if (!nd.clients[ci].state && extHeader.state) nd.clients[ci].state = extHeader.state;
-        if (!nd.clients[ci].phone && extHeader.phone) nd.clients[ci].phone = extHeader.phone;
-        if (!nd.clients[ci].email && extHeader.email) nd.clients[ci].email = extHeader.email;
+        // dados do cliente revisados na tela atualizam o cadastro
+        ["city", "phone", "email"].forEach(k => { if (extHeader[k]?.trim()) nd.clients[ci][k] = extHeader[k].trim(); });
+        if (normalizeState(extHeader.state)) nd.clients[ci].state = normalizeState(extHeader.state);
     }
     else {
-      nd.clients.push({ id: Date.now(), name: extHeader.clientName, city: extHeader.city || "", state: extHeader.state || "", phone: extHeader.phone || "", email: extHeader.email || "", totalOrders: 1, totalSpent: total });
+      nd.clients.push({ id: Date.now(), name: extHeader.clientName, city: extHeader.city || "", state: normalizeState(extHeader.state) || extHeader.state || "", phone: extHeader.phone || "", email: extHeader.email || "", totalOrders: 1, totalSpent: total });
     }
     setData(nd); saveData(nd); setSearch(""); setFilterType("todos"); setPage(1); setText(""); setPdfData(null); setPdfName(""); setExtracted(null); setExtItems([]); setExtHeader({}); setView("list");
   };
@@ -955,12 +954,20 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
             <div className={`mt-5 p-4 rounded-xl border ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
               <h4 className={`font-bold mb-3 ${dark ? "text-white" : "text-gray-900"}`}>Dados Extraídos — <span className="text-orange-400">editável</span></h4>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                {[["orderNumber", "Nº Pedido"], ["clientName", "Cliente"], ["deadline", "Prazo", "date"]].map(([k, l, t]) => (
+                <div className="col-span-2 md:col-span-3 text-[11px] font-black uppercase tracking-widest text-orange-500">Pedido</div>
+                {[["orderNumber", "Nº Pedido"], ["deadline", "Prazo de fabricação", "date"]].map(([k, l, t]) => (
                   <div key={k}><label className={lc}>{l}</label><input type={t || "text"} value={extHeader[k] || ""} onChange={e => setExtHeader({ ...extHeader, [k]: e.target.value })} className={ic} /></div>
                 ))}
-                <div className="md:col-span-2"><label className={lc}>Vendedor (REPRESENTANTE)</label>
-                  <SellerPicker data={data} setData={setData} dark={dark} className={ic} value={extHeader.seller || ""} isNew={extHeader.sellerIsNew} onChange={v => setExtHeader({ ...extHeader, seller: v })} /></div>
                 <div><label className={lc}>Voltagem</label><select value={extHeader.voltage || "110V"} onChange={e => setExtHeader({ ...extHeader, voltage: e.target.value })} className={ic}><option>110V</option><option>220V</option></select></div>
+                <div className="col-span-2 md:col-span-3"><label className={lc}>Vendedor (REPRESENTANTE)</label>
+                  <SellerPicker data={data} setData={setData} dark={dark} className={ic} value={extHeader.seller || ""} isNew={extHeader.sellerIsNew} onChange={v => setExtHeader({ ...extHeader, seller: v })} /></div>
+                <div className="col-span-2 md:col-span-3 text-[11px] font-black uppercase tracking-widest text-orange-500 mt-2 flex items-center gap-2">Cliente
+                  {(data.clients || []).some(c => norm(c.name) === norm(extHeader.clientName)) && <span className="normal-case tracking-normal font-bold text-emerald-500">· já cadastrado — o que você mudar aqui atualiza o cadastro</span>}</div>
+                <div className="col-span-2"><label className={lc}>Nome do cliente</label><input value={extHeader.clientName || ""} onChange={e => setExtHeader({ ...extHeader, clientName: e.target.value })} className={ic} /></div>
+                <div><label className={lc}>Telefone / WhatsApp</label><input value={extHeader.phone || ""} onChange={e => setExtHeader({ ...extHeader, phone: e.target.value })} className={ic} placeholder="(00) 00000-0000" /></div>
+                <div><label className={lc}>Cidade</label><input value={extHeader.city || ""} onChange={e => setExtHeader({ ...extHeader, city: e.target.value })} className={ic} /></div>
+                <div><label className={lc}>Estado</label><select value={normalizeState(extHeader.state) || ""} onChange={e => setExtHeader({ ...extHeader, state: e.target.value })} className={ic}><option value="">—</option>{Object.entries(UF_NAMES).sort((a, b) => a[1].localeCompare(b[1])).map(([uf, n]) => <option key={uf} value={uf}>{uf} — {n}</option>)}</select></div>
+                <div><label className={lc}>E-mail</label><input value={extHeader.email || ""} onChange={e => setExtHeader({ ...extHeader, email: e.target.value })} className={ic} /></div>
               </div>
               <div className="space-y-2 mb-4">
                 {extItems.map((it, idx) => (
@@ -1122,14 +1129,13 @@ function OrderCardHead({ row, data, dark, extra }) {
   const s = statusBadge(row.deadline, row.done);
   return (
     <div className="min-w-0 flex-1">
-      <div className="flex items-end gap-3 flex-wrap">
+      <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
         <div className="leading-none">
-          <div className={`text-[10px] font-black uppercase tracking-[0.2em] ${dark ? "text-gray-500" : "text-gray-400"}`}>Pedido</div>
-          <div className="font-black tabular-nums tracking-tight" style={{ fontSize: "2.4rem", lineHeight: 1, color: dark ? "#fff" : "#0f172a" }}>
-            <span className="text-orange-500">Nº</span>{orderNumber(row._orderId)}
+          <div className="font-black tabular-nums tracking-tight flex items-baseline gap-1" style={{ fontSize: "1.55rem", lineHeight: 1.05, color: dark ? "#fff" : "#0f172a" }}>
+            <span className="text-orange-500 text-sm font-black">PEDIDO</span>{orderNumber(row._orderId)}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap pb-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {row.seller && <span className="text-xs font-black px-2.5 py-1 rounded-full" style={{ background: `${sc}22`, color: sc, border: `1px solid ${sc}55` }}>● {row.seller}</span>}
           {row.priority && <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-500/20 text-red-400 border border-red-500/30">🚨 Prioridade</span>}
           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${s.color}`}>{s.label}</span>
@@ -1178,7 +1184,7 @@ function ProgressRing({ pct, color, dark, size = 64 }) {
         <circle cx={size / 2} cy={size / 2} r={r} stroke={dark ? "#1f2937" : "#e5e7eb"} strokeWidth="5" fill="none" />
         <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth="5" fill="none" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" style={{ transition: "stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1), stroke .3s" }} />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center"><span className={`text-sm font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-800"}`}>{pct}%</span></div>
+      <div className="absolute inset-0 flex items-center justify-center"><span className={`text-xs font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-800"}`}>{pct}%</span></div>
     </div>
   );
 }
@@ -1189,13 +1195,13 @@ function ProdCard({ row, data, dark, workers, onAssign, onTogglePriority, canEdi
   const color = pct === 100 ? "#10b981" : pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316";
   return (
     <div className={`rounded-2xl border overflow-hidden transition-all ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
+      <div className="flex items-start justify-between p-4 gap-3">
         <div className="min-w-0 flex-1">
           <OrderCardHead row={row} data={data} dark={dark} />
           <ObsAndPhotos row={row} dark={dark} setLightbox={setLightbox} />
         </div>
-        <div className="flex sm:flex-col items-center sm:items-end gap-3 flex-shrink-0">
-          <ProgressRing pct={pct} color={color} dark={dark} />
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <ProgressRing pct={pct} color={color} dark={dark} size={56} />
           {canEdit && (
             <button onClick={() => onTogglePriority(row._orderId)} title={row.priority ? "Remover prioridade" : "Marcar como prioridade"}
               className={`p-2 rounded-lg border transition-all ${row.priority ? "bg-red-500/20 border-red-500/40 text-red-400" : dark ? "border-gray-700 text-gray-500 hover:border-red-400 hover:text-red-400" : "border-gray-300 text-gray-400 hover:text-red-500"}`}><Flag size={14} /></button>
@@ -1447,12 +1453,12 @@ function FinalizationTab({ data, setData, dark, user }) {
           const color = pct === 100 ? "#10b981" : pct === 50 ? "#eab308" : "#f97316";
           return (
             <div key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between p-4 gap-3">
+              <div className="flex items-start justify-between p-4 gap-3">
                 <div className="min-w-0 flex-1">
                   <OrderCardHead row={row} data={data} dark={dark} extra={row.done && row.finDate ? <span className="text-xs font-bold text-emerald-500">✓ {fmt(row.finDate)}</span> : null} />
                   <ObsAndPhotos row={row} dark={dark} setLightbox={setLightbox} />
                 </div>
-                <ProgressRing pct={pct} color={color} dark={dark} />
+                <ProgressRing pct={pct} color={color} dark={dark} size={56} />
               </div>
               <div className={`p-4 border-t flex flex-col md:flex-row md:items-end gap-3 ${dark ? "border-gray-800 bg-gray-900/60" : "border-gray-100 bg-gray-50/60"}`}>
                 <div className="flex-1 max-w-xs">
@@ -1520,7 +1526,7 @@ function ClientsTab({ data, setData, dark, user }) {
     const hay = norm([c.name, c.city, c.state, clientUF(c), c.phone, c.email, ...clientOrders(c.name).map(o => orderHaystack(o))].join(" "));
     const matchName = matchQuery(hay, "", search);
     const lastSeller = getSellerForClient(c.name);
-    const matchSeller = !sellerFilter || (lastSeller === sellerFilter);
+    const matchSeller = !sellerFilter || clientOrders(c.name).some(o => sameSeller(data.sellers, o.seller, sellerFilter));
     const matchSearch = !q || matchName;
     return matchSearch && matchSeller;
   });
@@ -1734,15 +1740,36 @@ function TeamTab({ data, setData, dark, user }) {
   const [openUser, setOpenUser] = useState(null);
   const [showPw, setShowPw] = useState({});
   const [showUserForm, setShowUserForm] = useState(false);
-  const [sellerForm, setSellerForm] = useState({ name: '', color: '#3b82f6' });
+  const [sellerForm, setSellerForm] = useState({ name: '', color: '' });
   const [showSellerForm, setShowSellerForm] = useState(false);
+  const [pwEdit, setPwEdit] = useState(null);      // { id, value }
+  const [confirmDel, setConfirmDel] = useState(null); // id do login a excluir
+  const [sellerEdit, setSellerEdit] = useState(null); // { id, name, color }
+  const [sellerMsg, setSellerMsg] = useState('');
 
   const ALL_TABS = ['orders', 'production', 'finalization', 'dashboard', 'routes', 'clients', 'team'];
   const TAB_LABELS = { 'orders': 'Pedidos', 'production': 'Produção', 'finalization': 'Finalização', 'dashboard': 'Dashboard', 'routes': 'MAPA', 'clients': 'Clientes', 'team': 'Equipe' };
 
   const addMember = () => { if (!form.name) return; const nd = { ...data }; nd.team.push({ id: Date.now(), ...form }); setData(nd); saveData(nd); setForm({ name: '', role: 'Corte', status: 'ativo' }); setShowForm(false); };
-  const addSeller = () => { if (!sellerForm.name) return; const nd = { ...data }; nd.sellers = nd.sellers || []; nd.sellers.push({ id: Date.now(), ...sellerForm }); setData(nd); saveData(nd); setSellerForm({ name: '', color: '#3b82f6' }); setShowSellerForm(false); };
-  const removeSeller = (id) => { const nd = { ...data }; nd.sellers = nd.sellers.filter(s => s.id !== id); setData(nd); saveData(nd); };
+  const persistTeam = (nd) => { const fixed = ensureSellers(nd); setData(fixed); saveData(fixed); };
+  const addSellerT = () => { if (!sellerForm.name.trim()) return; const { data: nd } = addSeller(data, sellerForm.name, sellerForm.color || undefined); persistTeam(nd); setSellerForm({ name: '', color: '' }); setShowSellerForm(false); };
+  const removeSeller = (sv) => {
+    const n = (data.orders || []).filter(o => sameSeller(data.sellers, o.seller, sv.name)).length;
+    if (n) { setSellerMsg(`${sv.name} tem ${n} pedido(s) e não pode ser apagado. Você pode renomear ou trocar a cor.`); setTimeout(() => setSellerMsg(''), 5000); return; }
+    persistTeam({ ...data, sellers: data.sellers.filter(x => x.id !== sv.id) });
+  };
+  // Trocar nome/cor do vendedor: atualiza pedidos e logins ligados a ele (a cor muda em todo o app)
+  const saveSellerEdit = () => {
+    const sv = data.sellers.find(x => x.id === sellerEdit.id); if (!sv) return;
+    const newName = sellerEdit.name.trim() || sv.name;
+    const nd = {
+      ...data,
+      sellers: data.sellers.map(x => x.id === sv.id ? { ...x, name: newName, color: sellerEdit.color } : x),
+      orders: data.orders.map(o => sameSeller(data.sellers, o.seller, sv.name) ? { ...o, seller: newName } : o),
+      users: (data.users || []).map(u => u.sellerName && sameSeller(data.sellers, u.sellerName, sv.name) ? { ...u, sellerName: newName } : u),
+    };
+    persistTeam(nd); setSellerEdit(null);
+  };
 
   const [copied, setCopied] = useState(false);
   const accessLink = `${window.location.origin}/?empresa=${user?.company_id || ""}`;
@@ -1855,10 +1882,24 @@ function TeamTab({ data, setData, dark, user }) {
                   </div>
                   <div className='flex gap-2'>
                     <button onClick={() => setOpenUser(openUser === u.id ? null : u.id)} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${openUser === u.id ? 'border-orange-500 text-orange-500' : dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>{openUser === u.id ? 'Fechar' : 'Permissões'}</button>
-                    <button onClick={() => { const np = window.prompt(`Nova senha para ${u.name}:`); if (np && np.trim()) updateUser(u.id, { password: np.trim() }); }} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>Trocar senha</button>
-                    <button onClick={() => { if (!window.confirm(`Excluir o acesso de ${u.name}?`)) return; const nd={...data}; nd.users=nd.users.filter(x=>x.id!==u.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
+                    <button onClick={() => { setConfirmDel(null); setPwEdit(pwEdit?.id === u.id ? null : { id: u.id, value: '' }); }} className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${pwEdit?.id === u.id ? 'border-orange-500 text-orange-500' : dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>Trocar senha</button>
+                    <button onClick={() => { setPwEdit(null); setConfirmDel(confirmDel === u.id ? null : u.id); }} title='Excluir login' className={`p-2 rounded-xl ${confirmDel === u.id ? 'text-red-500 bg-red-500/10' : 'text-slate-400 hover:text-red-500'}`}><Trash2 size={16}/></button>
                   </div>
                 </div>
+                {pwEdit?.id === u.id && (
+                  <div className='mt-3 flex gap-2 flex-wrap items-center animate-slide-up'>
+                    <input autoFocus type='text' value={pwEdit.value} onChange={e => setPwEdit({ ...pwEdit, value: e.target.value })} placeholder='Nova senha' className={`${ic} !w-56`} />
+                    <button disabled={!pwEdit.value.trim()} onClick={() => { updateUser(u.id, { password: pwEdit.value.trim() }); setPwEdit(null); setShowPw({ ...showPw, [u.id]: true }); }} className='px-3 py-2 rounded-xl text-xs font-black bg-emerald-500 text-white disabled:opacity-40'>Salvar senha</button>
+                    <button onClick={() => setPwEdit(null)} className='px-3 py-2 rounded-xl text-xs font-bold text-slate-500'>Cancelar</button>
+                  </div>
+                )}
+                {confirmDel === u.id && (
+                  <div className='mt-3 p-3 rounded-xl border border-red-500/30 bg-red-500/10 flex items-center gap-2 flex-wrap animate-slide-up'>
+                    <span className='text-sm font-bold text-red-400'>Excluir o login de {u.name}? Ele não vai mais conseguir entrar.</span>
+                    <button onClick={() => { const nd = { ...data, users: (data.users || []).filter(x => x.id !== u.id) }; setData(nd); saveData(nd); setConfirmDel(null); }} className='px-3 py-1.5 rounded-xl text-xs font-black bg-red-500 text-white'>Sim, excluir</button>
+                    <button onClick={() => setConfirmDel(null)} className='px-3 py-1.5 rounded-xl text-xs font-bold text-slate-400'>Cancelar</button>
+                  </div>
+                )}
                 {openUser === u.id && <div className='mt-3'><PermissionGrid value={u.permissions} onChange={(p) => updateUser(u.id, { permissions: p })} dark={dark} />
                   <div className='mt-3 flex items-center gap-2 flex-wrap'><span className='text-[11px] font-bold uppercase tracking-wider text-slate-500'>Vendedor vinculado:</span>
                     <select value={u.sellerName || ''} onChange={e => updateUser(u.id, { sellerName: e.target.value })} className={`${ic} !w-auto`}>
@@ -1872,26 +1913,51 @@ function TeamTab({ data, setData, dark, user }) {
 
       {activeSubTab === 'sellers' && (
         <div className='space-y-4'>
-          <div className='flex justify-end'><button onClick={() => setShowSellerForm(true)} className='btn-brand text-xs'><Plus size={14}/> Novo Vendedor</button></div>
+          <div className='flex items-center justify-between gap-2 flex-wrap'>
+            <p className='text-xs text-slate-500'>Vendedores entram sozinhos quando aparecem num pedido, cada um com cor própria e login automático (senha 1234). A cor escolhida aqui vale para o app inteiro.</p>
+            <button onClick={() => setShowSellerForm(true)} className='btn-brand text-xs'><Plus size={14}/> Novo Vendedor</button>
+          </div>
+          {sellerMsg && <div className='p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-bold text-amber-500'>{sellerMsg}</div>}
           {showSellerForm && (
             <div className='card-surface p-4 border-orange-500/30 animate-slide-up'>
-              <div className='flex gap-4'>
-                <input placeholder='Nome do Vendedor' value={sellerForm.name} onChange={e => setSellerForm({...sellerForm, name:e.target.value})} className={ic} />
-                <input type='color' value={sellerForm.color} onChange={e => setSellerForm({...sellerForm, color:e.target.value})} className='w-12 h-10 p-0 border-none bg-transparent cursor-pointer' />
-                <button onClick={addSeller} className='btn-brand'>Adicionar</button>
+              <div className='flex gap-3 flex-wrap items-center'>
+                <input placeholder='Nome do Vendedor' value={sellerForm.name} onChange={e => setSellerForm({...sellerForm, name:e.target.value})} className={`${ic} !w-64`} />
+                <div className='flex gap-1.5 flex-wrap'>{SELLER_PALETTE.map(c => { const used = (data.sellers || []).some(x => (x.color || '').toLowerCase() === c); return <button key={c} disabled={used} title={used ? 'Cor já usada' : ''} onClick={() => setSellerForm({ ...sellerForm, color: c })} className={`w-7 h-7 rounded-full ${used ? 'opacity-20 cursor-not-allowed' : ''} ${sellerForm.color === c ? 'ring-2 ring-offset-2 ring-white' : ''}`} style={{ background: c }} />; })}</div>
+                <button onClick={addSellerT} className='btn-brand'>Adicionar</button>
+                <button onClick={() => setShowSellerForm(false)} className='px-3 py-2 rounded-xl text-sm font-bold text-slate-500'>Cancelar</button>
               </div>
             </div>
           )}
-          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-            {(data.sellers || []).map(s => (
-              <div key={s.id} className='card-surface p-4 flex items-center justify-between'>
-                <div className='flex items-center gap-3'>
-                  <div className='w-4 h-4 rounded-full' style={{ background: s.color }} />
-                  <span className='font-bold text-sm'>{s.name}</span>
+          <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'>
+            {(data.sellers || []).map(sv => {
+              const n = (data.orders || []).filter(o => sameSeller(data.sellers, o.seller, sv.name)).length;
+              const login = (data.users || []).find(u => u.sellerName && sameSeller(data.sellers, u.sellerName, sv.name));
+              const editing = sellerEdit?.id === sv.id;
+              return (
+                <div key={sv.id} className='card-surface p-4' style={{ boxShadow: `inset 4px 0 0 ${sv.color}` }}>
+                  {!editing ? (
+                    <div className='flex items-center justify-between gap-2'>
+                      <div className='flex items-center gap-3 min-w-0'>
+                        <div className='w-9 h-9 rounded-xl flex items-center justify-center text-white font-black flex-shrink-0' style={{ background: sv.color }}>{(sv.name || '?')[0]}</div>
+                        <div className='min-w-0'><div className='font-black text-sm truncate' style={{ color: sv.color }}>{sv.name}</div><div className='text-[11px] text-slate-500'>{n} pedido(s){login ? ` · login: ${login.email}` : ' · sem login'}</div></div>
+                      </div>
+                      <div className='flex gap-1 flex-shrink-0'>
+                        <button onClick={() => setSellerEdit({ id: sv.id, name: sv.name, color: sv.color })} className='p-2 text-slate-400 hover:text-orange-500'><Edit3 size={15}/></button>
+                        <button onClick={() => removeSeller(sv)} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={15}/></button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className='space-y-2'>
+                      <input value={sellerEdit.name} onChange={e => setSellerEdit({ ...sellerEdit, name: e.target.value })} className={ic} />
+                      <div className='flex gap-1.5 flex-wrap items-center'>{SELLER_PALETTE.map(c => { const used = (data.sellers || []).some(x => x.id !== sv.id && (x.color || '').toLowerCase() === c); return <button key={c} disabled={used} onClick={() => setSellerEdit({ ...sellerEdit, color: c })} className={`w-6 h-6 rounded-full ${used ? 'opacity-20 cursor-not-allowed' : ''} ${sellerEdit.color === c ? 'ring-2 ring-offset-2 ring-white' : ''}`} style={{ background: c }} />; })}
+                        <input type='color' value={sellerEdit.color?.startsWith('#') ? sellerEdit.color : '#f97316'} onChange={e => setSellerEdit({ ...sellerEdit, color: e.target.value })} className='w-7 h-7 p-0 border-none bg-transparent cursor-pointer' title='Outra cor' />
+                      </div>
+                      <div className='flex gap-2'><button onClick={saveSellerEdit} className='px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-500 text-white'>Salvar</button><button onClick={() => setSellerEdit(null)} className='px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500'>Cancelar</button></div>
+                    </div>
+                  )}
                 </div>
-                <button onClick={() => removeSeller(s.id)} className='p-2 text-slate-400 hover:text-red-500'><Trash2 size={16}/></button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1911,15 +1977,18 @@ const allowedTabs = (user) => {
   return Object.keys(TAB_META).filter(k => k !== "team" && permLevel(user, k));
 };
 
+// Primeira tela ao entrar: vendedor cai na área dele; gerente no Dashboard
+const firstTab = (u) => { const t = allowedTabs(u); if (u?.sellerName && t.includes("sales")) return "sales"; if (t.includes("dashboard")) return "dashboard"; return t[0] || "orders"; };
+
 function MainApp() {
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
   const [user, setUser] = useState(loadSession);
   const [data, setData] = useState(emptyData);
-  const [tab, setTab] = useState(() => allowedTabs(loadSession())[0] || 'orders');
+  const [tab, setTab] = useState(() => firstTab(loadSession()));
   const login = (u) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
     setData(emptyData()); setLoadingServer(true);
-    setTab(allowedTabs(u).includes("dashboard") ? "dashboard" : (allowedTabs(u)[0] || "orders"));
+    setTab(firstTab(u));
     setUser(u);
   };
   const logout = () => {
@@ -2000,12 +2069,15 @@ function MainApp() {
     <div className={`flex h-screen overflow-hidden ${dark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* SIDEBAR */}
       <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
-        <div className={`${sidebarOpen ? 'p-6' : 'p-3 md:p-5 justify-center'} flex items-center gap-3 overflow-hidden`}>
+        <div className={`${sidebarOpen ? 'px-4 pt-5 pb-3' : 'px-2 pt-4 pb-2 flex-col'} flex items-center gap-3 overflow-hidden`}>
           <img src={logoMark} alt='Inflatudo' className='w-10 h-10 flex-shrink-0 drop-shadow-lg' />
-          {sidebarOpen && <div className='min-w-0'><h1 className='text-xl font-black tracking-tight'>Infla<span className='text-orange-500'>tudo</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
+          {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='text-xl font-black tracking-tight'>Infla<span className='text-orange-500'>tudo</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Recolher menu' : 'Abrir menu'} className={`p-2 rounded-xl border flex-shrink-0 ${dark ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600'}`}>
+            {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          </button>
         </div>
 
-        <nav className='flex-1 px-3 space-y-1 py-4'>
+        <nav className={`flex-1 ${sidebarOpen ? 'px-3' : 'px-2'} space-y-1 py-2 overflow-y-auto`}>
           {Object.entries(TAB_META).filter(([k]) => tabs.includes(k)).map(([k, { label, Icon }]) => {
             const active = currentTab === k;
             return (
@@ -2027,10 +2099,7 @@ function MainApp() {
             <button onClick={() => setDark(!dark)} className={`p-2.5 rounded-xl border transition-all ${dark ? 'border-gray-700 bg-gray-800 text-yellow-400' : 'border-gray-200 bg-gray-100 text-blue-600'}`}>
               {dark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors'><LogOut size={20} /></button>
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className={`p-2.5 rounded-xl border ${dark ? 'border-gray-700 hover:bg-gray-800' : 'border-gray-200 hover:bg-gray-100'}`}>
-              {sidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-            </button>
+            <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors flex items-center gap-2'><LogOut size={20} />{sidebarOpen && <span className='text-xs font-bold'>Sair</span>}</button>
           </div>
         </div>
       </aside>

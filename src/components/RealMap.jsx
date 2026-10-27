@@ -140,18 +140,17 @@ export default function RealMap({ data, save, dark, orders, canEdit }) {
   const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   const inp = `w-full px-3 py-2 rounded-xl text-sm border outline-none ${dark ? "bg-gray-800 text-white border-gray-700" : "bg-white border-gray-200 text-gray-900"} focus:border-emerald-500`;
   const allPts = [...located.map(p => [p.pos.lat, p.pos.lng]), ...(factory ? [[factory.lat, factory.lng]] : [])];
-  const tiles = dark
-    ? { url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>' }
-    : { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>' };
+  // Mapa do OpenStreetMap (gratuito, sem chave). No modo escuro as cores são invertidas por CSS.
+  const tiles = { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' };
 
   return (
     <div className="flex flex-col xl:flex-row gap-5">
-      <style>{`@keyframes pinPulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.6);opacity:0}} .leaflet-container{font-family:Inter,system-ui,sans-serif;border-radius:16px} .leaflet-popup-content-wrapper{border-radius:14px} .route-dash{stroke-dasharray:10 8;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}`}</style>
+      <style>{`@keyframes pinPulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.6);opacity:0}} .leaflet-container{font-family:Inter,system-ui,sans-serif;border-radius:16px}${dark ? ' .osm-dark .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.7)}' : ''} .leaflet-popup-content-wrapper{border-radius:14px} .route-dash{stroke-dasharray:10 8;animation:dash 1s linear infinite}@keyframes dash{to{stroke-dashoffset:-18}}`}</style>
 
       <div className={`xl:w-[68%] rounded-2xl border p-2 relative ${card}`}>
         {(placing) && <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] px-4 py-2 rounded-xl bg-emerald-500 text-white text-sm font-black shadow-xl">Clique no mapa onde fica a sua fábrica <button onClick={() => setPlacing(false)} className="ml-2 underline">cancelar</button></div>}
-        <MapContainer center={[-15, -50]} zoom={4} minZoom={3} maxZoom={18} scrollWheelZoom style={{ height: 620, width: "100%", cursor: placing ? "crosshair" : undefined }}>
-          <TileLayer url={tiles.url} attribution={tiles.attr} subdomains="abcd" />
+        <MapContainer className={dark ? "osm-dark" : ""} center={[-15, -50]} zoom={4} minZoom={3} maxZoom={18} scrollWheelZoom style={{ height: "min(620px, 72vh)", width: "100%", cursor: placing ? "crosshair" : undefined }}>
+          <TileLayer url={tiles.url} attribution={tiles.attr} maxZoom={19} />
           <FitTo points={allPts} trigger={fitKey} />
           <ClickToPlace active={placing} onPick={(ll) => saveFactory({ name: factory?.name || "Minha fábrica", lat: +ll.lat.toFixed(5), lng: +ll.lng.toFixed(5), city: factory?.city || "" })} />
           {focus && <FocusOn pos={focus} />}

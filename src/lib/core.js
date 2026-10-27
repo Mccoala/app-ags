@@ -69,37 +69,94 @@ export function matchQuery(haystackNorm, idOfOrder, query) {
   return tokens.every(t => haystackNorm.includes(t) || words.some(w => w.startsWith(t)));
 }
 
-// Encontra um vendedor já cadastrado com nome parecido (ignora maiúsculas/acentos; aceita só o primeiro nome)
+// Encontra o vendedor cadastrado que corresponde a um nome escrito de outro jeito.
+// Ex.: "luan", "Luan Oliveira", "LUAN ROSDRIGUES DE SOUSA OLIVEIRA" → mesmo vendedor.
+// Só junta quando não há ambiguidade (dois vendedores com o mesmo primeiro nome não são misturados).
 export function findSeller(sellers, name) {
   const n = norm(name);
   if (!n) return null;
-  const list = sellers || [];
-  return list.find(s => norm(s.name) === n)
-    || list.find(s => norm(s.name).split(" ")[0] === n.split(" ")[0] && n.split(" ")[0].length > 2)
-    || null;
+  const list = (sellers || []).filter(s => s && s.name);
+  const exact = list.find(s => norm(s.name) === n);
+  if (exact) return exact;
+  const toks = n.split(" ").filter(t => t.length > 1);
+  if (!toks.length) return null;
+  // todas as palavras de um estão no outro (ex.: "joao paulo" x "joao paulo silva")
+  const contain = list.filter(s => { const st = norm(s.name).split(" "); return toks.every(t => st.includes(t)) || st.every(t => toks.includes(t)); });
+  if (contain.length === 1) return contain[0];
+  // mesmo primeiro nome, e só existe um vendedor com esse primeiro nome
+  const first = list.filter(s => norm(s.name).split(" ")[0] === toks[0] && toks[0].length > 2);
+  if (first.length === 1) return first[0];
+  return null;
 }
 
-// Garante que todo vendedor que aparece nos pedidos esteja cadastrado (com cor própria)
+// Próxima cor que ninguém está usando
+export function nextSellerColor(sellers) {
+  const used = new Set((sellers || []).map(s => (s.color || "").toLowerCase()));
+  return SELLER_PALETTE.find(c => !used.has(c.toLowerCase())) || `hsl(${Math.round(Math.random() * 360)} 75% 55%)`;
+}
+
+const slug = (s) => norm(s).replace(/[^a-z0-9 ]/g, "").trim().split(" ").filter(Boolean);
+
+// Mantém vendedores organizados:
+// 1) todo vendedor que aparece num pedido fica cadastrado;
+// 2) o nome do vendedor no pedido é unificado com o cadastro (assim nenhuma venda "some");
+// 3) cada vendedor tem uma cor diferente;
+// 4) cada vendedor ganha um login próprio (senha 1234) uma única vez.
 export function ensureSellers(data) {
-  const sellers = [...(data.sellers || [])];
   let changed = false;
+  const sellers = (data.sellers || []).map(s => ({ ...s }));
   (data.orders || []).forEach(o => {
     if (!o.seller || !String(o.seller).trim()) return;
     if (!findSeller(sellers, o.seller)) {
-      sellers.push({ id: Date.now() + sellers.length, name: String(o.seller).trim(), color: SELLER_PALETTE[sellers.length % SELLER_PALETTE.length], auto: true });
+      sellers.push({ id: Date.now() + sellers.length, name: String(o.seller).trim(), color: nextSellerColor(sellers), auto: true });
       changed = true;
     }
   });
-  return changed ? { ...data, sellers } : data;
+  // cores repetidas → troca pelas livres (mantém a do primeiro)
+  const done = [];
+  sellers.forEach(s => {
+    const c = (s.color || "").toLowerCase();
+    if (!c || done.some(x => x.color.toLowerCase() === c)) { s.color = nextSellerColor(sellers.filter(x => x !== s)); changed = true; }
+    done.push(s);
+  });
+  const orders = (data.orders || []).map(o => {
+    if (!o.seller) return o;
+    const s = findSeller(sellers, o.seller);
+    if (s && s.name !== o.seller) { changed = true; return { ...o, seller: s.name }; }
+    return o;
+  });
+  const users = [...(data.users || [])].map((u, i) => u.id ? u : (changed = true, { ...u, id: Date.now() + 1000 + i }));
+  sellers.forEach(s => {
+    if (s.loginCreated) return;
+    const has = users.find(u => u.sellerName && norm(u.sellerName) === norm(s.name));
+    if (!has) {
+      const parts = slug(s.name);
+      let login = parts[0] || "vendedor";
+      if (users.some(u => (u.email || "").toLowerCase() === login)) login = parts.slice(0, 2).join(".");
+      let k = 2; const base = login;
+      while (users.some(u => (u.email || "").toLowerCase() === login)) login = `${base}${k++}`;
+      users.push({ id: Date.now() + users.length + 7, name: s.name, email: login, password: "1234", role: "user", permissions: { sales: "edit", routes: "view" }, sellerName: s.name, autoLogin: true });
+    }
+    s.loginCreated = true; changed = true;
+  });
+  return changed ? { ...data, sellers, orders, users } : data;
 }
 
 export function addSeller(data, name, color, extra = {}) {
   const sellers = [...(data.sellers || [])];
   const existing = findSeller(sellers, name);
   if (existing) return { data, seller: existing };
-  const seller = { id: Date.now(), name: String(name).trim(), color: color || SELLER_PALETTE[sellers.length % SELLER_PALETTE.length], ...extra };
+  const seller = { id: Date.now(), name: String(name).trim(), color: color || nextSellerColor(sellers), ...extra };
   return { data: { ...data, sellers: [...sellers, seller] }, seller };
 }
+
+// Mesmo vendedor? (usa a mesma regra de cima)
+export const sameSeller = (sellers, a, b) => {
+  if (!a || !b) return false;
+  if (norm(a) === norm(b)) return true;
+  const sa = findSeller(sellers, a), sb = findSeller(sellers, b);
+  return !!sa && sa === sb;
+};
 
 export const sellerColorOf = (data, name) => findSeller(data?.sellers, name)?.color || "#94a3b8";
 
@@ -140,7 +197,7 @@ export async function callClaude(body) {
 
 // Resumo dos dados para a IA (sem fotos, sem senhas)
 export function aiSnapshot(data, { sellerName } = {}) {
-  const orders = (data.orders || []).filter(o => !sellerName || norm(o.seller) === norm(sellerName));
+  const orders = (data.orders || []).filter(o => !sellerName || sameSeller(data.sellers, o.seller, sellerName));
   const clientsByName = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
   return {
     hoje: todayStr(),

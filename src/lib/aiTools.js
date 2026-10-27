@@ -1,6 +1,6 @@
 // Ferramentas que a IA usa para consultar os dados do app com números EXATOS.
 // A IA decide qual chamar; o cálculo é feito aqui no navegador (sem estimativa).
-import { norm, orderNumber, matchQuery, todayStr, daysBetween } from "./core";
+import { sameSeller, norm, orderNumber, matchQuery, todayStr, daysBetween } from "./core";
 import { clientUF, UF_NAMES } from "./geo";
 import { loadCities, locateCity, distanceKm } from "./cities";
 
@@ -41,7 +41,7 @@ function applyFilters(rows, a) {
     if (!a.incluir_motores && r.motor && !a.somente_motores) return false;
     if (a.somente_motores && !r.motor) return false;
     if (a.texto && !matchQuery(r._hay, "", a.texto)) return false;
-    if (a.vendedor && norm(r.vendedor) !== norm(a.vendedor) && !norm(r.vendedor).startsWith(norm(a.vendedor))) return false;
+    if (a.vendedor && !sameSeller(a._sellers, r.vendedor, a.vendedor)) return false;
     if (a.cliente && !norm(r.cliente).includes(norm(a.cliente))) return false;
     if (a.uf && r.uf !== String(a.uf).toUpperCase()) return false;
     if (a.cidade && !norm(r.cidade).includes(norm(a.cidade))) return false;
@@ -138,7 +138,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
   const a = input || {};
   const today = todayStr();
   if (name === "buscar_itens") {
-    const rows = applyFilters(itemRows(data), a);
+    const rows = applyFilters(itemRows(data), { ...a, _sellers: data.sellers });
     const out = { total_itens: rows.length, valor_total: rows.reduce((s, r) => s + r.valor, 0), pedidos_distintos: new Set(rows.map(r => r.pedido)).size };
     if (a.agrupar_por) out.grupos = groupRows(rows, GROUP_KEYS[a.agrupar_por] || a.agrupar_por);
     out.lista = rows.slice(0, Math.min(80, a.limite_lista || 15)).map(pick);
@@ -167,7 +167,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
   if (name === "resumo_pedidos") {
     const clients = data.clients || [];
     let os = (data.orders || []).map(o => { const c = clients.find(x => norm(x.name) === norm(o.clientName)) || {}; return { ...o, _uf: clientUF(c) || "", _cidade: c.city || "" }; });
-    if (a.vendedor) os = os.filter(o => norm(o.seller).startsWith(norm(a.vendedor)));
+    if (a.vendedor) os = os.filter(o => sameSeller(data.sellers, o.seller, a.vendedor));
     if (a.mes) os = os.filter(o => mon(o.createdAt) === a.mes);
     if (a.de) os = os.filter(o => (o.createdAt || "") >= a.de);
     if (a.ate) os = os.filter(o => (o.createdAt || "") <= a.ate);
@@ -194,7 +194,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
     const st = {};
     const perClient = [];
     const byClient = {};
-    (data.orders || []).filter(o => !a.vendedor || norm(o.seller).startsWith(norm(a.vendedor))).forEach(o => {
+    (data.orders || []).filter(o => !a.vendedor || sameSeller(data.sellers, o.seller, a.vendedor)).forEach(o => {
       const k = norm(o.clientName);
       byClient[k] = byClient[k] || { nome: o.clientName, pedidos: 0, brinquedos: 0, faturamento: 0 };
       byClient[k].pedidos++; byClient[k].faturamento += Number(o.totalPrice) || 0; byClient[k].brinquedos += (o.items || []).filter(i => !i.isMotor).length;
@@ -218,7 +218,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
   if (name === "clientes") {
     const map = {};
     (data.orders || []).forEach(o => {
-      if (a.vendedor && !norm(o.seller).startsWith(norm(a.vendedor))) return;
+      if (a.vendedor && !sameSeller(data.sellers, o.seller, a.vendedor)) return;
       const k = norm(o.clientName);
       map[k] = map[k] || { nome: o.clientName, pedidos: 0, total: 0, ultima_compra: "", vendedores: new Set() };
       map[k].pedidos++; map[k].total += Number(o.totalPrice) || 0; if ((o.createdAt || "") > map[k].ultima_compra) map[k].ultima_compra = o.createdAt; if (o.seller) map[k].vendedores.add(o.seller);

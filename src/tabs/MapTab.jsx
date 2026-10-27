@@ -3,7 +3,7 @@ import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps
 import { scaleLinear } from "d3-scale";
 import { X, AlertTriangle, Package, Layers, Users, DollarSign, Navigation, Filter, RefreshCw, MapPin, TrendingUp } from "lucide-react";
 import { STATE_COORDS, UF_NAMES, clientUF } from "../lib/geo";
-import { moneyBR, dateBR, norm, orderNumber, sellerColorOf } from "../lib/core";
+import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf } from "../lib/core";
 
 const RealMap = lazy(() => import("../components/RealMap"));
 const GEO_URL = "/brazil-states.json";
@@ -39,7 +39,11 @@ export default function MapTab({ data, setData, persist, dark, user }) {
   const [view, setView] = useState("estados"); // "estados" | "real"
   const [metric, setMetric] = useState("clients");
   const [status, setStatus] = useState("todos");
-  const [seller, setSeller] = useState("");
+  // Vendedor logado vê só os próprios clientes no mapa
+  const lockedSeller = user?.role !== "admin" && user?.sellerName ? user.sellerName : "";
+  const [sellerSel, setSellerSel] = useState("");
+  const seller = lockedSeller || sellerSel;
+  const setSeller = (v) => { if (!lockedSeller) setSellerSel(v); };
   const [toy, setToy] = useState("");
   const [minValue, setMinValue] = useState("");
   const [maxValue, setMaxValue] = useState("");
@@ -65,13 +69,13 @@ export default function MapTab({ data, setData, persist, dark, user }) {
   }, [orders]);
   const sellers = (data.sellers || []).map(s => s.name);
 
-  const activeFilters = [status !== "todos", seller, toy, minValue, maxValue, minToys].filter(Boolean).length;
+  const activeFilters = [status !== "todos", !lockedSeller && seller, toy, minValue, maxValue, minToys].filter(Boolean).length;
   const clearFilters = () => { setStatus("todos"); setSeller(""); setToy(""); setMinValue(""); setMaxValue(""); setMinToys(""); };
 
   const filteredOrders = useMemo(() => orders.filter(o => {
     if (status === "producao" && o.status === "concluido") return false;
     if (status === "concluidos" && o.status !== "concluido") return false;
-    if (seller && norm(o.seller) !== norm(seller)) return false;
+    if (seller && !sameSeller(data.sellers, o.seller, seller)) return false;
     const toys = (o.items || []).filter(it => !it.isMotor);
     if (toy && !toys.some(it => norm(it.toy) === norm(toy))) return false;
     if (minValue && (Number(o.totalPrice) || 0) < Number(minValue)) return false;
@@ -164,10 +168,10 @@ export default function MapTab({ data, setData, persist, dark, user }) {
               <select value={status} onChange={e => setStatus(e.target.value)} className={`${inp} w-full`}>
                 <option value="todos">Todos vendidos</option><option value="producao">Em aberto / produção</option><option value="concluidos">Concluídos</option>
               </select></div>
-            <div><label className={lbl}>Vendedor</label>
+            {lockedSeller ? <div><label className={lbl}>Vendedor</label><div className={`${inp} w-full truncate`} style={{ color: sellerColorOf(data, lockedSeller) }}>● {lockedSeller}</div></div> : (<div><label className={lbl}>Vendedor</label>
               <select value={seller} onChange={e => setSeller(e.target.value)} className={`${inp} w-full`}>
                 <option value="">Todos</option>{sellers.map(n => <option key={n} value={n}>{n}</option>)}
-              </select></div>
+              </select></div>)}
             <div><label className={lbl}>Brinquedo</label>
               <select value={toy} onChange={e => setToy(e.target.value)} className={`${inp} w-full`}>
                 <option value="">Todos</option>{toyNames.map(n => <option key={n} value={n}>{n}</option>)}

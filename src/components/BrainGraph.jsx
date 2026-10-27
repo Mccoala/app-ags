@@ -28,19 +28,30 @@ export function buildGraph(data) {
 
   const toyCount = {}; const clientRev = {};
   orders.forEach(o => {
-    (o.items || []).filter(i => !i.isMotor && i.toy).forEach(i => { const k = norm(i.toy).replace(/\s+/g, " "); toyCount[k] = toyCount[k] || { label: i.toy.trim(), n: 0, sellers: new Set() }; toyCount[k].n++; if (o.seller) toyCount[k].sellers.add(norm(o.seller)); });
-    const ck = norm(o.clientName); clientRev[ck] = clientRev[ck] || { label: o.clientName, v: 0, sellers: new Set() }; clientRev[ck].v += Number(o.totalPrice) || 0; if (o.seller) clientRev[ck].sellers.add(norm(o.seller));
+    const ck = norm(o.clientName);
+    clientRev[ck] = clientRev[ck] || { label: o.clientName, v: 0, sellers: new Set() };
+    clientRev[ck].v += Number(o.totalPrice) || 0; if (o.seller) clientRev[ck].sellers.add(norm(o.seller));
+    (o.items || []).filter(i => !i.isMotor && i.toy).forEach(i => {
+      const k = norm(i.toy).replace(/\s+/g, " ");
+      toyCount[k] = toyCount[k] || { label: i.toy.trim(), n: 0, clients: new Set() };
+      toyCount[k].n++; toyCount[k].clients.add(ck);
+    });
   });
-  Object.entries(toyCount).sort((a, b) => b[1].n - a[1].n).slice(0, 30).forEach(([k, t]) => {
-    node(`b:${k}`, "toy", t.label, { w: 1 + t.n, sub: `${t.n} vendido(s)` }); link("g:toys", `b:${k}`);
-    t.sellers.forEach(s => link(`s:${s}`, `b:${k}`, 0.4));
-  });
-  Object.entries(clientRev).sort((a, b) => b[1].v - a[1].v).slice(0, 45).forEach(([k, c]) => {
+  // clientes: ligados ao vendedor que atendeu e ao estado
+  Object.entries(clientRev).sort((a, b) => b[1].v - a[1].v).slice(0, 90).forEach(([k, c]) => {
     const cl = (data.clients || []).find(x => norm(x.name) === k) || {};
     node(`c:${k}`, "client", c.label, { w: 1 + Math.log10(1 + c.v / 1000), sub: cl.city || "" });
-    c.sellers.forEach(s => link(`s:${s}`, `c:${k}`, 0.6));
+    c.sellers.forEach(s => {
+      const sv = [...nodes.values()].find(n => n.type === "seller" && (n.id === `s:${s}` || norm(n.label).split(" ")[0] === s.split(" ")[0]));
+      if (sv) link(sv.id, `c:${k}`, 0.6);
+    });
     const uf = clientUF(cl);
     if (uf) { node(`u:${uf}`, "state", uf, { w: 1, sub: UF_NAMES[uf] }); link("g:states", `u:${uf}`); link(`u:${uf}`, `c:${k}`, 0.5); }
+  });
+  // brinquedos: ligados a CADA cliente que comprou (o mesmo brinquedo une clientes diferentes)
+  Object.entries(toyCount).sort((a, b) => b[1].n - a[1].n).slice(0, 45).forEach(([k, t]) => {
+    node(`b:${k}`, "toy", t.label, { w: 1 + t.n, sub: `${t.n} vendido(s) · ${t.clients.size} cliente(s)` }); link("g:toys", `b:${k}`, 0.5);
+    t.clients.forEach(ck => link(`c:${ck}`, `b:${k}`, 0.7));
   });
   // quem trabalhou em quê
   (data.production || []).forEach(p => {
@@ -75,6 +86,17 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [hover, setHover] = useState(null);
   const drag = useRef(null);
+  const userMoved = useRef(false);
+  const fitRef = useRef(null);
+  fitRef.current = () => {
+    const ns = simRef.current?.__nodes || [];
+    if (!ns.length || !size.w) return;
+    const xs = ns.map(n => n.x), ys = ns.map(n => n.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const k = Math.max(0.25, Math.min(1.6, Math.min((size.w - 60) / Math.max(1, maxX - minX), (size.h - 70) / Math.max(1, maxY - minY))));
+    setView({ k, x: -((minX + maxX) / 2) * k, y: -((minY + maxY) / 2) * k + 8 });
+  };
+  useEffect(() => { if (!userMoved.current) fitRef.current(); }, [size.w, size.h]);
 
   useEffect(() => {
     const el = wrapRef.current; if (!el) return;
@@ -107,6 +129,10 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; setTick(t => t + 1); });
     });
     sim.__links = links; sim.__nodes = nodes;
+    // Ao assentar pela primeira vez, enquadra tudo na tela (importante no celular)
+    let fitted = false;
+    sim.on("end", () => { if (!fitted && !userMoved.current) { fitted = true; fitRef.current && fitRef.current(); } });
+    setTimeout(() => { if (!userMoved.current) fitRef.current && fitRef.current(); }, 900);
     simRef.current = sim;
     return () => { sim.stop(); cancelAnimationFrame(raf); };
   }, [graph]);
@@ -122,7 +148,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
   }, [hover, links.length]); // eslint-disable-line
 
   const toScreen = (x, y) => [size.w / 2 + (x * view.k) + view.x, size.h / 2 + (y * view.k) + view.y];
-  const onWheel = (e) => { e.preventDefault(); const k = Math.max(0.3, Math.min(3, view.k * (e.deltaY < 0 ? 1.12 : 0.89))); setView(v => ({ ...v, k })); };
+  const onWheel = (e) => { e.preventDefault(); userMoved.current = true; const k = Math.max(0.3, Math.min(3, view.k * (e.deltaY < 0 ? 1.12 : 0.89))); setView(v => ({ ...v, k })); };
   useEffect(() => { const el = wrapRef.current; if (!el) return; el.addEventListener("wheel", onWheel, { passive: false }); return () => el.removeEventListener("wheel", onWheel); });
 
   const down = (e, n) => {
@@ -136,7 +162,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.pt.x, dy = e.clientY - d.pt.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
-    if (d.pan) setView({ ...d.v, x: d.v.x + dx, y: d.v.y + dy });
+    if (d.pan) { userMoved.current = true; setView({ ...d.v, x: d.v.x + dx, y: d.v.y + dy }); }
     else { d.n.fx = d.n.x + dx / view.k; d.n.fy = d.n.y + dy / view.k; d.pt = { x: e.clientX, y: e.clientY }; }
   };
   const up = () => {
@@ -147,7 +173,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
   const now = Date.now();
   const flash = new Set(flashIds);
   return (
-    <div ref={wrapRef} className="relative w-full select-none overflow-hidden rounded-2xl" style={{ height, background: dark ? "radial-gradient(ellipse at center, #1b1530 0%, #0b0f1a 70%)" : "radial-gradient(ellipse at center, #f5f3ff 0%, #f8fafc 70%)", cursor: drag.current?.pan ? "grabbing" : "grab", touchAction: "none" }}
+    <div ref={wrapRef} className="relative w-full select-none overflow-hidden rounded-2xl" style={{ height, background: dark ? "radial-gradient(ellipse at center, #1b1530 0%, #0b0f1a 70%)" : "radial-gradient(ellipse at center, #f5f3ff 0%, #f8fafc 70%)", cursor: drag.current?.pan ? "grabbing" : "grab", touchAction: size.w < 700 ? "pan-y" : "none" }}
       onPointerDown={(e) => down(e, null)}>
       <style>{`@keyframes brainBorn{0%{transform:scale(0);opacity:0}60%{transform:scale(1.35)}100%{transform:scale(1);opacity:1}} @keyframes brainGlow{0%,100%{opacity:.25}50%{opacity:.7}} .brain-node{transform-box:fill-box;transform-origin:center}`}</style>
       <svg width={size.w} height={size.h} className="absolute inset-0">
@@ -185,7 +211,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
       <div className="absolute right-3 bottom-3 flex gap-1">
         <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.min(3, v.k * 1.2) }))} className="w-7 h-7 rounded-lg bg-black/40 text-white font-black">+</button>
         <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.max(0.3, v.k / 1.2) }))} className="w-7 h-7 rounded-lg bg-black/40 text-white font-black">−</button>
-        <button onPointerDown={e => e.stopPropagation()} onClick={() => setView({ x: 0, y: 0, k: 1 })} className="px-2 h-7 rounded-lg bg-black/40 text-white text-[10px] font-black">centralizar</button>
+        <button onPointerDown={e => e.stopPropagation()} onClick={() => { userMoved.current = false; fitRef.current(); }} className="px-2 h-7 rounded-lg bg-black/40 text-white text-[10px] font-black">enquadrar</button>
       </div>
     </div>
   );

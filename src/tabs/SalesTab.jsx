@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from "recharts";
 import { Users, Package, DollarSign, Phone, Search, Calendar, MessageCircle, TrendingUp, Layers, Star, X, Edit3, Check, Clock } from "lucide-react";
 import AIChat from "../components/AIChat";
-import { moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween, whatsappLink, matchQuery, orderHaystack } from "../lib/core";
+import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween, whatsappLink, matchQuery, orderHaystack } from "../lib/core";
 import { clientUF } from "../lib/geo";
 
 const STATUS_LABEL = { aguardando: "Aguardando", producao: "Em produção", concluido: "Concluído" };
@@ -46,7 +47,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
   const today = todayStr();
   const curM = today.slice(0, 7);
 
-  const mine = useMemo(() => (data.orders || []).filter(o => norm(o.seller) === norm(seller)), [data.orders, seller]);
+  const mine = useMemo(() => (data.orders || []).filter(o => sameSeller(data.sellers, o.seller, seller)), [data.orders, data.sellers, seller]);
   const clients = useMemo(() => {
     const map = new Map();
     mine.forEach(o => {
@@ -64,13 +65,38 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
     }).sort((a, b) => b.total - a.total);
   }, [mine, data.clients]); // eslint-disable-line
 
-  const kpi = {
-    total: mine.reduce((a, o) => a + (Number(o.totalPrice) || 0), 0),
-    month: mine.filter(o => (o.createdAt || "").startsWith(curM)).reduce((a, o) => a + (Number(o.totalPrice) || 0), 0),
-    orders: mine.length, open: mine.filter(o => o.status !== "concluido").length,
-    toys: mine.reduce((a, o) => a + (o.items || []).filter(it => !it.isMotor).length, 0),
-    clients: clients.length,
+  // ── Período escolhido pelo vendedor ──
+  const [period, setPeriod] = useState("mes");
+  const [month, setMonth] = useState(curM);
+  const [year, setYear] = useState(today.slice(0, 4));
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const shiftMonth = (m, d) => { const [y, mm] = m.split("-").map(Number); const x = new Date(y, mm - 1 + d, 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`; };
+  const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const mLabel = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
+  const inRange = (o, p) => {
+    const d = o.createdAt || "";
+    if (p.kind === "mes") return d.startsWith(p.month);
+    if (p.kind === "ano") return d.startsWith(p.year);
+    if (p.kind === "intervalo") return (!p.from || d >= p.from) && (!p.to || d <= p.to);
+    return true;
   };
+  const cur = { kind: period, month, year, from, to };
+  const prev = period === "mes" ? { kind: "mes", month: shiftMonth(month, -1) } : period === "ano" ? { kind: "ano", year: String(Number(year) - 1) } : null;
+  const minePeriod = mine.filter(o => inRange(o, cur));
+  const minePrev = prev ? mine.filter(o => inRange(o, prev)) : [];
+  const rev = (l) => l.reduce((a, o) => a + (Number(o.totalPrice) || 0), 0);
+  const toysOf = (l) => l.reduce((a, o) => a + (o.items || []).filter(it => !it.isMotor).length, 0);
+  const growth = prev && rev(minePrev) > 0 ? ((rev(minePeriod) - rev(minePrev)) / rev(minePrev)) * 100 : null;
+  const periodLabel = period === "mes" ? mLabel(month) : period === "ano" ? year : period === "intervalo" ? `${from ? dateBR(from) : "início"} → ${to ? dateBR(to) : "hoje"}` : "todo o período";
+  const kpi = {
+    total: rev(mine), period: rev(minePeriod), orders: minePeriod.length, open: mine.filter(o => o.status !== "concluido").length,
+    toys: toysOf(minePeriod), clients: new Set(minePeriod.map(o => norm(o.clientName))).size,
+    ticket: minePeriod.length ? rev(minePeriod) / minePeriod.length : 0,
+  };
+  const last12 = Array.from({ length: 12 }, (_, i) => shiftMonth(curM, i - 11)).map(m => { const l = mine.filter(o => (o.createdAt || "").startsWith(m)); return { m, label: mLabel(m), vendido: rev(l), pedidos: l.length }; });
+  const years = [...new Set([today.slice(0, 4), ...mine.map(o => (o.createdAt || "").slice(0, 4)).filter(Boolean)])].sort().reverse();
+  const topToys = Object.entries(minePeriod.flatMap(o => (o.items || []).filter(it => !it.isMotor)).reduce((acc, it) => { const k = (it.toy || "").trim(); if (k) acc[k] = (acc[k] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const toContact = clients.filter(c => c.crm.next && c.crm.next <= today);
 
   const filtered = clients.filter(c => {
@@ -113,13 +139,51 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {[["Vendido no mês", moneyBR(kpi.month), DollarSign, color], ["Total vendido", moneyBR(kpi.total), TrendingUp, "#22c55e"], ["Pedidos", kpi.orders, Package, "#3b82f6"], ["Em aberto", kpi.open, Clock, "#a855f7"], ["Brinquedos vendidos", kpi.toys, Layers, "#f97316"], ["Clientes", kpi.clients, Users, "#14b8a6"]].map(([l, v, I, c]) => (
+      {/* Filtro de período */}
+      <div className={`rounded-2xl border p-3 flex flex-wrap items-center gap-2 ${card}`}>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mr-1">Período</span>
+        {[["mes", "Mês"], ["ano", "Ano"], ["tudo", "Tudo"], ["intervalo", "Escolher datas"]].map(([k, l]) => <button key={k} onClick={() => setPeriod(k)} className={`px-3 py-1.5 rounded-lg text-xs font-black ${period === k ? "text-white" : "text-slate-500"}`} style={period === k ? { background: color } : {}}>{l}</button>)}
+        {period === "mes" && <div className="flex items-center gap-1"><button onClick={() => setMonth(shiftMonth(month, -1))} className="px-2 py-1 rounded-lg font-black text-slate-400 hover:text-white">‹</button><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className={`${inp} !py-1`} /><button onClick={() => setMonth(shiftMonth(month, 1))} className="px-2 py-1 rounded-lg font-black text-slate-400 hover:text-white">›</button></div>}
+        {period === "ano" && <select value={year} onChange={e => setYear(e.target.value)} className={`${inp} !py-1`}>{years.map(y => <option key={y}>{y}</option>)}</select>}
+        {period === "intervalo" && <div className="flex items-center gap-1 flex-wrap"><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={`${inp} !py-1`} /><span className="text-slate-500 text-xs">até</span><input type="date" value={to} onChange={e => setTo(e.target.value)} className={`${inp} !py-1`} /></div>}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+        {[["Vendido", moneyBR(kpi.period), DollarSign, color, growth === null ? (prev ? `${periodLabel} · sem base anterior` : periodLabel) : `${growth >= 0 ? "▲ +" : "▼ "}${growth.toFixed(1).replace(".", ",")}% vs anterior`],
+          ["Pedidos", kpi.orders, Package, "#3b82f6", prev ? `anterior: ${minePrev.length}` : periodLabel],
+          ["Brinquedos", kpi.toys, Layers, "#f97316", prev ? `anterior: ${toysOf(minePrev)}` : periodLabel],
+          ["Ticket médio", moneyBR(kpi.ticket), TrendingUp, "#a855f7", periodLabel],
+          ["Clientes", kpi.clients, Users, "#14b8a6", "atendidos no período"],
+          ["Em aberto", kpi.open, Clock, "#eab308", "agora"],
+          ["Total geral", moneyBR(kpi.total), Star, "#22c55e", `${mine.length} pedidos`]].map(([l, v, I, c, sub]) => (
           <div key={l} className={`rounded-2xl border p-4 ${card}`} style={{ boxShadow: `inset 0 3px 0 ${c}` }}>
-            <div className="flex items-center justify-between mb-1"><span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{l}</span><I size={15} style={{ color: c }} /></div>
+            <div className="flex items-center justify-between mb-1 gap-1"><span className="text-[10px] font-black uppercase tracking-widest text-slate-500 truncate">{l}</span><I size={15} style={{ color: c }} className="flex-shrink-0" /></div>
             <div className="text-xl font-black tabular-nums" style={{ color: c }}>{v}</div>
+            {sub && <div className={`text-[10px] font-bold mt-0.5 ${String(sub).startsWith("▲") ? "text-emerald-500" : String(sub).startsWith("▼") ? "text-red-500" : "text-slate-500"}`}>{sub}</div>}
           </div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className={`lg:col-span-2 rounded-2xl border p-4 ${card}`}>
+          <div className="font-black text-sm mb-2">Minhas vendas — últimos 12 meses <span className="text-slate-500 font-bold text-xs">(clique num mês para ver)</span></div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={last12} margin={{ left: 0, right: 0, top: 6 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={v => v >= 1000 ? `${Math.round(v / 1000)}k` : v} width={34} />
+              <Tooltip cursor={{ fill: dark ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.03)" }} contentStyle={{ background: dark ? "#0f172a" : "#fff", border: "1px solid #334155", borderRadius: 12, fontSize: 12 }} formatter={(v, n) => n === "vendido" ? [moneyBR(v), "Vendido"] : [v, "Pedidos"]} />
+              <Bar dataKey="vendido" radius={[6, 6, 0, 0]} onClick={(d) => { setPeriod("mes"); setMonth(d.m); }} cursor="pointer" animationDuration={800}>
+                {last12.map(x => <Cell key={x.m} fill={color} fillOpacity={period === "mes" && x.m === month ? 1 : 0.4} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className={`rounded-2xl border p-4 ${card}`}>
+          <div className="font-black text-sm mb-3">Mais vendidos · {periodLabel}</div>
+          <div className="space-y-2">{topToys.map(([n, q]) => <div key={n} className="text-sm"><div className="flex justify-between gap-2"><span className="truncate font-semibold">{n}</span><span className="font-black">{q}x</span></div><div className={`h-1.5 mt-1 rounded-full ${dark ? "bg-gray-800" : "bg-gray-100"}`}><div className="h-full rounded-full" style={{ width: `${(q / topToys[0][1]) * 100}%`, background: color }} /></div></div>)}
+            {!topToys.length && <p className="text-sm text-slate-500">Nenhuma venda neste período.</p>}</div>
+        </div>
       </div>
 
       {toContact.length > 0 && (
@@ -135,7 +199,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-4">
           <div className={`flex gap-1 p-1 rounded-xl border w-fit ${card}`}>
-            {[["crm", "Meus clientes"], ["pedidos", "Minhas vendas"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-lg text-xs font-black ${tab === k ? "text-white" : "text-slate-500"}`} style={tab === k ? { background: color } : {}}>{l}</button>)}
+            {[["crm", "Meus clientes"], ["pedidos", `Minhas vendas (${minePeriod.length})`]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-lg text-xs font-black ${tab === k ? "text-white" : "text-slate-500"}`} style={tab === k ? { background: color } : {}}>{l}</button>)}
           </div>
 
           <div className="relative">
@@ -188,7 +252,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
 
           {tab === "pedidos" && (
             <div className="space-y-2.5">
-              {[...mine].filter(o => !q.trim() || matchQuery(orderHaystack(o), o.id, q)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(o => {
+              {[...minePeriod].filter(o => !q.trim() || matchQuery(orderHaystack(o), o.id, q)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(o => {
                 const toys = (o.items || []).filter(it => !it.isMotor); const motors = (o.items || []).length - toys.length;
                 return (
                   <div key={o.id} className={`rounded-2xl border p-4 ${card}`}>
@@ -207,7 +271,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
                   </div>
                 );
               })}
-              {mine.length === 0 && <div className={`rounded-2xl border p-10 text-center text-slate-500 ${card}`}>Nenhuma venda ainda.</div>}
+              {minePeriod.length === 0 && <div className={`rounded-2xl border p-10 text-center text-slate-500 ${card}`}>Nenhuma venda em {periodLabel}.</div>}
             </div>
           )}
         </div>
