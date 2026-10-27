@@ -1263,17 +1263,66 @@ function ProgressRing({ pct, color, dark, size = 64 }) {
         <circle cx={size / 2} cy={size / 2} r={r} stroke={dark ? "#1f2937" : "#e5e7eb"} strokeWidth="5" fill="none" />
         <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth="5" fill="none" strokeDasharray={c} strokeDashoffset={c - (c * pct) / 100} strokeLinecap="round" style={{ transition: "stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1), stroke .3s" }} />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center"><span className={`text-xs font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-800"}`}>{pct}%</span></div>
+      <div className="absolute inset-0 flex items-center justify-center"><span className={`${size < 50 ? "text-[10px] tracking-tighter" : "text-xs"} font-black ${pct === 100 ? "text-emerald-500" : dark ? "text-white" : "text-gray-800"}`}>{pct}%</span></div>
     </div>
   );
 }
 
+// ─── CARDS COMPACTOS ──────────────────────────────────────────────────────────
+// Só um card aberto por vez; ele fecha sozinho quando a pessoa rola a tela um pouco.
+function useAutoCollapse() {
+  const [openId, setOpenId] = useState(null);
+  useEffect(() => {
+    if (!openId) return;
+    const start = new Map(), t0 = Date.now();
+    const onScroll = (e) => {
+      if (Date.now() - t0 < 400) return; // ignora o ajuste da própria abertura
+      const el = e.target === document ? document.scrollingElement : e.target;
+      if (!el || typeof el.scrollTop !== "number" || el.closest?.("[data-card-open]")) return;
+      if (!start.has(el)) { start.set(el, el.scrollTop); return; }
+      if (Math.abs(el.scrollTop - start.get(el)) > 120) setOpenId(null);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [openId]);
+  return [openId, setOpenId];
+}
+
+// Linha resumida do pedido (fechado): cabe muito mais pedido na tela
+function CompactRow({ row, data, dark, pct, color, onOpen, steps, extra }) {
+  const sc = sellerColor(data, row.seller);
+  const s = statusBadge(row.deadline, row.done);
+  return (
+    <button data-compact onClick={onOpen} className={`w-full text-left rounded-2xl border px-3 py-2.5 flex items-center gap-3 transition-colors ${dark ? "bg-gray-900 border-gray-800 hover:border-gray-700" : "bg-white border-gray-200 hover:border-gray-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`} style={{ borderLeft: `4px solid ${sc}` }}>
+      <ProgressRing pct={pct} color={color} dark={dark} size={44} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className={`font-black tabular-nums text-[17px] leading-none flex-shrink-0 ${dark ? "text-white" : "text-gray-900"}`}><span className="text-orange-500 text-[11px] mr-0.5">Nº</span>{orderNumber(row._orderId)}</span>
+          <span className={`font-bold text-sm truncate ${dark ? "text-gray-200" : "text-gray-800"}`}>{row.toy}</span>
+        </div>
+        <div className={`text-xs truncate mt-1 ${dark ? "text-gray-400" : "text-gray-500"}`}>{row.priority ? "🚨 " : ""}{row.clientName} · <span style={{ color: sc }} className="font-bold">{(row.seller || "—").split(" ")[0]}</span></div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <span className={`px-1.5 py-0.5 rounded-md text-[11px] font-bold ${s.color}`}>{s.label}</span>
+          {steps}
+          {extra}
+        </div>
+      </div>
+      <ChevronDown size={20} className={`flex-shrink-0 ${dark ? "text-gray-500" : "text-gray-400"}`} />
+    </button>
+  );
+}
+const StepDots = ({ items, dark }) => (
+  <span className="flex items-center gap-1">{items.map(([label, done]) => <span key={label} title={label} className={`text-[10px] font-black px-1 min-w-[28px] h-[18px] rounded-md flex items-center justify-center ${done ? "bg-emerald-500 text-white" : dark ? "bg-gray-800 text-gray-500" : "bg-gray-100 text-gray-400"}`}>{label.slice(0, 3)}</span>)}</span>
+);
+
 // ─── SHARED PROD CARD ─────────────────────────────────────────────────────────
-function ProdCard({ row, data, dark, workers, onAssign, onTogglePriority, canEdit, setLightbox }) {
+function ProdCard({ row, data, dark, workers, onAssign, onTogglePriority, canEdit, setLightbox, open, onToggle }) {
   const pct = prodPct(row);
   const color = pct === 100 ? "#10b981" : pct >= 75 ? "#84cc16" : pct >= 50 ? "#eab308" : "#f97316";
+  if (!open) return <CompactRow row={row} data={data} dark={dark} pct={pct} color={color} onOpen={onToggle} steps={<StepDots dark={dark} items={STAGES.map(st => [st.label, !!row[st.key]])} />} extra={pct === 100 ? <span className="text-[11px] font-black text-emerald-500">✓ Na finalização</span> : null} />;
   return (
-    <div className={`rounded-2xl border overflow-hidden transition-all ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+    <div data-card-open className={`rounded-2xl border overflow-hidden transition-all animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+      <button onClick={onToggle} className={`w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border-b ${dark ? "border-gray-800 text-gray-400 hover:text-white" : "border-gray-100 text-gray-500"}`}><ChevronUp size={16} />Fechar</button>
       <div className="flex items-start justify-between p-4 gap-3">
         <div className="min-w-0 flex-1">
           <OrderCardHead row={row} data={data} dark={dark} />
@@ -1359,6 +1408,7 @@ function ProductionTab({ data, setData, dark, user }) {
   });
   const sortedRows = sortProdRows(allRows);
   const found = useSearchRows(sortedRows, data, search);
+  const [openId, setOpenId] = useAutoCollapse();
   const activeRows = found.filter(r => !r.done);
   const doneRows = found.filter(r => r.done);
   const delayedRows = activeRows.filter(r => daysLeft(r.deadline) < 0);
@@ -1436,7 +1486,7 @@ function ProductionTab({ data, setData, dark, user }) {
         {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização{user?.sellerName ? " — aparecem só os seus pedidos." : "."}</div>}
       </div>
 
-      <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto py-3 space-y-2" style={{ minHeight: 0 }}>
         {showAdd && (
           <div className={`rounded-xl p-4 border ${dark ? "bg-gray-900 border-orange-500/30" : "bg-orange-50 border-orange-200"}`}>
             <div className="flex items-center justify-between mb-3">
@@ -1456,7 +1506,7 @@ function ProductionTab({ data, setData, dark, user }) {
           </div>
         )}
         {filteredRows.map((row, i) => (
-          <ProdCard key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} workers={workers} onAssign={assign} onTogglePriority={togglePriority} canEdit={canEdit} setLightbox={setLightbox} />
+          <ProdCard key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} workers={workers} onAssign={assign} onTogglePriority={togglePriority} canEdit={canEdit} setLightbox={setLightbox} open={openId === row._itemId} onToggle={() => setOpenId(openId === row._itemId ? null : row._itemId)} />
         ))}
         {filteredRows.length === 0 && <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}><Factory size={36} className="mx-auto mb-3 opacity-30" /><p className="text-sm font-medium">{search ? `Nada encontrado para "${search}"` : "Nenhum item nesta categoria"}</p></div>}
       </div>
@@ -1485,6 +1535,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
   });
   const sorted = sortProdRows(finRows);
   const found = useSearchRows(sorted, data, search);
+  const [openId, setOpenId] = useAutoCollapse();
   const pending = found.filter(r => r.stage === "");
   const doing = found.filter(r => r.stage === "finalizando");
   const doneF = found.filter(r => r.stage === "finalizado");
@@ -1558,12 +1609,21 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
         {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização{user?.sellerName ? " — aparecem só os seus pedidos." : "."}</div>}
       </div>
 
-      <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
+      <div className="flex-1 overflow-y-auto py-3 space-y-2" style={{ minHeight: 0 }}>
         {filteredRows.map((row, i) => {
           const pct = finPct(row);
           const color = pct === 100 ? "#10b981" : pct === 50 ? "#eab308" : "#f97316";
+          const isOpen = openId === row._itemId;
+          const toggle = () => setOpenId(isOpen ? null : row._itemId);
+          if (!isOpen) {
+            const fz = finalizersOf(row), np = photoCount(row._itemId);
+            return <CompactRow key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} pct={pct} color={color} onOpen={toggle}
+              steps={<span className={`text-[11px] font-black px-1.5 py-0.5 rounded-md ${pct === 100 ? "bg-emerald-500/15 text-emerald-500" : pct === 50 ? "bg-yellow-500/15 text-yellow-500" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{pct === 100 ? "Finalizado" : pct === 50 ? "Finalizando" : "Pendente"}</span>}
+              extra={<>{fz.length > 0 && <span className={`text-[11px] font-bold truncate max-w-[120px] ${dark ? "text-gray-400" : "text-gray-500"}`}>👤 {fz.join(", ")}</span>}{np > 0 && <span className={`text-[11px] font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>📷 {np}</span>}</>} />;
+          }
           return (
-            <div key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+            <div data-card-open key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+              <button onClick={toggle} className={`w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border-b ${dark ? "border-gray-800 text-gray-400 hover:text-white" : "border-gray-100 text-gray-500"}`}><ChevronUp size={16} />Fechar</button>
               <div className="flex items-start justify-between p-4 gap-3">
                 <div className="min-w-0 flex-1">
                   <OrderCardHead row={row} data={data} dark={dark} extra={row.done && row.finDate ? <span className="text-xs font-bold text-emerald-500">✓ {fmt(row.finDate)}</span> : null} />
@@ -2160,6 +2220,8 @@ function MainApp() {
   // Lembra a aba aberta (ao recarregar, volta para onde estava)
   const [tab, setTab] = useState(() => { try { const t = sessionStorage.getItem("inflatudo-tab"); const u = loadSession(); if (t && allowedTabs(u).includes(t)) return t; } catch { } return firstTab(loadSession()); });
   useEffect(() => { try { sessionStorage.setItem("inflatudo-tab", tab); } catch { } }, [tab]);
+  // Ao trocar de aba, a tela começa do topo
+  useEffect(() => { const el = document.querySelector('[data-main-scroll]'); if (el) el.scrollTop = 0; }, [tab]);
   const login = (u) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
     setData(emptyData()); setLoadingServer(true);

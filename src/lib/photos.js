@@ -28,11 +28,28 @@ function draw(img, maxSide) {
 }
 const toBlob = (canvas, q) => new Promise(r => canvas.toBlob(b => r(b), "image/jpeg", q));
 
-// Reduz a foto. Devolve { blob, preview (url local), size }
-export async function compressPhoto(file, maxSide = 1280, quality = 0.72) {
+export const fmtDateTime = (iso) => { try { const d = new Date(iso); return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`; } catch { return ""; } };
+
+// Carimbo no canto da foto: "Pedido 1505 · 27/10/2026 01:05" (vai junto quando baixar ou mandar no WhatsApp)
+function stamp(canvas, text) {
+  const ctx = canvas.getContext("2d"), w = canvas.width, h = canvas.height;
+  const fs = Math.max(14, Math.round(Math.min(w, h) * 0.035));
+  ctx.font = `800 ${fs}px Inter, system-ui, sans-serif`;
+  const pad = Math.round(fs * 0.55), tw = ctx.measureText(text).width;
+  const bw = tw + pad * 2, bh = fs + pad * 1.6, x = Math.round(fs * 0.6), y = h - bh - Math.round(fs * 0.6);
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, fs * 0.4); ctx.fill(); } else ctx.fillRect(x, y, bw, bh);
+  ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.fillText(text, x + pad, y + bh / 2);
+}
+
+// Reduz a foto e marca data/hora. Devolve { blob, preview (url local), size, takenAt }
+export async function compressPhoto(file, maxSide = 1280, quality = 0.72, label = "") {
   const img = await loadImage(file);
-  const blob = await toBlob(draw(img, maxSide), quality);
-  return { blob, preview: URL.createObjectURL(blob), size: blob.size };
+  const takenAt = new Date().toISOString();
+  const canvas = draw(img, maxSide);
+  stamp(canvas, `${label ? label + " · " : ""}${fmtDateTime(takenAt)}`);
+  const blob = await toBlob(canvas, quality);
+  return { blob, preview: URL.createObjectURL(blob), size: blob.size, takenAt };
 }
 
 const blobToDataURL = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
@@ -69,7 +86,7 @@ export function photoRecords(uploaded, { order, item, seller, by }) {
   return uploaded.map(u => ({
     id: u.id, url: u.url, path: u.path || null, inline: !!u.inline,
     pedido: orderNumber(order.id), orderId: order.id, itemId: item?.itemId || null, toy: item?.toy || "",
-    vendedor: seller || order.seller || "Sem vendedor", cliente: order.clientName || "", em: now, por: by || "",
+    vendedor: seller || order.seller || "Sem vendedor", cliente: order.clientName || "", em: u.em || now, por: by || "",
   }));
 }
 

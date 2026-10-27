@@ -3,7 +3,7 @@ import { Camera, Folder, FolderOpen, Search, X, Download, ChevronRight, ChevronL
 import { sameSeller, sellerColorOf, norm, cleanOrderNumber } from "../lib/core";
 import { downloadZip, downloadOne, deleteStoredPhoto } from "../lib/photos";
 
-const dt = (iso) => { try { return new Date(iso).toLocaleDateString("pt-BR"); } catch { return ""; } };
+const dt = (iso) => { try { const d = new Date(iso); return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`; } catch { return ""; } };
 
 function Lightbox({ list, index, onClose, onIndex }) {
   const p = list[index];

@@ -17,7 +17,7 @@ REGRAS:
 function rulesFor(user, scope, allowSave) {
   const who = user?.role === "admin" ? `gerente/dono da empresa (${user?.name || "gerente"})` : `${user?.name || "usuário"}${user?.sellerName ? ` — vendedor ${user.sellerName}` : ""}`;
   const money = scope === "all" ? "Pode falar de valores (R$) normalmente."
-    : scope === "own" ? `NUNCA informe valores (R$) de pedidos de outros vendedores. Valores só existem nos pedidos de ${user.sellerName}. Pode falar de quantidades e produção de todos.`
+    : scope === "own" ? `Você só enxerga os pedidos, brinquedos, clientes, valores, produção e fotos de ${user.sellerName}. É PROIBIDO falar de qualquer pedido, brinquedo, cliente, valor ou venda de OUTRO vendedor — nem confirmar se existem. Se perguntarem sobre outro vendedor, a empresa toda ou rankings entre vendedores, responda que só pode falar dos dados de ${user.sellerName}. "A fábrica", "a produção" = só os pedidos deste vendedor.`
       : "NUNCA fale de valores em dinheiro (R$, faturamento, preço, ticket). Esta pessoa cuida da produção: fale só de quantidades, prazos, etapas e pessoas.";
   const save = allowSave ? "Quando descobrir algo realmente útil, guarde com salvar_no_cerebro (no máximo 2 por resposta)." : "Não guarde nada no cérebro.";
   return `\n\nUSUÁRIO ATUAL: ${who}.\n${money}\n${save}`;

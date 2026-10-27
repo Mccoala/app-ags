@@ -50,7 +50,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
     data, user, persist, allowSave: canWrite, storageKey: "brain-chat",
     onNoteSaved: (note) => { setFlash(f => [...f, `n:${note.id}`]); setTimeout(() => setFlash(f => f.filter(x => x !== `n:${note.id}`)), 6000); },
   });
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy]);
+  useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy]);
   const ask = (q, opts) => { const t = (q ?? input); setInput(""); return agentAsk(t, opts); };
 
   const notes = data.brain?.notes || [];

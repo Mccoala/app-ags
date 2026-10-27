@@ -7,8 +7,9 @@ const readSet = (k) => { try { return new Set(JSON.parse(localStorage.getItem(k)
 const writeSet = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set].slice(-500))); } catch { } };
 const ago = (iso) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (m < 1) return "agora"; if (m < 60) return `há ${m} min`; const h = Math.round(m / 60); if (h < 24) return `há ${h} h`;
-  return new Date(iso).toLocaleDateString("pt-BR");
+  const d = new Date(iso), hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (m < 1) return `agora · ${hm}`; if (m < 60) return `há ${m} min · ${hm}`; const h = Math.round(m / 60); if (h < 24) return `hoje ${hm}`;
+  return `${d.toLocaleDateString("pt-BR")} ${hm}`;
 };
 function chime() {
   try {
@@ -65,7 +66,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
   const endRef = useRef(null);
   const isAdmin = user?.role === "admin";
   const { msgs, setMsgs, ask, busy, scope } = useBrainAgent({ data, user, persist, allowSave: isAdmin, storageKey: `float-chat-${user?.id || "x"}` });
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy, open]);
+  useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy, open]);
   const send = (q) => { const t = (q ?? input).trim(); if (!t) return; setInput(""); ask(t); };
   const suggestions = scope === "none"
     ? ["Qual pedido está mais atrasado?", "Quais brinquedos estão esperando costura?", "O que foi finalizado hoje?", "Quantos itens eu fiz este mês?"]
@@ -93,7 +94,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
                 <div className="font-black text-sm">🎉 Pedido <span className="text-orange-500">{toast.pedido}</span> finalizado!</div>
                 <button onClick={() => setToast(null)} className="p-0.5 text-slate-400 hover:text-red-400"><X size={15} /></button>
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">{toast.toy}{toast.cliente ? ` · ${toast.cliente}` : ""}{toast.por ? ` · por ${toast.por}` : ""}</div>
+              <div className="text-xs text-slate-400 mt-0.5">{toast.toy}{toast.cliente ? ` · ${toast.cliente}` : ""}{toast.por ? ` · por ${toast.por}` : ""} · 🕒 {ago(toast.em)}</div>
               <button onClick={() => openNotif(toast)} className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-sm font-black" style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}><Camera size={15} />Ver fotos</button>
             </div>
           </div>

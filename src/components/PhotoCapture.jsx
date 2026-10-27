@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Camera, X, Trash2, Check, ImagePlus, Loader2, Bell } from "lucide-react";
-import { compressPhoto, uploadPhoto, kb } from "../lib/photos";
+import { compressPhoto, uploadPhoto, kb, fmtDateTime } from "../lib/photos";
 import { orderNumber } from "../lib/core";
 
 // Janela que abre ao marcar "Finalizado · 100%": o finalizador tira uma ou mais fotos
@@ -21,7 +21,7 @@ export default function PhotoCapture({ row, companyId, dark, mode = "finalizar",
     setErr(""); setBusy("Preparando foto…");
     try {
       const out = [];
-      for (const f of list) out.push(await compressPhoto(f));
+      for (const f of list) out.push(await compressPhoto(f, 1280, 0.72, `Pedido ${pedido}`));
       setShots(s => [...s, ...out]);
     } catch (e) { setErr(e.message || "Não consegui ler a foto."); }
     setBusy("");
@@ -36,7 +36,7 @@ export default function PhotoCapture({ row, companyId, dark, mode = "finalizar",
       const uploaded = [];
       for (let i = 0; i < shots.length; i++) {
         setBusy(`Enviando foto ${i + 1} de ${shots.length}…`);
-        uploaded.push(await uploadPhoto(companyId, pedido, shots[i].blob));
+        uploaded.push({ ...(await uploadPhoto(companyId, pedido, shots[i].blob)), em: shots[i].takenAt });
       }
       setBusy("");
       onDone(uploaded);
@@ -82,7 +82,7 @@ export default function PhotoCapture({ row, companyId, dark, mode = "finalizar",
                 {shots.map((s, i) => (
                   <div key={s.preview} className="relative aspect-square rounded-xl overflow-hidden border" style={{ borderColor: dark ? "#374151" : "#e5e7eb" }}>
                     <img src={s.preview} alt="" className="w-full h-full object-cover" />
-                    <span className="absolute left-1 bottom-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white">{kb(s.size)}</span>
+                    <span className="absolute left-1 bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white truncate">🕒 {fmtDateTime(s.takenAt).slice(11)} · {kb(s.size)}</span>
                     {!busy && <button onClick={() => remove(i)} className="absolute top-1 right-1 p-1.5 rounded-lg bg-black/60 text-white hover:bg-red-600"><Trash2 size={13} /></button>}
                   </div>
                 ))}

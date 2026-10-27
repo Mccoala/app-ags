@@ -204,7 +204,7 @@ export function aiSnapshot(data, { sellerName } = {}) {
   const clientsByName = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
   return {
     hoje: todayStr(),
-    vendedores: (data.sellers || []).map(s => s.name),
+    vendedores: sellerName ? [sellerName] : (data.sellers || []).map(s => s.name),
     equipe_producao: (data.team || []).map(t => ({ nome: t.name, funcao: t.role, status: t.status })),
     pedidos: orders.map(o => ({
       numero: orderNumber(o.id), cliente: o.clientName, cidade: clientsByName[o.clientName]?.city, uf: clientsByName[o.clientName]?.state,
@@ -276,14 +276,30 @@ export function moneyScope(user) {
   if (Array.isArray(p) && p.includes("dashboard")) return "all";
   return "none";
 }
-// Cópia dos dados sem os valores que a pessoa não pode ver
+// Cópia dos dados com só o que a pessoa pode ver:
+// - produção: tudo, mas sem nenhum valor (R$)
+// - vendedor: SÓ os pedidos, brinquedos, clientes, valores, produção, fotos e histórico DELE.
+//   Nada de outro vendedor (nem o nome dos outros vendedores).
 export function scrubForUser(data, user) {
   const scope = moneyScope(user);
   if (scope === "all") return data;
   const strip = (o) => ({ ...o, totalPrice: undefined, items: (o.items || []).map(it => ({ ...it, price: undefined })) });
+  if (scope === "none") return { ...data, orders: (data.orders || []).map(strip), brain: { notes: [] }, users: [] };
+  const mine = (data.orders || []).filter(o => sameSeller(data.sellers, o.seller, user.sellerName));
+  const ids = new Set(mine.map(o => o.id));
+  const nums = new Set(mine.map(o => String(orderNumber(o.id))));
+  const clientNames = new Set(mine.map(o => norm(o.clientName)));
+  const me = (data.sellers || []).filter(x => sameSeller(data.sellers, x.name, user.sellerName));
   return {
     ...data,
-    orders: (data.orders || []).map(o => scope === "none" ? strip(o) : (sameSeller(data.sellers, o.seller, user.sellerName) ? o : strip(o))),
+    orders: mine,
+    production: (data.production || []).filter(p => ids.has(p.orderId)),
+    finalization: (data.finalization || []).filter(f => ids.has(f.orderId)),
+    clients: (data.clients || []).filter(c => clientNames.has(norm(c.name))),
+    sellers: me.length ? me : [{ name: user.sellerName }],
+    photos: (data.photos || []).filter(p => nums.has(String(p.pedido))),
+    notifications: (data.notifications || []).filter(n => sameSeller(data.sellers, n.para, user.sellerName)),
+    log: (data.log || []).filter(e => e.pedido && nums.has(String(e.pedido))),
     brain: { notes: [] },
     users: [],
   };

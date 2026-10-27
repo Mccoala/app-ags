@@ -26,7 +26,7 @@ export default function AIChat({ title = "Assistente IA", subtitle, system, buil
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); try { storageKey && sessionStorage.setItem(storageKey, JSON.stringify(msgs.slice(-30))); } catch { } }, [msgs, loading]);
+  useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } try { storageKey && sessionStorage.setItem(storageKey, JSON.stringify(msgs.slice(-30))); } catch { } }, [msgs, loading]);
 
   const send = async (text) => {
     const q = (text ?? input).trim();
