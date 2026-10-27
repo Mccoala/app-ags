@@ -209,8 +209,8 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
           <span className="font-black" style={{ color: TYPE[n.type].color }}>{TYPE[n.type].label}</span> · <b>{n.label}</b>{n.sub ? ` · ${n.sub}` : ""}
         </div>); })()}
       <div className="absolute right-3 bottom-3 flex gap-1">
-        <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.min(3, v.k * 1.2) }))} className="w-7 h-7 rounded-lg bg-black/40 text-white font-black">+</button>
-        <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.max(0.3, v.k / 1.2) }))} className="w-7 h-7 rounded-lg bg-black/40 text-white font-black">−</button>
+        <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.min(3, v.k * 1.2) }))} className="w-9 h-9 md:w-7 md:h-7 rounded-lg bg-black/40 text-white font-black">+</button>
+        <button onPointerDown={e => e.stopPropagation()} onClick={() => setView(v => ({ ...v, k: Math.max(0.3, v.k / 1.2) }))} className="w-9 h-9 md:w-7 md:h-7 rounded-lg bg-black/40 text-white font-black">−</button>
         <button onPointerDown={e => e.stopPropagation()} onClick={() => { userMoved.current = false; fitRef.current(); }} className="px-2 h-7 rounded-lg bg-black/40 text-white text-[10px] font-black">enquadrar</button>
       </div>
     </div>

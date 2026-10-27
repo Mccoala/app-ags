@@ -5,6 +5,11 @@ import { STATE_COORDS, UF_MAP, UF_NAMES, normalizeState, clientUF } from "./lib/
 import MapTab from "./tabs/MapTab";
 import DashboardTab from "./tabs/DashboardTab";
 import SalesTab from "./tabs/SalesTab";
+import FloatingBrain from "./components/FloatingBrain";
+import PhotosTab from "./tabs/PhotosTab";
+import PhotoCapture from "./components/PhotoCapture";
+import { photoRecords } from "./lib/photos";
+import { Camera as CameraIcon } from "lucide-react";
 import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
@@ -59,6 +64,7 @@ const TAB_META = {
   orders: { label: "Pedidos", Icon: Package },
   production: { label: "Produção", Icon: Factory },
   finalization: { label: "Finalização", Icon: CheckCircle },
+  photos: { label: "Fotos", Icon: CameraIcon },
   routes: { label: "Mapa", Icon: Flag },
   clients: { label: "Clientes", Icon: Users },
   sales: { label: "Vendedores", Icon: TrendingUp },
@@ -80,14 +86,21 @@ const ROLE_PERMISSIONS = {
 function permLevel(user, tab) {
   if (!user) return null;
   if (user.role === "admin") return "edit";
+  // Vendedor: vê a produção, a finalização e as fotos (só os pedidos dele na produção) — sem editar
+  if (user.sellerName && ["production", "finalization", "photos"].includes(tab)) return "view";
   const p = user.permissions;
+  // Fotos: quem mexe na finalização também enxerga as fotos (no mesmo nível), salvo regra própria
+  if (tab === "photos" && !(p && !Array.isArray(p) && p.photos)) {
+    const f = Array.isArray(p) ? (p.includes("finalization") ? "edit" : null) : (p?.finalization || null);
+    if (f === "view" || f === "edit") return f;
+  }
   if (Array.isArray(p)) return p.includes(tab) ? "edit" : null;
   return (p && (p[tab] === "view" || p[tab] === "edit")) ? p[tab] : null;
 }
 const canEdit = (user, tab) => permLevel(user, tab) === "edit";
 const canEditProd = (user) => canEdit(user, "production");
 const canEditFin = (user) => canEdit(user, "finalization");
-const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "routes", "clients", "sales"];
+const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "photos", "routes", "clients", "sales"];
 
 // Conta nova sempre começa zerada. É uma função (e não um objeto fixo) para que
 // nenhuma lista seja compartilhada entre contas diferentes no mesmo navegador.
@@ -99,7 +112,50 @@ async function saveToSupabase(d) {
   if (!CURRENT_COMPANY_ID) return;
   try { await supabase.from('companies').update({ app_data: d }).eq('id', CURRENT_COMPANY_ID); } catch (err) { console.error("Supabase save error", err); }
 }
-function saveData(d) {
+// ── Histórico de ações: compara o que mudou desde o último salvamento e anota quem fez ──
+let CURRENT_USER = null;
+let LAST_SNAP = null;
+const snapOf = (d) => ({
+  orders: new Map((d.orders || []).map(o => [o.id, o])),
+  prod: new Map((d.production || []).map(p => [p.itemId, p])),
+  fin: new Map((d.finalization || []).map(f => [f.itemId, f])),
+  clients: new Map((d.clients || []).map(c => [c.id ?? c.name, JSON.stringify({ ...c, crm: undefined })])),
+});
+const ORDER_FIELDS = { clientName: "cliente", seller: "vendedor", deadline: "prazo", priority: "prioridade", items: "itens", voltage: "voltagem", totalPrice: "valor" };
+const STAGE_NAMES = { cutter: "Corte", tailor: "Costura", prep: "Preparação", assembler: "Montagem" };
+function appendLog(d, system) {
+  if (!LAST_SNAP) { LAST_SNAP = snapOf(d); return; }
+  const prev = LAST_SNAP, now = new Date().toISOString();
+  const who = system ? "sistema" : (CURRENT_USER?.name || "?");
+  const out = [];
+  const add = (tipo, texto, pedido) => out.push({ em: now, usuario: who, tipo, texto, pedido: pedido ? orderNumber(pedido) : undefined });
+  const toyName = (oid, iid) => (d.orders || []).find(o => o.id === oid)?.items?.find(i => i.itemId === iid)?.toy || "";
+  (d.orders || []).forEach(o => {
+    const old = prev.orders.get(o.id);
+    if (!old) { add("pedido_criado", `criou o pedido ${orderNumber(o.id)} (${o.clientName || "—"})`, o.id); return; }
+    if (old === o) return;
+    const changed = Object.keys(ORDER_FIELDS).filter(k => JSON.stringify(old[k]) !== JSON.stringify(o[k]));
+    if (changed.length) add("pedido_editado", `editou o pedido ${orderNumber(o.id)}: ${changed.map(k => ORDER_FIELDS[k]).join(", ")}`, o.id);
+  });
+  prev.orders.forEach((o, id) => { if (!(d.orders || []).some(x => x.id === id)) add("pedido_excluido", `excluiu o pedido ${orderNumber(id)} (${o.clientName || "—"})`, id); });
+  (d.production || []).forEach(p => {
+    const old = prev.prod.get(p.itemId) || {};
+    if (old === p) return;
+    Object.keys(STAGE_NAMES).forEach(k => { if ((old[k] || "") !== (p[k] || "")) add("etapa", `${STAGE_NAMES[k]} do pedido ${orderNumber(p.orderId)} (${toyName(p.orderId, p.itemId)}): ${p[k] ? p[k] : "removido " + (old[k] || "")}`, p.orderId); });
+  });
+  (d.finalization || []).forEach(f => {
+    const old = prev.fin.get(f.itemId) || {};
+    if (old === f) return;
+    const st = f.stage || (f.done ? "finalizado" : ""), ost = old.stage || (old.done ? "finalizado" : "");
+    if (st !== ost || (f.finalizer || "") !== (old.finalizer || "")) add("finalizacao", `finalização do pedido ${orderNumber(f.orderId)} (${toyName(f.orderId, f.itemId)}): ${st || "pendente"}${f.finalizer ? ` · ${f.finalizer}` : ""}`, f.orderId);
+  });
+  (d.clients || []).forEach(c => { const k = c.id ?? c.name; const old = prev.clients.get(k); if (old && old !== JSON.stringify({ ...c, crm: undefined })) add("cliente_editado", `editou o cliente ${c.name}`); });
+  if (out.length) d.log = [...(d.log || []), ...out].slice(-800);
+  LAST_SNAP = snapOf(d);
+}
+
+function saveData(d, opts = {}) {
+  if (CURRENT_COMPANY_ID) { try { appendLog(d, opts.system); } catch (e) { console.warn("log", e); } }
   if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
   try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
   saveToSupabase(d);
@@ -392,9 +448,9 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
         </div>
         <div className="overflow-y-auto flex-1 p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className={lc}>Cliente</label><input value={form.clientName}
+            <div className="col-span-2 sm:col-span-1"><label className={lc}>Cliente</label><input value={form.clientName}
               onChange={e => setForm({ ...form, clientName: e.target.value })} className={ic} /></div>
-            <div><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={form.seller} onChange={v => setForm({ ...form, seller: v })} /></div>
+            <div className="col-span-2 sm:col-span-1"><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={form.seller} onChange={v => setForm({ ...form, seller: v })} /></div>
             <div><label className={lc}>Prazo</label><input type="date" value={form.deadline}
               onChange={e => setForm({ ...form, deadline: e.target.value })} className={ic} /></div>
             <div><label className={lc}>Voltagem</label><select value={form.voltage}
@@ -849,10 +905,10 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <div><label className={lc}>Cliente</label><input value={manualHeader.clientName}
+            <div className="col-span-2 md:col-span-1"><label className={lc}>Cliente</label><input value={manualHeader.clientName}
               onChange={e => setManualHeader({ ...manualHeader, clientName: e.target.value })}
               className={ic} /></div>
-            <div><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={manualHeader.seller} onChange={v => setManualHeader({ ...manualHeader, seller: v })} /></div>
+            <div className="col-span-2 md:col-span-1"><label className={lc}>Vendedor</label><SellerPicker data={data} setData={setData} dark={dark} className={ic} value={manualHeader.seller} onChange={v => setManualHeader({ ...manualHeader, seller: v })} /></div>
             <div><label className={lc}>Prazo</label><input type="date" value={manualHeader.deadline}
               onChange={e => setManualHeader({ ...manualHeader, deadline: e.target.value })}
               className={ic} /></div>
@@ -1335,7 +1391,7 @@ function ProductionTab({ data, setData, dark, user }) {
   const filterOpts = [["todos", "Todos", activeRows.length + doneRows.length], ["urgente", "Urgente", urgentRows.length], ["atrasados", "Atrasados", delayedRows.length], ["ok", "No prazo", null], ["concluidos", "Concluídos", doneRows.length]];
 
   return (
-    <div className="flex flex-col" style={{ height: "100%" }}>
+    <div className="flex flex-col prod-shell" style={{ height: "100%" }}>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
       <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
         <div className="flex items-center justify-between gap-3 mb-3">
@@ -1347,14 +1403,14 @@ function ProductionTab({ data, setData, dark, user }) {
         </div>
         <StatChips dark={dark} items={[{ label: "Atrasados", value: delayedRows.length, color: "#ef4444" }, { label: "Prazo no mês", value: thisMon.length, color: "#f97316" }, { label: "Próx. mês", value: nextMon.length, color: "#3b82f6" }, { label: "Prontos", value: doneRows.length, color: "#22c55e" }]} />
         <SearchBox value={search} onChange={setSearch} dark={dark} />
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap chip-row">
           {filterOpts.map(([v, l, n]) => (
             <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>
               {l}{n !== null && <span className="opacity-70"> ({n})</span>}
             </button>
           ))}
         </div>
-        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
+        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização{user?.sellerName ? " — aparecem só os seus pedidos." : "."}</div>}
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
@@ -1386,11 +1442,13 @@ function ProductionTab({ data, setData, dark, user }) {
 }
 
 // ─── FINALIZATION TAB ─────────────────────────────────────────────────────────
-function FinalizationTab({ data, setData, dark, user }) {
+function FinalizationTab({ data, setData, dark, user, openPhotos }) {
   const [lightbox, setLightbox] = useState(null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
   const canEdit = canEditFin(user);
+  const [capture, setCapture] = useState(null); // { row, mode }
+  const photoCount = (itemId) => (data.photos || []).filter(p => p.itemId === itemId).length;
 
   const finRows = [];
   data.finalization.forEach(fin => {
@@ -1434,25 +1492,47 @@ function FinalizationTab({ data, setData, dark, user }) {
   const setStage = (row, stage) => {
     if (!finalizersOf(row).length) return; // só depois de escolher quem está finalizando
     const next = row.stage === stage ? "" : stage;
+    // 100% só com foto do brinquedo pronto → abre a câmera
+    if (next === "finalizado") { setCapture({ row, mode: "finalizar" }); return; }
     update(row._itemId, { stage: next, done: next === "finalizado", finDate: next === "finalizado" ? TODAY_STR : null, finalizingAt: next === "finalizando" ? TODAY_STR : (row.finalizingAt || null) });
   };
 
+  // Fotos tiradas: vão para a pasta do pedido; ao finalizar, avisa o vendedor responsável
+  const savePhotos = (row, mode, uploaded) => {
+    const order = data.orders.find(o => o.id === row._orderId) || { id: row._orderId, clientName: row.clientName, seller: row.seller };
+    const item = (order.items || []).find(it => it.itemId === row._itemId) || { itemId: row._itemId, toy: row.toy };
+    const seller = order.seller ? (findSeller(data.sellers || [], order.seller)?.name || order.seller) : "";
+    const recs = photoRecords(uploaded, { order, item, seller, by: user?.name });
+    let nd = { ...data, photos: [...(data.photos || []), ...recs] };
+    if (mode === "finalizar") {
+      nd.finalization = data.finalization.map(f => f.itemId === row._itemId ? { ...f, stage: "finalizado", done: true, finDate: TODAY_STR, finalizingAt: f.finalizingAt || null, photoIds: recs.map(r => r.id) } : f);
+      syncOrderStatus(nd, row._orderId);
+      if (seller) nd.notifications = [...(data.notifications || []), {
+        id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, tipo: "finalizado", para: seller,
+        pedido: orderNumber(order.id), orderId: order.id, itemId: item.itemId, toy: item.toy || "", cliente: order.clientName || "",
+        fotoId: recs[0]?.id, fotos: recs.length, em: new Date().toISOString(), por: finalizersOf(row).join(", ") || user?.name || "",
+      }].slice(-300);
+    }
+    persist(nd); setCapture(null);
+  };
+
   return (
-    <div className="flex flex-col" style={{ height: "100%" }}>
+    <div className="flex flex-col prod-shell" style={{ height: "100%" }}>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {capture && <PhotoCapture row={capture.row} mode={capture.mode} dark={dark} companyId={CURRENT_COMPANY_ID} sellerName={capture.mode === "finalizar" ? (findSeller(data.sellers || [], capture.row.seller)?.name || capture.row.seller) : ""} onCancel={() => setCapture(null)} onDone={(up) => savePhotos(capture.row, capture.mode, up)} />}
       <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
         <div className="mb-3">
           <h2 className={`text-xl font-black leading-tight ${dark ? "text-white" : "text-gray-900"}`}>Finalização</h2>
-          <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Itens que saíram da produção. Pendente 0% · Finalizando 50% · Finalizado 100%</p>
+          <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Itens que saíram da produção. Pendente 0% · Finalizando 50% · Finalizado 100% (com foto 📷 — o vendedor é avisado na hora)</p>
         </div>
         <StatChips dark={dark} items={[{ label: "Pendentes", value: pending.length, color: "#f97316" }, { label: "Finalizando", value: doing.length, color: "#eab308" }, { label: "Atrasados", value: delayed.length, color: "#ef4444" }, { label: "Finalizados", value: doneF.length, color: "#22c55e" }]} />
         <SearchBox value={search} onChange={setSearch} dark={dark} />
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap chip-row">
           {[["todos", "Todos", found.length], ["pendentes", "Pendentes", pending.length], ["finalizando", "Finalizando", doing.length], ["atrasados", "Atrasados", delayed.length], ["finalizados", "Finalizados", doneF.length]].map(([v, l, n]) => (
             <button key={v} onClick={() => setFilterStatus(v)} className={`px-2.5 py-1 rounded-lg text-xs font-bold ${filterStatus === v ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`} style={filterStatus === v ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>{l} <span className="opacity-70">({n})</span></button>
           ))}
         </div>
-        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização.</div>}
+        {!canEdit && <div className={`mt-2 text-xs px-2.5 py-1.5 rounded-lg border ${dark ? "bg-blue-500/10 border-blue-500/30 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700"}`}>👁️ Somente visualização{user?.sellerName ? " — aparecem só os seus pedidos." : "."}</div>}
       </div>
 
       <div className="flex-1 overflow-y-auto py-4 space-y-3" style={{ minHeight: 0 }}>
@@ -1483,11 +1563,17 @@ function FinalizationTab({ data, setData, dark, user }) {
                     {!finWorkers.length && !finalizersOf(row).length && <span className="text-xs text-slate-500">Cadastre finalizadores em Equipe → Colaboradores (função Finalizador).</span>}
                   </div>
                 </div>
-                <div className={`flex rounded-xl p-1 gap-1 ${dark ? "bg-gray-950 border border-gray-800" : "bg-white border border-gray-200"}`}>
+                {(photoCount(row._itemId) > 0 || (row.done && canEdit)) && (
+                  <div className="flex gap-1.5">
+                    {photoCount(row._itemId) > 0 && <button onClick={() => openPhotos && openPhotos(orderNumber(row._orderId))} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><CameraIcon size={15} />{photoCount(row._itemId)} foto{photoCount(row._itemId) > 1 ? "s" : ""}</button>}
+                    {row.done && canEdit && <button onClick={() => setCapture({ row, mode: "adicionar" })} title="Adicionar mais fotos" className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10`}><Plus size={14} /><CameraIcon size={15} /></button>}
+                  </div>
+                )}
+                <div className={`grid grid-cols-2 lg:flex w-full lg:w-auto rounded-xl p-1 gap-1 ${dark ? "bg-gray-950 border border-gray-800" : "bg-white border border-gray-200"}`}>
                   {[["finalizando", "Finalizando · 50%", "#eab308"], ["finalizado", "Finalizado · 100%", "#10b981"]].map(([st, label, c]) => {
                     const on = row.stage === st;
                     const blocked = !canEdit || !finalizersOf(row).length;
-                    return <button key={st} disabled={blocked} title={!finalizersOf(row).length ? "Marque o finalizador primeiro" : ""} onClick={() => setStage(row, st)} className={`px-4 py-2 rounded-lg text-sm font-black transition-all whitespace-nowrap ${blocked ? "opacity-40 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
+                    return <button key={st} disabled={blocked} title={!finalizersOf(row).length ? "Marque o finalizador primeiro" : ""} onClick={() => setStage(row, st)} className={`px-2 sm:px-4 py-2.5 lg:py-2 rounded-lg text-[13px] sm:text-sm font-black transition-all whitespace-nowrap ${blocked ? "opacity-40 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
                   })}
                 </div>
               </div>
@@ -1550,8 +1636,8 @@ function ClientsTab({ data, setData, dark, user }) {
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
       <div><h2 className={`text-2xl font-black ${dark ? "text-white" : "text-gray-900"}`}>Clientes</h2><p className={`text-sm ${dark ? "text-gray-400" : "text-gray-500"}`}>Histórico de pedidos e dados de contato</p></div>
       <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente ou cidade..." className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
-        <select value={sellerFilter} onChange={e => setSellerFilter(e.target.value)} className={`px-3 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
+        <div className="relative flex-1 min-w-full sm:min-w-[200px]"><Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark ? "text-gray-400" : "text-gray-400"}`} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente ou cidade..." className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900"}`} /></div>
+        <select value={sellerFilter} onChange={e => setSellerFilter(e.target.value)} className={`w-full sm:w-auto max-w-full px-3 py-2.5 rounded-xl border text-sm outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-200 text-gray-900"}`}>
           <option value="">Todos os vendedores</option>
           {(data.sellers || []).map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
         </select>
@@ -1810,9 +1896,9 @@ function TeamTab({ data, setData, dark, user }) {
         </div>
       </div>
 
-      <div className={`flex gap-2 p-1 rounded-xl w-fit ${dark ? 'bg-gray-900 border border-gray-800' : 'bg-black/5'}`}>
+      <div className={`grid grid-cols-3 sm:flex gap-1 sm:gap-2 p-1 rounded-xl w-full sm:w-fit ${dark ? 'bg-gray-900 border border-gray-800' : 'bg-black/5'}`}>
         {[{id:'members', label:'Colaboradores', icon:<Users size={14}/>}, {id:'logins', label:'Logins', icon:<Shield size={14}/>}, {id:'sellers', label:'Vendedores', icon:<UserPlus size={14}/>}].map(t => (
-          <button key={t.id} onClick={() => setActiveSubTab(t.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeSubTab === t.id ? (dark ? 'bg-gray-800 shadow-sm text-orange-500' : 'bg-white shadow-sm text-orange-600') : 'text-slate-500 hover:text-orange-500'}`}>
+          <button key={t.id} onClick={() => setActiveSubTab(t.id)} className={`flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === t.id ? (dark ? 'bg-gray-800 shadow-sm text-orange-500' : 'bg-white shadow-sm text-orange-600') : 'text-slate-500 hover:text-orange-500'}`}>
             {t.icon} {t.label}
           </button>
         ))}
@@ -1994,7 +2080,73 @@ const allowedTabs = (user) => {
 // Primeira tela ao entrar: vendedor cai na área dele; gerente no Dashboard
 const firstTab = (u) => { const t = allowedTabs(u); if (u?.sellerName && t.includes("sales")) return "sales"; if (t.includes("dashboard")) return "dashboard"; return t[0] || "orders"; };
 
+// Celular: abaixo de 768px a navegação vira barra de app (topo + abas embaixo)
+function useIsMobile() {
+  const q = () => typeof window !== "undefined" && window.innerWidth < 768;
+  const [m, setM] = useState(q);
+  useEffect(() => { const f = () => setM(q()); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
+  return m;
+}
+const NAV_ORDER = ["dashboard", "orders", "production", "finalization", "photos", "clients", "sales", "routes", "team"];
+const SELLER_NAV_ORDER = ["sales", "production", "finalization", "photos", "routes", "clients", "orders", "dashboard"];
+
+function MobileNav({ tabs, current, onGo, dark, user, isAdmin, onPlans, onLogout, setDark }) {
+  const [more, setMore] = useState(false);
+  const order = user?.sellerName ? SELLER_NAV_ORDER : NAV_ORDER;
+  const sorted = [...tabs].sort((a, b) => (order.indexOf(a) + 99 * (order.indexOf(a) < 0)) - (order.indexOf(b) + 99 * (order.indexOf(b) < 0)));
+  const main = sorted.length <= 5 ? sorted : sorted.slice(0, 4);
+  const rest = sorted.length <= 5 ? [] : sorted.slice(4);
+  const go = (k) => { setMore(false); onGo(k); };
+  const item = (active) => `relative flex flex-col items-center justify-center gap-1 h-full font-bold transition-colors ${active ? "text-orange-500" : dark ? "text-gray-400" : "text-gray-500"}`;
+  return (
+    <>
+      <nav data-mobile-nav className={`mobile-nav fixed bottom-0 inset-x-0 z-[120] grid border-t backdrop-blur-xl ${dark ? "bg-gray-950/95 border-gray-800" : "bg-white/95 border-gray-200"}`} style={{ gridTemplateColumns: `repeat(${main.length + (rest.length ? 1 : 0)}, minmax(0, 1fr))` }}>
+        {main.map(k => {
+          const { label, Icon } = TAB_META[k]; const active = current === k;
+          return (
+            <button key={k} data-nav={label} onClick={() => go(k)} className={item(active)}>
+              {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-orange-500" />}
+              <Icon size={22} strokeWidth={active ? 2.4 : 2} />
+              <span className="text-[11px] leading-none truncate max-w-full px-1">{label}</span>
+            </button>
+          );
+        })}
+        {rest.length > 0 && (
+          <button data-nav-more onClick={() => setMore(true)} className={item(rest.includes(current))}>
+            {rest.includes(current) && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-orange-500" />}
+            <Menu size={22} />
+            <span className="text-[11px] leading-none">Mais</span>
+          </button>
+        )}
+      </nav>
+      {more && (
+        <div className="fixed inset-0 z-[170] bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setMore(false)}>
+          <div className={`w-full rounded-t-3xl border-t p-4 animate-slide-up ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`} style={{ paddingBottom: "calc(16px + var(--safe-b))" }} onClick={e => e.stopPropagation()}>
+            <div className={`mx-auto w-10 h-1.5 rounded-full mb-4 ${dark ? "bg-gray-700" : "bg-gray-300"}`} />
+            <div className="grid grid-cols-3 gap-2.5">
+              {rest.map(k => {
+                const { label, Icon } = TAB_META[k]; const active = current === k;
+                return (
+                  <button key={k} data-nav={label} onClick={() => go(k)} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl border font-bold text-sm ${active ? "border-orange-500 bg-orange-500/10 text-orange-500" : dark ? "border-gray-800 bg-gray-950/50 text-gray-200" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
+                    <Icon size={24} />{label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 mt-3">
+              <button onClick={() => setDark(!dark)} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border font-bold text-sm ${dark ? "border-gray-800 text-yellow-400" : "border-gray-200 text-blue-600"}`}>{dark ? <Sun size={18} /> : <Moon size={18} />}{dark ? "Tema claro" : "Tema escuro"}</button>
+              <button onClick={onLogout} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border font-bold text-sm text-red-500 ${dark ? "border-gray-800" : "border-gray-200"}`}><LogOut size={18} />Sair</button>
+            </div>
+            {isAdmin && <button onClick={() => { setMore(false); onPlans(); }} className="w-full mt-2.5 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black uppercase tracking-wide text-white bg-gradient-to-r from-orange-500 to-orange-600"><CreditCard size={16} />Planos e Assinatura</button>}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function MainApp() {
+  const isMobile = useIsMobile();
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
   const [user, setUser] = useState(loadSession);
   const [data, setData] = useState(emptyData);
@@ -2017,22 +2169,50 @@ function MainApp() {
   useEffect(() => {
     if (!user || loadingServer) return;
     const fixed = ensureSellers(data);
-    if (fixed !== data) { setData(fixed); saveData(fixed); }
+    if (fixed !== data) { setData(fixed); saveData(fixed, { system: true }); }
   }, [data, user, loadingServer]); // eslint-disable-line
   const [showPlans, setShowPlans] = useState(false);
+  const [photoFocus, setPhotoFocus] = useState(null);
+  const openPhotos = (pedido) => { setPhotoFocus(String(pedido)); setTab("photos"); };
+  // Avisos e fotos chegam de outros aparelhos: confere a cada 15 s (só esses dois campos)
+  useEffect(() => {
+    if (!user?.company_id || loadingServer) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        // Quem só visualiza a produção (ex.: vendedor) também recebe o andamento atualizado
+        const viewOnly = !canEditProd(user) && !canEditFin(user) && permLevel(user, 'production');
+        const cols = 'notifications:app_data->notifications, photos:app_data->photos' + (viewOnly ? ', production:app_data->production, finalization:app_data->finalization, orders:app_data->orders' : '');
+        const { data: r, error } = await supabase.from('companies').select(cols).eq('id', user.company_id).single();
+        if (error || !alive || !r) return;
+        setData(d => {
+          const patch = {};
+          ['notifications', 'photos', ...(viewOnly ? ['production', 'finalization', 'orders'] : [])].forEach(k => {
+            if (r[k] && JSON.stringify(r[k]) !== JSON.stringify(d[k] || [])) patch[k] = r[k];
+          });
+          return Object.keys(patch).length ? { ...d, ...patch } : d;
+        });
+      } catch { }
+    };
+    const id = setInterval(tick, 15000);
+    const vis = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { alive = false; clearInterval(id); document.removeEventListener("visibilitychange", vis); };
+  }, [user?.company_id, loadingServer]);
 
   useEffect(() => {
     if (!user || !user.company_id) {
        setLoadingServer(false);
        return;
     }
-    CURRENT_COMPANY_ID = user.company_id;
+    CURRENT_COMPANY_ID = user.company_id; CURRENT_USER = user; LAST_SNAP = null;
     async function fetchState() {
       try {
         const { data: remote, error } = await supabase.from('companies').select('app_data, plan_id, status, trial_ends_at').eq('id', user.company_id).single();
         if (error) throw error;
         if (remote && remote.app_data) {
           const merged = { ...emptyData(), ...JSON.parse(JSON.stringify(remote.app_data)) };
+          LAST_SNAP = snapOf(merged);
           setData(merged);
           try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
         }
@@ -2072,8 +2252,13 @@ function MainApp() {
     routes: MapTab, 
     clients: ClientsTab, 
     team: TeamTab,
-    sales: SalesTab
+    sales: SalesTab,
+    photos: PhotosTab
   }[currentTab];
+  // Vendedor só enxerga, na Produção e na Finalização, os pedidos dele
+  const tabData = (user.sellerName && user.role !== 'admin' && (currentTab === 'production' || currentTab === 'finalization'))
+    ? { ...data, orders: data.orders.filter(o => sameSeller(data.sellers || [], o.seller, user.sellerName)) }
+    : data;
 
   const isAdmin = user.role === 'admin';
   const isTrial = isAdmin && (user.status === 'trial' || !user.plan || user.plan === 'trial' || user.plan === 'free');
@@ -2082,7 +2267,7 @@ function MainApp() {
   return (
     <div className={`flex h-screen overflow-hidden ${dark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* SIDEBAR */}
-      <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
+      {!isMobile && <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
         <div className={`${sidebarOpen ? 'px-4 pt-5 pb-3' : 'px-2 pt-4 pb-2 flex-col'} flex items-center gap-3 overflow-hidden`}>
           <img src={logoMark} alt='Inflatudo' className='w-10 h-10 flex-shrink-0 drop-shadow-lg' />
           {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='text-xl font-black tracking-tight'>Infla<span className='text-orange-500'>tudo</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
@@ -2116,7 +2301,7 @@ function MainApp() {
             <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors flex items-center gap-2'><LogOut size={20} />{sidebarOpen && <span className='text-xs font-bold'>Sair</span>}</button>
           </div>
         </div>
-      </aside>
+      </aside>}
 
       {/* MAIN CONTENT */}
       <main className='flex-1 min-w-0 flex flex-col relative overflow-hidden'>
@@ -2129,8 +2314,18 @@ function MainApp() {
           </div>
         )}
 
-        <div className='flex-1 overflow-y-auto p-4 md:p-8'>
-          {ActiveTab ? <ActiveTab data={data} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
+        {isMobile && (
+          <header className={`flex-shrink-0 flex items-center gap-3 px-4 h-14 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(56px + env(safe-area-inset-top, 0px))' }}>
+            <img src={logoMark} alt='Inflatudo' className='w-9 h-9 flex-shrink-0' />
+            <div className='min-w-0 flex-1'>
+              <div className='text-[17px] font-black leading-tight truncate'>Infla<span className='text-orange-500'>tudo</span><span className={`ml-1.5 text-sm font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
+              <div className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || 'Inflatudo'}{!isAdmin ? ` · ${user.name}` : ''}</div>
+            </div>
+            <button onClick={() => setDark(!dark)} title='Tema' className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? 'border-gray-800 text-yellow-400' : 'border-gray-200 text-blue-600'}`}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
+          </header>
+        )}
+        <div className={`flex-1 overflow-y-auto p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}>
+          {ActiveTab ? <ActiveTab data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
         {showPlans && (
@@ -2169,6 +2364,8 @@ function MainApp() {
           </div>
         )}
       </main>
+      {isMobile && <MobileNav tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}
+      <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />
     </div>
   );
 }

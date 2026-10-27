@@ -2,7 +2,8 @@ import React, { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from "recharts";
 import { Users, Package, DollarSign, Phone, Search, Calendar, MessageCircle, TrendingUp, Layers, Star, X, Edit3, Check, Clock } from "lucide-react";
 import AIChat from "../components/AIChat";
-import { sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween, whatsappLink, matchQuery, orderHaystack } from "../lib/core";
+import PeriodBar from "../components/PeriodBar";
+import { periodRange, periodBuckets, inRange, sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween, whatsappLink, matchQuery, orderHaystack } from "../lib/core";
 import { clientUF } from "../lib/geo";
 
 const STATUS_LABEL = { aguardando: "Aguardando", producao: "Em produção", concluido: "Concluído" };
@@ -65,37 +66,24 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
     }).sort((a, b) => b.total - a.total);
   }, [mine, data.clients]); // eslint-disable-line
 
-  // ── Período escolhido pelo vendedor ──
+  // ── Período escolhido pelo vendedor (mesmo filtro do Dashboard) ──
   const [period, setPeriod] = useState("mes");
-  const [month, setMonth] = useState(curM);
-  const [year, setYear] = useState(today.slice(0, 4));
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const shiftMonth = (m, d) => { const [y, mm] = m.split("-").map(Number); const x = new Date(y, mm - 1 + d, 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`; };
-  const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-  const mLabel = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
-  const inRange = (o, p) => {
-    const d = o.createdAt || "";
-    if (p.kind === "mes") return d.startsWith(p.month);
-    if (p.kind === "ano") return d.startsWith(p.year);
-    if (p.kind === "intervalo") return (!p.from || d >= p.from) && (!p.to || d <= p.to);
-    return true;
-  };
-  const cur = { kind: period, month, year, from, to };
-  const prev = period === "mes" ? { kind: "mes", month: shiftMonth(month, -1) } : period === "ano" ? { kind: "ano", year: String(Number(year) - 1) } : null;
-  const minePeriod = mine.filter(o => inRange(o, cur));
-  const minePrev = prev ? mine.filter(o => inRange(o, prev)) : [];
+  const [custom, setCustom] = useState({});
+  const earliest = mine.map(o => o.createdAt).filter(Boolean).sort()[0];
+  const range = periodRange(period, custom, earliest);
+  const minePeriod = mine.filter(o => inRange(o.createdAt, range.from, range.to));
+  const prev = !!range.prevFrom;
+  const minePrev = prev ? mine.filter(o => inRange(o.createdAt, range.prevFrom, range.prevTo)) : [];
   const rev = (l) => l.reduce((a, o) => a + (Number(o.totalPrice) || 0), 0);
   const toysOf = (l) => l.reduce((a, o) => a + (o.items || []).filter(it => !it.isMotor).length, 0);
   const growth = prev && rev(minePrev) > 0 ? ((rev(minePeriod) - rev(minePrev)) / rev(minePrev)) * 100 : null;
-  const periodLabel = period === "mes" ? mLabel(month) : period === "ano" ? year : period === "intervalo" ? `${from ? dateBR(from) : "início"} → ${to ? dateBR(to) : "hoje"}` : "todo o período";
+  const periodLabel = range.label;
   const kpi = {
     total: rev(mine), period: rev(minePeriod), orders: minePeriod.length, open: mine.filter(o => o.status !== "concluido").length,
     toys: toysOf(minePeriod), clients: new Set(minePeriod.map(o => norm(o.clientName))).size,
     ticket: minePeriod.length ? rev(minePeriod) / minePeriod.length : 0,
   };
-  const last12 = Array.from({ length: 12 }, (_, i) => shiftMonth(curM, i - 11)).map(m => { const l = mine.filter(o => (o.createdAt || "").startsWith(m)); return { m, label: mLabel(m), vendido: rev(l), pedidos: l.length }; });
-  const years = [...new Set([today.slice(0, 4), ...mine.map(o => (o.createdAt || "").slice(0, 4)).filter(Boolean)])].sort().reverse();
+  const chartData = periodBuckets(range).map(b => { const l = mine.filter(o => inRange(o.createdAt, b.from, b.to)); return { key: b.key, from: b.from, to: b.to, label: b.label, vendido: rev(l), pedidos: l.length }; });
   const topToys = Object.entries(minePeriod.flatMap(o => (o.items || []).filter(it => !it.isMotor)).reduce((acc, it) => { const k = (it.toy || "").trim(); if (k) acc[k] = (acc[k] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const toContact = clients.filter(c => c.crm.next && c.crm.next <= today);
 
@@ -133,20 +121,13 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
         {locked ? (
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl font-black" style={{ background: `${color}22`, color }}>● {seller}</div>
         ) : (
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap chip-row">
             {sellerList.map(n => { const c = sellerColorOf(data, n); const on = n === seller; return <button key={n} onClick={() => setChosen(n)} className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all ${on ? "text-white" : ""}`} style={on ? { background: c, borderColor: c, boxShadow: `0 6px 16px ${c}55` } : { borderColor: `${c}55`, color: c }}>{n}</button>; })}
           </div>
         )}
       </div>
 
-      {/* Filtro de período */}
-      <div className={`rounded-2xl border p-3 flex flex-wrap items-center gap-2 ${card}`}>
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 mr-1">Período</span>
-        {[["mes", "Mês"], ["ano", "Ano"], ["tudo", "Tudo"], ["intervalo", "Escolher datas"]].map(([k, l]) => <button key={k} onClick={() => setPeriod(k)} className={`px-3 py-1.5 rounded-lg text-xs font-black ${period === k ? "text-white" : "text-slate-500"}`} style={period === k ? { background: color } : {}}>{l}</button>)}
-        {period === "mes" && <div className="flex items-center gap-1"><button onClick={() => setMonth(shiftMonth(month, -1))} className="px-2 py-1 rounded-lg font-black text-slate-400 hover:text-white">‹</button><input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className={`${inp} !py-1`} /><button onClick={() => setMonth(shiftMonth(month, 1))} className="px-2 py-1 rounded-lg font-black text-slate-400 hover:text-white">›</button></div>}
-        {period === "ano" && <select value={year} onChange={e => setYear(e.target.value)} className={`${inp} !py-1`}>{years.map(y => <option key={y}>{y}</option>)}</select>}
-        {period === "intervalo" && <div className="flex items-center gap-1 flex-wrap"><input type="date" value={from} onChange={e => setFrom(e.target.value)} className={`${inp} !py-1`} /><span className="text-slate-500 text-xs">até</span><input type="date" value={to} onChange={e => setTo(e.target.value)} className={`${inp} !py-1`} /></div>}
-      </div>
+      <PeriodBar value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} range={range} dark={dark} accent={color} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
         {[["Vendido", moneyBR(kpi.period), DollarSign, color, growth === null ? (prev ? `${periodLabel} · sem base anterior` : periodLabel) : `${growth >= 0 ? "▲ +" : "▼ "}${growth.toFixed(1).replace(".", ",")}% vs anterior`],
@@ -166,15 +147,15 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className={`lg:col-span-2 rounded-2xl border p-4 ${card}`}>
-          <div className="font-black text-sm mb-2">Minhas vendas — últimos 12 meses <span className="text-slate-500 font-bold text-xs">(clique num mês para ver)</span></div>
+          <div className="font-black text-sm mb-2">Minhas vendas · {periodLabel} <span className="text-slate-500 font-bold text-xs">(por {range.bucket === "day" ? "dia" : "mês"} · clique numa barra para ver só ela)</span></div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={last12} margin={{ left: 0, right: 0, top: 6 }}>
+            <BarChart data={chartData} margin={{ left: 0, right: 0, top: 6 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: 700 }} minTickGap={10} />
               <YAxis axisLine={false} tickLine={false} tick={{ fill: "#94a3b8", fontSize: 10 }} tickFormatter={v => v >= 1000 ? `${Math.round(v / 1000)}k` : v} width={34} />
               <Tooltip cursor={{ fill: dark ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.03)" }} contentStyle={{ background: dark ? "#0f172a" : "#fff", border: "1px solid #334155", borderRadius: 12, fontSize: 12 }} formatter={(v, n) => n === "vendido" ? [moneyBR(v), "Vendido"] : [v, "Pedidos"]} />
-              <Bar dataKey="vendido" radius={[6, 6, 0, 0]} onClick={(d) => { setPeriod("mes"); setMonth(d.m); }} cursor="pointer" animationDuration={800}>
-                {last12.map(x => <Cell key={x.m} fill={color} fillOpacity={period === "mes" && x.m === month ? 1 : 0.4} />)}
+              <Bar dataKey="vendido" radius={[6, 6, 0, 0]} onClick={(d) => { setCustom({ from: d.from, to: d.to > todayStr() ? todayStr() : d.to }); setPeriod("custom"); }} cursor="pointer" animationDuration={800}>
+                {chartData.map(x => <Cell key={x.key} fill={color} fillOpacity={x.vendido ? 0.9 : 0.3} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -209,7 +190,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
 
           {tab === "crm" && (
             <>
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap chip-row">
                 {[["todos", `Todos (${clients.length})`], ["contatar", `Chamar hoje (${toContact.length})`], ["esfriando", "Esfriando / inativos"], ["abertos", "Com pedido em aberto"]].map(([k, l]) => <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${filter === k ? "bg-orange-500 text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}>{l}</button>)}
               </div>
               <div className="space-y-3">

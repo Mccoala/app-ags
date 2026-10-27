@@ -703,3 +703,40 @@ button { cursor: pointer; }
   border-color: #e2e8f0;
   box-shadow: 0 24px 64px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   CELULAR — tudo proporcional, nada pequeno demais para o dedo
+   ═══════════════════════════════════════════════════════════════ */
+:root { --mnav-h: 64px; --safe-b: env(safe-area-inset-bottom, 0px); }
+@media (max-width: 767px) {
+  html, body { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
+  /* Toque: mínimo de 36px em botões e campos (padrão confortável de app) */
+  button:not(.tap-free), select, [role="button"] { min-height: 36px; }
+  button:not(.tap-free):has(> svg:only-child) { min-width: 36px; }
+  label:has(> input[type="checkbox"]) { min-height: 36px; }
+  /* Campos com 16px: o iPhone não dá zoom ao tocar para digitar */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea { font-size: 16px !important; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) { min-height: 42px; }
+  /* Texto mínimo legível */
+  .text-\[9px\], .text-\[10px\] { font-size: 11px !important; line-height: 1.35; }
+  .text-\[11px\] { font-size: 11.5px !important; }
+  /* Rolagem horizontal suave para faixas de chips */
+  .chip-row { display: flex; flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin-left: -1rem; margin-right: -1rem; padding-left: 1rem; padding-right: 1rem; }
+  .chip-row::-webkit-scrollbar { display: none; }
+  .chip-row > * { flex-shrink: 0; }
+  /* Barra de navegação inferior */
+  .mobile-nav { height: calc(var(--mnav-h) + var(--safe-b)); padding-bottom: var(--safe-b); }
+  .mobile-content-pad { padding-bottom: calc(var(--mnav-h) + var(--safe-b) + 84px) !important; }
+}
+@media (max-width: 767px) {
+  .prod-shell { height: auto !important; }
+  .prod-shell > .flex-1 { overflow: visible !important; }
+  .fab-pos { bottom: calc(var(--mnav-h) + var(--safe-b) + 12px) !important; right: 14px !important; width: 52px !important; height: 52px !important; }
+  .fab-toast { bottom: calc(var(--mnav-h) + var(--safe-b) + 76px) !important; right: 14px !important; }
+}
+@media (max-width: 767px) {
+  /* Janela aberta (pedido, CRM, foto, menu Mais, cérebro): esconde a barra de abas e o botão para não ficar por cima */
+  body:has(.fixed.inset-0) [data-mobile-nav],
+  body:has(.fixed.inset-0) .fab-pos,
+  body:has(.fixed.inset-0) .fab-toast { display: none !important; }
+}

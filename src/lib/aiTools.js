@@ -22,7 +22,7 @@ export function itemRows(data) {
       rows.push({
         pedido: orderNumber(o.id), cliente: o.clientName, vendedor: o.seller || "", data_venda: o.createdAt || "", mes_venda: mon(o.createdAt),
         prazo: o.deadline || "", status_pedido: o.status, prioridade: !!o.priority, voltagem: o.voltage,
-        item: it.toy || "", motor: !!it.isMotor, cores: colors, obs: it.observations || "", valor: Number(it.price) || 0,
+        item: it.toy || "", motor: !!it.isMotor, cores: colors, obs: it.observations || "", valor: it.price === undefined ? undefined : (Number(it.price) || 0),
         uf: clientUF(c) || "", cidade: c.city || "",
         corte: p.cutter || "", costura: p.tailor || "", preparacao: p.prep || "", montagem: p.assembler || "",
         producao_pct: STAGES.filter(([k]) => p[k]).length * 25,
@@ -51,6 +51,8 @@ function applyFilters(rows, a) {
     if (a.status && r.status_pedido !== a.status) return false;
     if (a.pedido && r.pedido !== orderNumber(a.pedido)) return false;
     if (a.atrasados && !(r.prazo && r.prazo < todayStr() && r.status_pedido !== "concluido")) return false;
+    if (a.em_producao && !(!r.motor && r.producao_pct < 100 && r.status_pedido !== "concluido")) return false;
+    if (a.na_finalizacao && !(!r.motor && r.producao_pct === 100 && r.finalizacao !== "finalizado")) return false;
     return true;
   });
 }
@@ -68,6 +70,7 @@ export const TOOLS = [
         vendedor: { type: "string" }, cliente: { type: "string" }, uf: { type: "string", description: "Sigla do estado" }, cidade: { type: "string" },
         mes: { type: "string", description: "Mês da venda AAAA-MM" }, de: { type: "string", description: "Data inicial AAAA-MM-DD" }, ate: { type: "string", description: "Data final AAAA-MM-DD" },
         status: { type: "string", enum: ["aguardando", "producao", "concluido"] }, pedido: { type: "string" }, atrasados: { type: "boolean" },
+        em_producao: { type: "boolean", description: "Só itens que ainda estão na produção (não chegaram a 100%)" }, na_finalizacao: { type: "boolean", description: "Só itens que estão na finalização agora" },
         incluir_motores: { type: "boolean" }, somente_motores: { type: "boolean" },
         agrupar_por: { type: "string", enum: Object.keys(GROUP_KEYS), description: "Agrupa o resultado (conta itens e soma valores por grupo)" },
         limite_lista: { type: "number", description: "Quantos itens listar (padrão 15, máx. 80)" }
@@ -113,6 +116,31 @@ export const TOOLS = [
     input_schema: { type: "object", properties: { vendedor: { type: "string" }, uf: { type: "string" }, sem_comprar_ha_dias: { type: "number", description: "Só clientes que não compram há pelo menos N dias" }, limite: { type: "number" } } }
   },
   {
+    name: "listar_pedidos",
+    description: "Lista PEDIDOS com filtros e ordenação. Use para 'pedido mais atrasado', 'próximos prazos', 'pedidos em aberto do vendedor X', 'últimos pedidos'. Traz dias de atraso, % de produção e situação.",
+    input_schema: {
+      type: "object",
+      properties: {
+        vendedor: { type: "string" }, cliente: { type: "string" }, status: { type: "string", enum: ["aguardando", "producao", "concluido", "abertos"] },
+        atrasados: { type: "boolean" }, de: { type: "string", description: "Criados a partir de AAAA-MM-DD" }, ate: { type: "string" },
+        ordenar_por: { type: "string", enum: ["atraso", "prazo", "mais_recentes", "valor"], description: "atraso = mais atrasado primeiro" },
+        limite: { type: "number" }
+      }
+    }
+  },
+  {
+    name: "historico",
+    description: "Histórico de ações no app (quem criou/editou/excluiu pedidos, quem atribuiu etapas da produção, finalizações, edição de clientes), com data e hora. Use para 'qual o último pedido que eu editei', 'o que a Maria fez hoje', 'quem mexeu no pedido 1505'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        usuario: { type: "string", description: "Nome de quem fez a ação" }, pedido: { type: "string" },
+        tipo: { type: "string", enum: ["pedido_criado", "pedido_editado", "pedido_excluido", "etapa", "finalizacao", "cliente_editado"] },
+        de: { type: "string", description: "AAAA-MM-DD" }, ate: { type: "string" }, limite: { type: "number" }
+      }
+    }
+  },
+  {
     name: "salvar_no_cerebro",
     description: "Guarda uma informação/insight importante no Cérebro da empresa (memória permanente que aparece no mapa de conhecimento). Use quando descobrir algo útil para o gerente lembrar depois. Não guarde coisas triviais.",
     input_schema: {
@@ -131,6 +159,7 @@ export const TOOLS = [
 function groupRows(rows, key, valueField = "valor") {
   const g = {};
   rows.forEach(r => { const k = r[key] || "(vazio)"; g[k] = g[k] || { quantidade: 0, valor: 0 }; g[k].quantidade++; g[k].valor += Number(r[valueField]) || 0; });
+  // (valores escondidos para quem não pode ver ficam como 0 e são removidos depois)
   return Object.entries(g).sort((a, b) => b[1].quantidade - a[1].quantidade).map(([k, v]) => ({ grupo: k, ...v }));
 }
 
@@ -139,7 +168,7 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
   const today = todayStr();
   if (name === "buscar_itens") {
     const rows = applyFilters(itemRows(data), { ...a, _sellers: data.sellers });
-    const out = { total_itens: rows.length, valor_total: rows.reduce((s, r) => s + r.valor, 0), pedidos_distintos: new Set(rows.map(r => r.pedido)).size };
+    const out = { total_itens: rows.length, valor_total: rows.reduce((s, r) => s + (r.valor || 0), 0), pedidos_distintos: new Set(rows.map(r => r.pedido)).size };
     if (a.agrupar_por) out.grupos = groupRows(rows, GROUP_KEYS[a.agrupar_por] || a.agrupar_por);
     out.lista = rows.slice(0, Math.min(80, a.limite_lista || 15)).map(pick);
     if (rows.length > out.lista.length) out.obs = `Lista mostra ${out.lista.length} de ${rows.length}.`;
@@ -181,6 +210,35 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
       out.grupos = Object.entries(g).sort((x, y) => y[1].faturamento - x[1].faturamento).map(([k, v]) => ({ grupo: k, ...v }));
     }
     return out;
+  }
+  if (name === "listar_pedidos") {
+    const clientsL = data.clients || [];
+    let os = (data.orders || []).map(o => {
+      const toys = (o.items || []).filter(i => !i.isMotor);
+      const pcts = toys.map(it => { const p = (data.production || []).find(x => x.itemId === it.itemId) || {}; return STAGES.filter(([k]) => p[k]).length * 25; });
+      const fins = toys.map(it => finStage((data.finalization || []).find(x => x.itemId === it.itemId)));
+      const c = clientsL.find(x => norm(x.name) === norm(o.clientName)) || {};
+      const atraso = o.status !== "concluido" && o.deadline && o.deadline < today ? daysBetween(o.deadline, today) : 0;
+      return { numero: orderNumber(o.id), cliente: o.clientName, vendedor: o.seller || "", criado: o.createdAt, prazo: o.deadline, status: o.status, prioridade: !!o.priority, dias_atraso: atraso, brinquedos: toys.length, motores: (o.items || []).length - toys.length, producao_media_pct: pcts.length ? Math.round(pcts.reduce((x, y) => x + y, 0) / pcts.length) : 0, finalizados: fins.filter(f => f === "finalizado").length, cidade: c.city || "", uf: clientUF(c) || "", valor: o.totalPrice };
+    });
+    if (a.vendedor) os = os.filter(o => sameSeller(data.sellers, o.vendedor, a.vendedor));
+    if (a.cliente) os = os.filter(o => norm(o.cliente).includes(norm(a.cliente)));
+    if (a.status === "abertos") os = os.filter(o => o.status !== "concluido"); else if (a.status) os = os.filter(o => o.status === a.status);
+    if (a.atrasados) os = os.filter(o => o.dias_atraso > 0);
+    if (a.de) os = os.filter(o => (o.criado || "") >= a.de);
+    if (a.ate) os = os.filter(o => (o.criado || "") <= a.ate);
+    const ord = a.ordenar_por || "prazo";
+    os.sort((x, y) => ord === "atraso" ? y.dias_atraso - x.dias_atraso : ord === "mais_recentes" ? String(y.criado).localeCompare(String(x.criado)) : ord === "valor" ? (y.valor || 0) - (x.valor || 0) : String(x.prazo || "9").localeCompare(String(y.prazo || "9")));
+    return { total: os.length, pedidos: os.slice(0, Math.min(60, a.limite || 15)) };
+  }
+  if (name === "historico") {
+    let l = [...(data.log || [])].reverse();
+    if (a.usuario) l = l.filter(e => norm(e.usuario).includes(norm(a.usuario)) || norm(a.usuario).includes(norm(e.usuario).split(" ")[0] || "@@"));
+    if (a.pedido) l = l.filter(e => e.pedido && orderNumber(e.pedido) === orderNumber(a.pedido));
+    if (a.tipo) l = l.filter(e => e.tipo === a.tipo);
+    if (a.de) l = l.filter(e => (e.em || "").slice(0, 10) >= a.de);
+    if (a.ate) l = l.filter(e => (e.em || "").slice(0, 10) <= a.ate);
+    return { total: l.length, acoes: l.slice(0, Math.min(80, a.limite || 20)), obs: (data.log || []).length ? undefined : "O histórico começou a ser gravado em 26/10/2026; ações anteriores não aparecem." };
   }
   if (name === "detalhe_pedido") {
     const o = (data.orders || []).find(x => orderNumber(x.id) === orderNumber(a.numero));
@@ -249,6 +307,7 @@ export function brainContext(data) {
     vendedores: (data.sellers || []).map(s => s.name),
     equipe: (data.team || []).map(t => `${t.name} (${t.role}${t.status !== "ativo" ? ", inativo" : ""})`),
     fabrica: data.settings?.factory?.city || "não cadastrada",
+    ultimas_acoes: (data.log || []).slice(-5).map(e => `${(e.em || "").slice(0, 16).replace("T", " ")} ${e.usuario}: ${e.texto}`),
     memorias_do_cerebro: (data.brain?.notes || []).slice(-40).map(n => `[${(n.criado || "").slice(0, 10)}] ${n.titulo}: ${n.texto}`),
   };
 }

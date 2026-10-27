@@ -216,3 +216,82 @@ export function aiSnapshot(data, { sellerName } = {}) {
     clientes: (data.clients || []).filter(c => !sellerName || orders.some(o => o.clientName === c.name)).map(c => ({ nome: c.name, cidade: c.city, uf: c.state, telefone: c.phone, crm: c.crm || undefined }))
   };
 }
+
+// ── Períodos (filtro de datas usado no Dashboard e na Área do Vendedor) ──────
+export const PERIOD_PRESETS = [
+  ["max", "Máximo"], ["ytd", "No ano"], ["1y", "1 ano"], ["6m", "6 meses"], ["mes", "Este mês"],
+  ["15d", "15 dias"], ["7d", "7 dias"], ["3d", "3 dias"], ["ontem", "Ontem"], ["hoje", "Hoje"],
+];
+const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (s, n) => { const [y, m, d] = s.split("-").map(Number); return ymdOf(new Date(y, m - 1, d + n)); };
+// Devolve { from, to, label, prevFrom, prevTo, bucket } — bucket = "day" (até ~2 meses) ou "month"
+export function periodRange(key, custom = {}, earliest) {
+  const t = todayStr(), now = new Date();
+  let from = t, to = t;
+  if (key === "max") from = earliest || `${now.getFullYear() - 2}-01-01`;
+  else if (key === "ytd") from = `${now.getFullYear()}-01-01`;
+  else if (key === "1y") from = addDays(t, -364);
+  else if (key === "6m") from = ymdOf(new Date(now.getFullYear(), now.getMonth() - 6, now.getDate() + 1));
+  else if (key === "mes") from = `${t.slice(0, 7)}-01`;
+  else if (/^\d+d$/.test(key)) from = addDays(t, -(parseInt(key) - 1));
+  else if (key === "ontem") { from = addDays(t, -1); to = from; }
+  else if (key === "custom") { from = custom.from || earliest || t; to = custom.to || t; }
+  if (from > to) [from, to] = [to, from];
+  const days = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+  let prevTo = addDays(from, -1), prevFrom = addDays(from, -days);
+  // "Este mês" compara com os mesmos dias do mês passado; "No ano" com o mesmo trecho do ano passado
+  if (key === "mes") { const pm = new Date(now.getFullYear(), now.getMonth() - 1, 1); prevFrom = ymdOf(pm); prevTo = ymdOf(new Date(pm.getFullYear(), pm.getMonth(), Math.min(now.getDate(), new Date(pm.getFullYear(), pm.getMonth() + 1, 0).getDate()))); }
+  if (key === "ytd") { prevFrom = `${now.getFullYear() - 1}-01-01`; prevTo = `${now.getFullYear() - 1}${t.slice(4)}`; }
+  const label = key === "custom" ? `${dateBR(from)} → ${dateBR(to)}` : (PERIOD_PRESETS.find(p => p[0] === key)?.[1] || "");
+  return { key, from, to, days, label, prevFrom: key === "max" ? null : prevFrom, prevTo: key === "max" ? null : prevTo, bucket: days <= 62 ? "day" : "month" };
+}
+export const inRange = (dateStr, from, to) => { const d = (dateStr || "").slice(0, 10); return !!d && d >= from && d <= to; };
+// Lista de "baldes" (dias ou meses) do período, para gráficos
+export function periodBuckets(r) {
+  const out = [];
+  const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  if (r.bucket === "day") {
+    for (let d = r.from; d <= r.to; d = addDays(d, 1)) out.push({ key: d, label: `${d.slice(8, 10)}/${d.slice(5, 7)}`, from: d, to: d });
+  } else {
+    let [y, m] = r.from.split("-").map(Number);
+    const [ty, tm] = r.to.split("-").map(Number);
+    let guard = 0;
+    while ((y < ty || (y === ty && m <= tm)) && guard++ < 240) {
+      const k = `${y}-${String(m).padStart(2, "0")}`;
+      out.push({ key: k, label: `${MON[m - 1]}/${String(y).slice(2)}`, from: `${k}-01`, to: `${k}-31` });
+      m++; if (m > 12) { m = 1; y++; }
+    }
+  }
+  return out;
+}
+
+// ── Quem pode ver valores (R$) ───────────────────────────────────────────────
+// gerente/dono e quem tem acesso ao Dashboard: tudo · vendedor: só os pedidos dele · produção/finalização: nenhum valor
+export function moneyScope(user) {
+  if (!user) return "none";
+  if (user.role === "admin") return "all";
+  if (user.sellerName) return "own";
+  const p = user.permissions;
+  if (p && !Array.isArray(p) && p.dashboard) return "all";
+  if (Array.isArray(p) && p.includes("dashboard")) return "all";
+  return "none";
+}
+// Cópia dos dados sem os valores que a pessoa não pode ver
+export function scrubForUser(data, user) {
+  const scope = moneyScope(user);
+  if (scope === "all") return data;
+  const strip = (o) => ({ ...o, totalPrice: undefined, items: (o.items || []).map(it => ({ ...it, price: undefined })) });
+  return {
+    ...data,
+    orders: (data.orders || []).map(o => scope === "none" ? strip(o) : (sameSeller(data.sellers, o.seller, user.sellerName) ? o : strip(o))),
+    brain: { notes: [] },
+    users: [],
+  };
+}
+// Remove campos de dinheiro de um resultado (para a IA de quem não pode ver valores)
+const MONEY_KEY = /^(valor|valor_total|faturamento|ticket|ticket_medio|total|preco|price|totalPrice|revenue)$/i;
+export function redactMoney(x) {
+  if (Array.isArray(x)) return x.map(redactMoney);
+  if (x && typeof x === "object") { const o = {}; Object.entries(x).forEach(([k, v]) => { if (!MONEY_KEY.test(k)) o[k] = redactMoney(v); }); return o; }
+  return x;
+}

@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Brain, Send, Sparkles, RefreshCw, Trash2, X, Search, Wand2 } from "lucide-react";
 import BrainGraph, { BRAIN_TYPES } from "./BrainGraph";
-import { callClaude, norm } from "../lib/core";
-import { TOOLS, runTool, brainContext, itemRows } from "../lib/aiTools";
+import { itemRows } from "../lib/aiTools";
+import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
 
-const TOOL_LABEL = { buscar_itens: "Contando itens", producao_por_pessoa: "Produção por pessoa", resumo_pedidos: "Resumo de pedidos", detalhe_pedido: "Abrindo pedido", dados_mapa: "Dados do mapa", clientes: "Clientes", salvar_no_cerebro: "Guardando no cérebro" };
 
 function RichText({ text }) {
   const inline = (s, k) => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => p.startsWith("**") && p.endsWith("**") ? <b key={`${k}-${i}`} className="text-white">{p.slice(2, -2)}</b> : <React.Fragment key={`${k}-${i}`}>{p}</React.Fragment>);
@@ -18,30 +17,19 @@ function RichText({ text }) {
   })}</div>;
 }
 
-const SYSTEM = `Você é o CÉREBRO do Inflatudo, o sistema de gestão de uma fábrica de brinquedos infláveis. Você responde ao gerente sobre QUALQUER informação do app: pedidos, itens vendidos, vendedores, clientes, produção (corte, costura, preparação, montagem), finalização, equipe, faturamento, mapa/estados/cidades/distâncias.
 
-REGRAS:
-- Para qualquer número, USE AS FERRAMENTAS. Nunca estime nem conte de cabeça. Se precisar, chame várias ferramentas (ex.: um mês e depois o anterior para comparar).
-- "Brinquedos" = itens que não são motor. Um pedido pode ter vários itens.
-- Para "logo", "com logo", medidas como "10x5", cores etc., use buscar_itens com o campo texto.
-- Para rendimento de pessoas da equipe use producao_por_pessoa comparando meses. Se houver muitos itens "sem_data", avise que só passaram a ser registrados recentemente.
-- Quando descobrir algo realmente útil (tendência, alerta, recorde, comparação), guarde com salvar_no_cerebro (no máximo 2 por resposta), ligando aos nomes envolvidos. Você também pode criar informações novas derivadas (ex.: metas sugeridas, padrões).
-- Responda em português do Brasil, direto, com os números em **negrito**, listas curtas. Termine com 1 linha de leitura prática ("o que isso significa").`;
-
-export default function BrainAI({ data, persist, dark, canWrite = true }) {
-  const [msgs, setMsgs] = useState(() => { try { return JSON.parse(sessionStorage.getItem("brain-chat") || "[]"); } catch { return []; } });
+export default function BrainAI({ data, persist, dark, canWrite = true, user }) {
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(null);
   const [selected, setSelected] = useState(null);
   const [flash, setFlash] = useState([]);
   const [side, setSide] = useState("chat"); // "chat" | "memorias"
   const [confirmId, setConfirmId] = useState(null);
-  // Altura ajustável (arrastando a barra), guardada neste aparelho
-  const [h, setH] = useState(() => { try { return Number(localStorage.getItem("brain-h")) || 520; } catch { return 520; } });
+  // Altura ajustável (arrastando a barra), guardada neste aparelho — com limite máximo
+  const [h, setH] = useState(() => { try { return Math.min(760, Number(localStorage.getItem("brain-h")) || 520); } catch { return 520; } });
   const [vw, setVw] = useState(() => window.innerWidth);
   useEffect(() => { const f = () => setVw(window.innerWidth); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   useEffect(() => { try { localStorage.setItem("brain-h", String(Math.round(h))); } catch { } }, [h]);
-  const maxH = Math.max(360, (typeof window !== "undefined" ? window.innerHeight : 900) - 120);
+  const maxH = Math.max(380, Math.min(760, (typeof window !== "undefined" ? window.innerHeight : 900) * 0.78));
   const clampH = (v) => Math.max(300, Math.min(maxH, v));
   const startResize = (e) => {
     e.preventDefault();
@@ -57,18 +45,17 @@ export default function BrainAI({ data, persist, dark, canWrite = true }) {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
   const endRef = useRef(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); try { sessionStorage.setItem("brain-chat", JSON.stringify(msgs.slice(-30))); } catch { } }, [msgs, busy]);
+
+  const { msgs, setMsgs, ask: agentAsk, busy } = useBrainAgent({
+    data, user, persist, allowSave: canWrite, storageKey: "brain-chat",
+    onNoteSaved: (note) => { setFlash(f => [...f, `n:${note.id}`]); setTimeout(() => setFlash(f => f.filter(x => x !== `n:${note.id}`)), 6000); },
+  });
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy]);
+  const ask = (q, opts) => { const t = (q ?? input); setInput(""); return agentAsk(t, opts); };
 
   const notes = data.brain?.notes || [];
   const totalItems = itemRows(data).length;
 
-  const saveNote = (note) => {
-    if (!canWrite) return;
-    const cur = dataRef.current;
-    const nd = { ...cur, brain: { ...(cur.brain || {}), notes: [...(cur.brain?.notes || []), note] } };
-    dataRef.current = nd; persist(nd);
-    setFlash(f => [...f, `n:${note.id}`]); setTimeout(() => setFlash(f => f.filter(x => x !== `n:${note.id}`)), 6000);
-  };
   const forget = (id) => { const cur = dataRef.current; const nd = { ...cur, brain: { ...(cur.brain || {}), notes: (cur.brain?.notes || []).filter(n => n.id !== id) } }; dataRef.current = nd; persist(nd); setSelected(null); setConfirmId(null); };
   const ConfirmForget = ({ note }) => confirmId === note.id ? (
     <div className="mt-2 flex items-center gap-2 flex-wrap"><span className="text-xs font-bold text-red-400">Apagar esta memória?</span>
@@ -76,45 +63,8 @@ export default function BrainAI({ data, persist, dark, canWrite = true }) {
       <button onClick={() => setConfirmId(null)} className="px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400">Cancelar</button></div>
   ) : <button onClick={() => setConfirmId(note.id)} className="mt-2 text-xs font-bold text-red-400 flex items-center gap-1"><Trash2 size={12} />Apagar memória</button>;
 
-  const ask = async (question, { hidden = false } = {}) => {
-    const q = (question ?? input).trim(); if (!q || busy) return;
-    setInput("");
-    const history = msgs.filter(m => !m.error).slice(-8).map(m => ({ role: m.role, content: m.content }));
-    setMsgs(m => [...m, ...(hidden ? [] : [{ role: "user", content: q }])]);
-    const apiMsgs = [...history, { role: "user", content: q }];
-    const used = [];
-    let model = "claude-sonnet-4-6";
-    try {
-      for (let step = 0; step < 10; step++) {
-        setBusy(step ? `Pensando… (${used.length} consulta${used.length === 1 ? "" : "s"})` : "Pensando…");
-        const system = `${SYSTEM}\n\nCONTEXTO RÁPIDO (JSON):\n${JSON.stringify(brainContext(dataRef.current))}`;
-        let d;
-        try { d = await callClaude({ model, system, messages: apiMsgs, tools: TOOLS, max_tokens: 1400 }); }
-        catch (e) { if (model !== "claude-haiku-4-5" && /demorou|respondeu/.test(e.message)) { model = "claude-haiku-4-5"; d = await callClaude({ model, system, messages: apiMsgs, tools: TOOLS, max_tokens: 1200 }); } else throw e; }
-        apiMsgs.push({ role: "assistant", content: d.content });
-        const calls = (d.content || []).filter(c => c.type === "tool_use");
-        if (d.stop_reason !== "tool_use" || !calls.length) {
-          const text = (d.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim();
-          setMsgs(m => [...m, { role: "assistant", content: text || "Pronto.", tools: used }]);
-          break;
-        }
-        const results = [];
-        for (const c of calls) {
-          setBusy(`${TOOL_LABEL[c.name] || c.name}…`);
-          used.push({ name: c.name, input: c.input });
-          let r; try { r = await runTool(c.name, c.input, dataRef.current, { onSaveNote: saveNote }); } catch (e) { r = { erro: e.message }; }
-          let s = JSON.stringify(r); if (s.length > 60000) s = s.slice(0, 60000) + "…(cortado)";
-          results.push({ type: "tool_result", tool_use_id: c.id, content: s });
-        }
-        apiMsgs.push({ role: "user", content: results });
-      }
-    } catch (e) {
-      setMsgs(m => [...m, { role: "assistant", content: `⚠️ Não consegui responder agora: ${e.message}`, error: true }]);
-    }
-    setBusy(null);
-  };
-
-  const autoInsights = () => ask("Faça uma varredura completa dos dados usando as ferramentas (vendas por mês e vendedor, itens mais vendidos, produção por pessoa este mês x mês passado, clientes inativos, estados). Salve de 3 a 5 memórias novas e úteis no cérebro (insights, alertas, metas) que ainda não existam. Depois me dê um resumo curto do que guardou.");
+  // Insights pontuais: aparecem na conversa, mas NÃO são guardados no cérebro
+  const autoInsights = () => { setSide("chat"); ask("Faça uma análise rápida e completa usando as ferramentas: vendas do mês x mês passado por vendedor, itens mais vendidos, produção por pessoa, gargalos, pedidos atrasados, clientes que pararam de comprar e estados. Me entregue de 5 a 7 insights práticos e curtos, com números.", { noSave: true }); };
 
   const suggestions = ["Quantos fut 10x5 foram vendidos? Quantos por vendedor?", "Quantos brinquedos com logo tivemos este mês?", "Quantos brinquedos cada costureira fez este mês x mês passado? Está rendendo?", "Qual estado mais compra e qual cliente está mais longe da fábrica?", "Quais clientes não compram há mais de 90 dias?"];
 
@@ -130,12 +80,14 @@ export default function BrainAI({ data, persist, dark, canWrite = true }) {
             <p className="text-[11px] sm:text-xs text-slate-400 font-semibold">Pergunte qualquer coisa do app. Ele guarda o que aprende.</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-1.5 w-full md:w-auto">
+          <div className="flex items-center gap-1.5 chip-row md:flex-wrap">
           {[["memórias", notes.length, "#e879f9"], ["itens", totalItems, "#a855f7"], ["vendedores", (data.sellers || []).length, "#f97316"], ["equipe", (data.team || []).length, "#38bdf8"]].map(([l, v, c]) => (
             <div key={l} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${dark ? "bg-white/5 text-slate-300" : "bg-white text-slate-600 border border-slate-200"}`}><span className="font-black tabular-nums" style={{ color: c }}>{v}</span> {l}</div>
           ))}
-          {canWrite && <button onClick={autoInsights} disabled={!!busy} className="px-3 py-1.5 rounded-xl text-xs font-black text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Wand2 size={14} />Gerar insights</button>}
-          <div className={`flex rounded-lg overflow-hidden text-[11px] font-black ${dark ? "bg-white/5 text-slate-300" : "bg-white border border-slate-200 text-slate-600"}`}>
+          </div>
+          {canWrite && <button onClick={autoInsights} disabled={!!busy} className="w-full md:w-auto justify-center px-3 py-2 md:py-1.5 rounded-xl text-sm md:text-xs font-black text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Wand2 size={14} />Gerar insights</button>}
+          <div className={`hidden md:flex rounded-lg overflow-hidden text-[11px] font-black ${dark ? "bg-white/5 text-slate-300" : "bg-white border border-slate-200 text-slate-600"}`}>
             <button onClick={() => setH(clampH(h - 120))} title="Diminuir" className="px-2 py-1 hover:text-fuchsia-400">−</button>
             <button onClick={() => setH(clampH(h + 120))} title="Aumentar" className="px-2 py-1 hover:text-fuchsia-400">+</button>
             <button onClick={() => setH(h >= maxH - 10 ? 520 : maxH)} className="px-2 py-1 hover:text-fuchsia-400">{h >= maxH - 10 ? "Normal" : "Tela cheia"}</button>
@@ -179,7 +131,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true }) {
           </div>
           {side === "memorias" ? (
             <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-              {memList.length === 0 && <p className="text-sm text-slate-400 p-2">Nenhuma memória ainda. Faça perguntas ou clique em "Gerar insights".</p>}
+              {memList.length === 0 && <p className="text-sm text-slate-400 p-2">Nenhuma memória ainda. Elas são criadas conforme você conversa com o cérebro.</p>}
               {memList.map(n => (
                 <div key={n.id} className={`p-3 rounded-xl border ${dark ? "bg-white/5 border-white/10 text-slate-200" : "bg-fuchsia-50/50 border-fuchsia-100"}`}>
                   <div className="flex items-center justify-between gap-2"><span className="font-black text-sm">{n.titulo}</span><span className="text-[10px] font-black uppercase text-fuchsia-400 flex-shrink-0">{n.tipo}</span></div>
