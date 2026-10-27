@@ -726,17 +726,19 @@ button { cursor: pointer; }
   .chip-row > * { flex-shrink: 0; }
   /* Barra de navegação inferior */
   .mobile-nav { height: calc(var(--mnav-h) + var(--safe-b)); padding-bottom: var(--safe-b); }
-  .mobile-content-pad { padding-bottom: calc(var(--mnav-h) + var(--safe-b) + 84px) !important; }
+  .mobile-content-pad { padding-bottom: calc(var(--safe-b) + 92px) !important; }
 }
 @media (max-width: 767px) {
   .prod-shell { height: auto !important; }
   .prod-shell > .flex-1 { overflow: visible !important; }
-  .fab-pos { bottom: calc(var(--mnav-h) + var(--safe-b) + 12px) !important; right: 14px !important; width: 52px !important; height: 52px !important; }
-  .fab-toast { bottom: calc(var(--mnav-h) + var(--safe-b) + 76px) !important; right: 14px !important; }
+  .fab-pos { bottom: calc(var(--safe-b) + 16px) !important; right: 14px !important; width: 52px !important; height: 52px !important; }
+  .fab-toast { bottom: calc(var(--safe-b) + 80px) !important; right: 14px !important; }
 }
 @media (max-width: 767px) {
   /* Janela aberta (pedido, CRM, foto, menu Mais, cérebro): esconde a barra de abas e o botão para não ficar por cima */
-  body:has(.fixed.inset-0) [data-mobile-nav],
-  body:has(.fixed.inset-0) .fab-pos,
-  body:has(.fixed.inset-0) .fab-toast { display: none !important; }
+  body:has(.fixed.inset-0:not(.pointer-events-none)) .fab-pos,
+  body:has(.fixed.inset-0:not(.pointer-events-none)) .fab-toast { display: none !important; }
+  /* Nada de a tela deslizar para os lados */
+  html, body, #root { overflow-x: hidden; max-width: 100vw; }
+  [data-main-scroll] { overscroll-behavior-x: none; }
 }

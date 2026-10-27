@@ -1678,7 +1678,7 @@ function ClientsTab({ data, setData, dark, user }) {
                     <div className={`text-xs font-medium ${dark ? "text-gray-300" : "text-gray-600"}`}>
                       {c.city || "S/ Cidade"} {clientUF(c) ? (normalizeState((c.city || "").split(/[-\/,]/).pop()) === clientUF(c) && /[-\/,]/.test(c.city || "") ? "" : `- ${clientUF(c)}`) : <span className="text-amber-500 font-bold">· sem estado</span>}
                       {c.phone && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">📞 {c.phone}</span>}
-                      {whatsappLink(c.phone) && <a href={whatsappLink(c.phone, `Olá ${c.name}! 👋🎈`)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="ml-2 px-2 py-0.5 rounded-full bg-[#25D366] text-white text-[10px] font-black">💬 WhatsApp</a>}
+                      {whatsappLink(c.phone) && <a href={whatsappLink(c.phone, `Olá ${c.name}! 👋🎈`)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="ml-2 inline-flex items-center px-2.5 py-1 md:px-2 md:py-0.5 min-h-[32px] md:min-h-0 rounded-full bg-[#25D366] text-white text-xs md:text-[10px] font-black align-middle">💬 WhatsApp</a>}
                       {c.email && <span className="ml-2 border-l border-gray-300 pl-2 dark:border-gray-700">✉️ {c.email}</span>}
                     </div>
                     <div className="flex items-center gap-2 mt-1.5">
@@ -2110,66 +2110,50 @@ function useIsMobile() {
   useEffect(() => { const f = () => setM(q()); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   return m;
 }
-const NAV_ORDER = ["dashboard", "orders", "production", "finalization", "photos", "clients", "sales", "routes", "team"];
-const SELLER_NAV_ORDER = ["sales", "production", "finalization", "photos", "routes", "clients", "orders", "dashboard"];
 
-function MobileNav({ tabs, current, onGo, dark, user, isAdmin, onPlans, onLogout, setDark }) {
-  const [more, setMore] = useState(false);
-  const order = user?.sellerName ? SELLER_NAV_ORDER : NAV_ORDER;
-  const sorted = [...tabs].sort((a, b) => (order.indexOf(a) + 99 * (order.indexOf(a) < 0)) - (order.indexOf(b) + 99 * (order.indexOf(b) < 0)));
-  const main = sorted.length <= 5 ? sorted : sorted.slice(0, 4);
-  const rest = sorted.length <= 5 ? [] : sorted.slice(4);
-  const go = (k) => { setMore(false); onGo(k); };
-  const item = (active) => `relative flex flex-col items-center justify-center gap-1 h-full font-bold transition-colors ${active ? "text-orange-500" : dark ? "text-gray-400" : "text-gray-500"}`;
+// Celular: o menu lateral fica escondido. Abre pela seta no topo ou arrastando da borda esquerda.
+function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout }) {
+  const touch = useRef(null);
+  const go = (k) => { onGo(k); setOpen(false); };
   return (
-    <>
-      <nav data-mobile-nav className={`mobile-nav fixed bottom-0 inset-x-0 z-[120] grid border-t backdrop-blur-xl ${dark ? "bg-gray-950/95 border-gray-800" : "bg-white/95 border-gray-200"}`} style={{ gridTemplateColumns: `repeat(${main.length + (rest.length ? 1 : 0)}, minmax(0, 1fr))` }}>
-        {main.map(k => {
-          const { label, Icon } = TAB_META[k]; const active = current === k;
-          return (
-            <button key={k} data-nav={label} onClick={() => go(k)} className={item(active)}>
-              {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-orange-500" />}
-              <Icon size={22} strokeWidth={active ? 2.4 : 2} />
-              <span className="text-[11px] leading-none truncate max-w-full px-1">{label}</span>
-            </button>
-          );
-        })}
-        {rest.length > 0 && (
-          <button data-nav-more onClick={() => setMore(true)} className={item(rest.includes(current))}>
-            {rest.includes(current) && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-orange-500" />}
-            <Menu size={22} />
-            <span className="text-[11px] leading-none">Mais</span>
-          </button>
-        )}
-      </nav>
-      {more && (
-        <div className="fixed inset-0 z-[170] bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setMore(false)}>
-          <div className={`w-full rounded-t-3xl border-t p-4 animate-slide-up ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`} style={{ paddingBottom: "calc(16px + var(--safe-b))" }} onClick={e => e.stopPropagation()}>
-            <div className={`mx-auto w-10 h-1.5 rounded-full mb-4 ${dark ? "bg-gray-700" : "bg-gray-300"}`} />
-            <div className="grid grid-cols-3 gap-2.5">
-              {rest.map(k => {
-                const { label, Icon } = TAB_META[k]; const active = current === k;
-                return (
-                  <button key={k} data-nav={label} onClick={() => go(k)} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl border font-bold text-sm ${active ? "border-orange-500 bg-orange-500/10 text-orange-500" : dark ? "border-gray-800 bg-gray-950/50 text-gray-200" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
-                    <Icon size={24} />{label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="grid grid-cols-2 gap-2.5 mt-3">
-              <button onClick={() => setDark(!dark)} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border font-bold text-sm ${dark ? "border-gray-800 text-yellow-400" : "border-gray-200 text-blue-600"}`}>{dark ? <Sun size={18} /> : <Moon size={18} />}{dark ? "Tema claro" : "Tema escuro"}</button>
-              <button onClick={onLogout} className={`flex items-center justify-center gap-2 py-3 rounded-2xl border font-bold text-sm text-red-500 ${dark ? "border-gray-800" : "border-gray-200"}`}><LogOut size={18} />Sair</button>
-            </div>
-            {isAdmin && <button onClick={() => { setMore(false); onPlans(); }} className="w-full mt-2.5 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black uppercase tracking-wide text-white bg-gradient-to-r from-orange-500 to-orange-600"><CreditCard size={16} />Planos e Assinatura</button>}
+    <div className={`fixed inset-0 z-[170] ${open ? "" : "pointer-events-none"}`} aria-hidden={!open}>
+      <div onClick={() => setOpen(false)} className={`absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0"}`} />
+      <aside data-drawer
+        onTouchStart={e => { touch.current = e.touches[0].clientX; }}
+        onTouchEnd={e => { if (touch.current != null && touch.current - e.changedTouches[0].clientX > 60) setOpen(false); touch.current = null; }}
+        className={`absolute top-0 bottom-0 left-0 w-[80%] max-w-[300px] flex flex-col shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"} ${dark ? "bg-gray-900 border-r border-gray-800" : "bg-white border-r border-gray-200"}`}
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+          <img src={logoMark} alt="Inflatudo" className="w-10 h-10 flex-shrink-0" />
+          <div className="min-w-0 flex-1"><div className="text-xl font-black tracking-tight">Infla<span className="text-orange-500">tudo</span></div><div className="text-[11px] text-gray-500 font-semibold truncate">{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ""}</div></div>
+          <button onClick={() => setOpen(false)} title="Fechar menu" className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}><ChevronLeft size={18} /></button>
+        </div>
+        <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+          {Object.entries(TAB_META).filter(([k]) => tabs.includes(k)).map(([k, { label, Icon }]) => {
+            const active = current === k;
+            return (
+              <button key={k} data-nav={label} onClick={() => go(k)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-bold text-[15px] ${active ? (dark ? "bg-gray-800 text-orange-500" : "bg-orange-50 text-orange-600") : (dark ? "text-gray-300" : "text-gray-600")}`}>
+                <Icon size={20} className={active ? "text-orange-500" : ""} />{label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-3 border-t space-y-2" style={{ borderColor: dark ? "#1f2937" : "#f1f5f9" }}>
+          {isAdmin && <button onClick={() => { setOpen(false); onPlans(); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-gradient-to-r from-orange-500 to-orange-600"><CreditCard size={14} />Planos e Assinatura</button>}
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setDark(!dark)} className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-bold ${dark ? "border-gray-700 text-yellow-400" : "border-gray-200 text-blue-600"}`}>{dark ? <Sun size={17} /> : <Moon size={17} />}{dark ? "Claro" : "Escuro"}</button>
+            <button onClick={onLogout} className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-bold text-red-500 ${dark ? "border-gray-700" : "border-gray-200"}`}><LogOut size={17} />Sair</button>
           </div>
         </div>
-      )}
-    </>
+      </aside>
+    </div>
   );
 }
 
 function MainApp() {
   const isMobile = useIsMobile();
+  const [drawer, setDrawer] = useState(false);
+  const edgeRef = useRef(null);
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("ags_dark") !== "0"; } catch { return true; } });
   const [user, setUser] = useState(loadSession);
   const [data, setData] = useState(emptyData);
@@ -2340,16 +2324,15 @@ function MainApp() {
         )}
 
         {isMobile && (
-          <header className={`flex-shrink-0 flex items-center gap-3 px-4 h-14 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(56px + env(safe-area-inset-top, 0px))' }}>
-            <img src={logoMark} alt='Inflatudo' className='w-9 h-9 flex-shrink-0' />
-            <div className='min-w-0 flex-1'>
-              <div className='text-[17px] font-black leading-tight truncate'>Infla<span className='text-orange-500'>tudo</span><span className={`ml-1.5 text-sm font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
-              <div className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || 'Inflatudo'}{!isAdmin ? ` · ${user.name}` : ''}</div>
-            </div>
-            <button onClick={() => setDark(!dark)} title='Tema' className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? 'border-gray-800 text-yellow-400' : 'border-gray-200 text-blue-600'}`}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
+          <header className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(52px + env(safe-area-inset-top, 0px))' }}>
+            <button data-drawer-open onClick={() => setDrawer(true)} title='Abrir menu' className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? 'border-gray-700 text-gray-200 bg-gray-900' : 'border-gray-200 text-gray-700 bg-white'}`}><ChevronRight size={20} /></button>
+            <img src={logoMark} alt='Inflatudo' className='w-8 h-8 flex-shrink-0' />
+            <div className='min-w-0 flex-1 text-[16px] font-black leading-tight truncate'>Infla<span className='text-orange-500'>tudo</span><span className={`ml-1.5 text-sm font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
           </header>
         )}
-        <div className={`flex-1 overflow-y-auto p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}>
+        <div data-main-scroll className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}
+          onTouchStart={isMobile ? (e) => { const x = e.touches[0].clientX; edgeRef.current = x < 24 ? { x, y: e.touches[0].clientY } : null; } : undefined}
+          onTouchEnd={isMobile ? (e) => { const st = edgeRef.current; if (!st) return; const t = e.changedTouches[0]; if (t.clientX - st.x > 60 && Math.abs(t.clientY - st.y) < 60) setDrawer(true); edgeRef.current = null; } : undefined}>
           {ActiveTab ? <TabBoundary key={currentTab}><ActiveTab data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
@@ -2389,7 +2372,7 @@ function MainApp() {
           </div>
         )}
       </main>
-      {isMobile && <MobileNav tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}
+      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}
       <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />
     </div>
   );
