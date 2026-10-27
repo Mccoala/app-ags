@@ -1,6 +1,7 @@
 // Inflatudo — Gestão para fabricantes de infláveis - Last Update: 2026-10-26
 import React, { useState, useRef, useEffect, useCallback, Component } from "react";
-import { supabase } from "./lib/supabase";
+import { api, SESSION_KEY, setOnAuthLost, aiHeaders } from "./lib/api";
+import { planState, PLANS, PLAN_ORDER, EXTRAS, OWNER_WHATSAPP, fmtLimit, normPlan } from "./lib/plans";
 import { STATE_COORDS, UF_MAP, UF_NAMES, normalizeState, clientUF } from "./lib/geo";
 import MapTab from "./tabs/MapTab";
 import DashboardTab from "./tabs/DashboardTab";
@@ -10,7 +11,10 @@ import PhotosTab from "./tabs/PhotosTab";
 import PhotoCapture from "./components/PhotoCapture";
 import { photoRecords } from "./lib/photos";
 import { isChunkError, reloadForNewVersion } from "./lib/safeImport";
-import { Camera as CameraIcon } from "lucide-react";
+import { Camera as CameraIcon, PackageCheck, Crown } from "lucide-react";
+import { PlansModal, LimitModal, LockedFeature, PlanBanner, SuspendedScreen } from "./components/PlanUI";
+import ReadyTab from "./tabs/ReadyTab";
+import CreatorTab from "./tabs/CreatorTab";
 import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
 
 class ErrorBoundary extends Component {
@@ -91,7 +95,9 @@ const TAB_META = {
   routes: { label: "Mapa", Icon: Flag },
   clients: { label: "Clientes", Icon: Users },
   sales: { label: "Vendedores", Icon: TrendingUp },
-  team: { label: "Equipe", Icon: Settings }
+  ready: { label: "Pronta Entrega", Icon: PackageCheck },
+  team: { label: "Equipe", Icon: Settings },
+  creator: { label: "Criador", Icon: Crown }
 };
 
 // ─── PERMISSIONS ─────────────────────────────────────────────────────────────
@@ -110,7 +116,7 @@ function permLevel(user, tab) {
   if (!user) return null;
   if (user.role === "admin") return "edit";
   // Vendedor: vê a produção, a finalização e as fotos (só os pedidos dele na produção) — sem editar
-  if (user.sellerName && ["production", "finalization", "photos"].includes(tab)) return "view";
+  if (user.sellerName && ["production", "finalization", "photos", "ready"].includes(tab)) return "view";
   const p = user.permissions;
   // Fotos: quem mexe na finalização também enxerga as fotos (no mesmo nível), salvo regra própria
   if (tab === "photos" && !(p && !Array.isArray(p) && p.photos)) {
@@ -123,7 +129,7 @@ function permLevel(user, tab) {
 const canEdit = (user, tab) => permLevel(user, tab) === "edit";
 const canEditProd = (user) => canEdit(user, "production");
 const canEditFin = (user) => canEdit(user, "finalization");
-const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "photos", "routes", "clients", "sales"];
+const EMPLOYEE_TABS = ["dashboard", "orders", "production", "finalization", "photos", "ready", "routes", "clients", "sales"];
 
 // Conta nova sempre começa zerada. É uma função (e não um objeto fixo) para que
 // nenhuma lista seja compartilhada entre contas diferentes no mesmo navegador.
@@ -131,9 +137,22 @@ const emptyData = () => ({ users: [], clients: [], team: [], sellers: [], orders
 const INITIAL_DATA = emptyData();
 
 let CURRENT_COMPANY_ID = null;
+// Gravação pelo servidor seguro, uma de cada vez (a mais recente sempre vence)
+let SAVE_BUSY = false, SAVE_NEXT = null;
 async function saveToSupabase(d) {
   if (!CURRENT_COMPANY_ID) return;
-  try { await supabase.from('companies').update({ app_data: d }).eq('id', CURRENT_COMPANY_ID); } catch (err) { console.error("Supabase save error", err); }
+  if (SAVE_BUSY) { SAVE_NEXT = d; return; }
+  SAVE_BUSY = true;
+  try {
+    const r = await api("save", { app_data: d });
+    if (r?.plan) window.dispatchEvent(new CustomEvent("inflatudo-plan", { detail: r.plan }));
+  } catch (err) {
+    console.error("save error", err);
+    window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { message: err.message, code: err.code, status: err.status } }));
+  } finally {
+    SAVE_BUSY = false;
+    if (SAVE_NEXT) { const n = SAVE_NEXT; SAVE_NEXT = null; saveToSupabase(n); }
+  }
 }
 // ── Histórico de ações: compara o que mudou desde o último salvamento e anota quem fez ──
 let CURRENT_USER = null;
@@ -178,6 +197,7 @@ function appendLog(d, system) {
 }
 
 function saveData(d, opts = {}) {
+  if (PLAN?.locked) { if (!opts.system) window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { code: "locked", status: 402, message: "Plano vencido" } })); return; }
   if (CURRENT_COMPANY_ID) { try { appendLog(d, opts.system); } catch (e) { console.warn("log", e); } }
   if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
   try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
@@ -270,28 +290,12 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     try {
       if (mode === "admin_register") {
         if (!companyName || !email || !pw) throw new Error("Preencha todos os campos.");
-        // Set trial to 7 days
-        const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate() + 7);
-        // Default init data without users (team will handle employee accounts)
-        const defData = emptyData(); // empresa nova: nenhum dado de outra conta
-        
-        const { data: res, error } = await supabase.from('companies').insert([{
-           company_name: companyName,
-           admin_email: email.toLowerCase(),
-           admin_password: pw,
-           trial_ends_at: trialEnd.toISOString(),
-           status: 'trial',
-           plan_id: 'free',
-           app_data: defData
-        }]).select().single();
-        if (error) throw new Error(error.message.includes("unique") ? "E-mail já está em uso." : error.message);
-        onLogin({ id: res.id, name: res.company_name, email: res.admin_email, role: "admin", company_id: res.id, plan: res.plan_id, status: res.status, trial_ends_at: res.trial_ends_at });
+        const r = await api("register", { companyName, email, password: pw });
+        onLogin({ ...r.user, token: r.token });
       } else {
         if (!email || !pw) throw new Error("Preencha todos os campos.");
-        const { data: res, error } = await supabase.from('companies')
-           .select('*').eq('admin_email', email.toLowerCase()).eq('admin_password', pw).single();
-        if (error || !res) throw new Error("E-mail ou senha incorretos.");
-        onLogin({ id: res.id, name: res.company_name, email: res.admin_email, role: "admin", company_id: res.id, plan: res.plan_id, status: res.status, trial_ends_at: res.trial_ends_at });
+        const r = await api("adminLogin", { email, password: pw });
+        onLogin({ ...r.user, token: r.token });
       }
     } catch (e) { setErr(e.message); }
     setLoading(false);
@@ -302,16 +306,8 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     try {
       if (!qsCompanyId) throw new Error("Link de empresa inválido. Peça o link correto ao seu administrador.");
       if (!email || !pw) throw new Error("Preencha usuário e senha.");
-      const { data: cData, error } = await supabase.from('companies').select('id, company_name, app_data').eq('id', qsCompanyId).single();
-      if (error || !cData) throw new Error("Empresa não encontrada.");
-      
-      // Look for employee in app_data.users
-      const users = cData.app_data?.users || [];
-      const login = email.trim().toLowerCase();
-      const emp = users.find(u => (u.email || "").trim().toLowerCase() === login && u.password === pw);
-      if (!emp) throw new Error("Usuário ou senha incorretos.");
-      
-      onLogin({ id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], sellerName: emp.sellerName || "", company_id: cData.id, company_name: cData.company_name });
+      const r = await api("employeeLogin", { companyId: qsCompanyId, login: email, password: pw });
+      onLogin({ ...r.user, token: r.token });
     } catch (e) { setErr(e.message); }
     setLoading(false);
   };
@@ -442,16 +438,19 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
     let nd = { ...data }; if (form.seller?.trim()) nd = addSeller(nd, form.seller).data; const oi = nd.orders.findIndex(o => o.id === order.id); if (oi < 0) return; const
       si = form.items.map((it, i) => ({
         ...it, itemId: it.itemId || `${order.id}-${i + 1}`, colors: typeof
-          it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price), isMotor: !!it.isMotor
+          it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price), isMotor: !!it.isMotor, readyStock: !it.isMotor && !!it.readyStock
       }));
     nd.orders[oi] = { ...nd.orders[oi], ...form, items: si, totalPrice: si.reduce((a, b) => a + b.price, 0) };
-    const sIds = si.map(it => it.itemId);
+    const sIds = si.filter(needsProduction).map(it => it.itemId);
     const ex = nd.production.filter(p => p.orderId === order.id).map(p => p.itemId);
-    si.filter(it => !it.isMotor).forEach(it => {
+    markStockSold(nd, si, nd.orders[oi], CURRENT_USER?.name);
+    si.filter(needsProduction).forEach(it => {
       if (!ex.includes(it.itemId))
         nd.production.push({ itemId: it.itemId, orderId: order.id, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false });
     });
     nd.production = nd.production.filter(p => p.orderId !== order.id || sIds.includes(p.itemId));
+    nd.finalization = (nd.finalization || []).filter(f => f.orderId !== order.id || sIds.includes(f.itemId));
+    syncOrderStatus(nd, order.id);
     setData(nd); saveData(nd); onClose();
   };
   return (
@@ -511,6 +510,7 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
                         onChange={e => upd(idx, "isMotor", e.target.checked)} /><span
                           className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>É
                           motor</span></label>
+                      <ReadyToggle item={item} data={data} dark={dark} onChange={(f, v) => upd(idx, f, v)} />
                     </div>
                     {form.items.length > 1 && <button onClick={() => remIt(idx)} className="text-red-400">
                       <X size={14} />
@@ -706,18 +706,16 @@ function OrdersTab({ data, setData, dark, user }) {
  "voltage": "110V ou 220V",
  "deadline": "YYYY-MM-DD — prazo de FABRICAÇÃO/CONFECÇÃO (aparece como 'PRAZO' nas observações). NÃO é a data de emissão. Se houver dois prazos, use o ÚLTIMO.",
  "seller": "nome do REPRESENTANTE/vendedor exatamente como aparece (campos REPRESENTANTE, Vendedor, Rep., Atendente, Vendido por, Agente). Vendedores já cadastrados: ${sellerNames(data).join(", ") || "nenhum"} — se for um deles, use a grafia cadastrada; se for outro, devolva o nome como está no documento.",
- "items": [{"toy": "nome completo do item como no pedido (inclua medidas)", "quantity": 1, "colors": ["cor1"], "price": 0, "observations": "detalhes de cores por parte, logo, faixas, medidas, etc.", "isMotor": false}]
+ "items": [{"toy": "nome completo do item como no pedido (inclua medidas)", "quantity": 1, "colors": ["cor1"], "price": 0, "observations": "detalhes de cores por parte, logo, faixas, medidas, etc.", "isMotor": false, "readyStock": false}]
 }
-Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quantity" é a QUANTIDADE daquele item no pedido (se o pedido tem 2 motores, quantity=2). "price" é o valor UNITÁRIO. Coloque todas as observações de fabricação no item do brinquedo correspondente. Não invente dados.`;
+Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "readyStock"=true SOMENTE para o item que o pedido diz ser "pronta entrega" / "a pronta entrega" / "do estoque" / "já pronto" (esse item não vai para a fabricação); os demais itens ficam false. "quantity" é a QUANTIDADE daquele item no pedido (se o pedido tem 2 motores, quantity=2). "price" é o valor UNITÁRIO. Coloque todas as observações de fabricação no item do brinquedo correspondente. Não invente dados.`;
     try {
       const content = pdfData
         ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: "Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores) e ao número do pedido exatamente como está escrito." }]
         : `Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores):\n\n${text}`;
       const res = await fetch("/.netlify/functions/anthropic", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: aiHeaders("extract"),
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 2000,
@@ -763,11 +761,12 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
     if (extHeader.seller?.trim()) nd = addSeller(nd, extHeader.seller).data;
     const items = extItems.map((it, i) => ({
       itemId: `${newId}-${i + 1}`, toy: it.toy, colors: typeof
-        it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price) || 0, observations: it.observations || "", images: it.images || [], isMotor: !!it.isMotor
+        it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price) || 0, observations: it.observations || "", images: it.images || [], isMotor: !!it.isMotor, readyStock: !it.isMotor && !!it.readyStock && hasFeature("ready"), readyId: it.readyId || undefined
     }));
     const total = items.reduce((a, b) => a + b.price, 0);
     nd.orders.push({ id: newId, clientName: extHeader.clientName, voltage: extHeader.voltage, deadline: extHeader.deadline, seller: extHeader.seller, totalPrice: total, status: "aguardando", createdAt: TODAY_STR, priority: false, items });
-    items.filter(it => !it.isMotor).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
+    items.filter(needsProduction).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
+    markStockSold(nd, items, nd.orders[nd.orders.length - 1], CURRENT_USER?.name); syncOrderStatus(nd, newId);
     nd.clients = [...nd.clients];
     const ci = nd.clients.findIndex(c => norm(c.name) === norm(extHeader.clientName));
     if (ci >= 0) { nd.clients[ci] = { ...nd.clients[ci] };
@@ -789,10 +788,11 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
     let nd = { ...data }; const newId = nextOrderId(nd.orders);
     if (manualHeader.seller?.trim()) nd = addSeller(nd, manualHeader.seller).data;
     const
-      items = manualItems.map((it, i) => ({ itemId: `${newId}-${i + 1}`, toy: it.toy, colors: it.colors.split(",").map(c => c.trim()).filter(Boolean), price: Number(it.price) || 0, observations: it.observations, images: it.images || [], isMotor: !!it.isMotor }));
+      items = manualItems.map((it, i) => ({ itemId: `${newId}-${i + 1}`, toy: it.toy, colors: it.colors.split(",").map(c => c.trim()).filter(Boolean), price: Number(it.price) || 0, observations: it.observations, images: it.images || [], isMotor: !!it.isMotor, readyStock: !it.isMotor && !!it.readyStock && hasFeature("ready"), readyId: it.readyId || undefined }));
     const total = items.reduce((a, b) => a + b.price, 0);
     nd.orders.push({ id: newId, ...manualHeader, totalPrice: total, status: "aguardando", createdAt: TODAY_STR, priority: false, items });
-    items.filter(it => !it.isMotor).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
+    items.filter(needsProduction).forEach(it => nd.production.push({ itemId: it.itemId, orderId: newId, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false }));
+    markStockSold(nd, items, nd.orders[nd.orders.length - 1], CURRENT_USER?.name); syncOrderStatus(nd, newId);
     const ci = nd.clients.findIndex(c => c.name.toLowerCase() === manualHeader.clientName?.toLowerCase());
     if (ci >= 0) { nd.clients[ci].totalOrders = (nd.clients[ci].totalOrders || 0) + 1; nd.clients[ci].totalSpent = (nd.clients[ci].totalSpent || 0) + total; }
     else
@@ -960,6 +960,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
                       onChange={e => updMan(idx, "isMotor", e.target.checked)} /><span
                         className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>É
                         motor</span></label>
+                    <ReadyToggle item={item} data={data} dark={dark} onChange={(f, v) => updMan(idx, f, v)} />
                   </div>
                   {manualItems.length > 1 && <button
                     onClick={() => setManualItems(manualItems.filter((_, i) => i !== idx))}
@@ -1054,7 +1055,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${it.isMotor ? "bg-blue-500/20 text-blue-400" : dark ? "bg-orange-500/20 text-orange-400" : "bg-orange-100 text-orange-600"}`}>{it.isMotor ? "Motor" : "Brinquedo"} {idx + 1}</span>
-                        <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={!!it.isMotor} onChange={e => updExt(idx, "isMotor", e.target.checked)} /><span className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>É motor</span></label>
+                        <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={!!it.isMotor} onChange={e => updExt(idx, "isMotor", e.target.checked)} /><span className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>É motor</span></label><ReadyToggle item={it} data={data} dark={dark} onChange={(f, v) => updExt(idx, f, v)} />
                       </div>
                       {extItems.length > 1 && <button onClick={() => setExtItems(extItems.filter((_, i) => i !== idx))} className="text-red-400"><X size={13} /></button>}
                     </div>
@@ -1133,7 +1134,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "quant
                         )}
                         <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-black ${item.isMotor ? "bg-blue-500/20 text-blue-400" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{item.isMotor ? "M" : idx + 1}</div>
                         <div>
-                          <div className="flex items-center gap-1.5"><span className={`text-sm font-semibold ${dark ? "text-gray-200" : "text-gray-800"}`}>{item.toy}</span>{item.isMotor && <span className="text-xs px-1.5 py-0.5 rounded font-bold bg-blue-500/20 text-blue-400">{o.voltage}</span>}</div>
+                          <div className="flex items-center gap-1.5"><span className={`text-sm font-semibold ${dark ? "text-gray-200" : "text-gray-800"}`}>{item.toy}</span>{item.readyStock && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-500">Pronta entrega</span>}{item.isMotor && <span className="text-xs px-1.5 py-0.5 rounded font-bold bg-blue-500/20 text-blue-400">{o.voltage}</span>}</div>
                           {item.observations && <div className={`text-xs mt-0.5 ${dark ? "text-gray-500" : "text-gray-400"}`}>💬 {item.observations}</div>}
                         </div>
                       </div>
@@ -1178,14 +1179,41 @@ const prodPct = (p) => STAGES.filter(st => p && p[st.key]).length * 25;
 const finStage = (f) => f?.stage || (f?.done ? "finalizado" : "");
 const finPct = (f) => ({ finalizando: 50, finalizado: 100 }[finStage(f)] || 0);
 
+// "Pronta entrega" num item do pedido: não vai para a produção e pode baixar o brinquedo do quadro
+function ReadyToggle({ item, onChange, data, dark }) {
+  if (!hasFeature("ready") || item.isMotor) return null;
+  const avail = (data?.readyStock || []).filter(r => r.status !== "vendido" || String(r.id) === String(item.readyId));
+  return (
+    <span className="flex items-center gap-2 flex-wrap">
+      <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={!!item.readyStock} onChange={e => onChange("readyStock", e.target.checked)} /><span className={`text-xs font-bold ${item.readyStock ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>Pronta entrega</span></label>
+      {item.readyStock && avail.length > 0 && (
+        <select value={item.readyId || ""} onChange={e => onChange("readyId", e.target.value)} className={`text-xs rounded-lg px-2 py-1 border outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-300"}`}>
+          <option value="">Qual do quadro? (opcional)</option>
+          {avail.map(r => <option key={r.id} value={r.id}>{r.name}{r.price ? ` · ${Number(r.price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""}</option>)}
+        </select>
+      )}
+    </span>
+  );
+}
+
+// Item que passa pela produção (motor e pronta entrega não passam)
+const needsProduction = (it) => !it.isMotor && !it.readyStock;
+// Brinquedo do quadro de pronta entrega vendido num pedido
+function markStockSold(nd, items, order, by) {
+  const ids = items.filter(it => it.readyStock && it.readyId).map(it => String(it.readyId));
+  if (!ids.length || !nd.readyStock) return;
+  nd.readyStock = nd.readyStock.map(r => ids.includes(String(r.id)) && r.status !== "vendido" ? { ...r, status: "vendido", soldAt: new Date().toISOString(), soldBy: by || "", orderId: order.id, soldTo: order.clientName || "", seller: order.seller || "" } : r);
+}
+
 // Recalcula status do pedido a partir da produção e finalização
 function syncOrderStatus(nd, orderId) {
   const oi = nd.orders.findIndex(o => o.id === orderId);
   if (oi < 0) return;
-  const toys = (nd.orders[oi].items || []).filter(it => !it.isMotor);
+  const toys = (nd.orders[oi].items || []).filter(needsProduction);
   const prods = nd.production.filter(p => p.orderId === orderId);
   const fins = nd.finalization.filter(f => f.orderId === orderId);
-  const allFinal = toys.length > 0 && toys.every(it => finStage(fins.find(f => f.itemId === it.itemId)) === "finalizado");
+  const onlyReady = toys.length === 0 && (nd.orders[oi].items || []).some(it => it.readyStock);
+  const allFinal = onlyReady || (toys.length > 0 && toys.every(it => finStage(fins.find(f => f.itemId === it.itemId)) === "finalizado"));
   const started = prods.some(p => prodPct(p) > 0) || fins.length > 0;
   const status = allFinal ? "concluido" : started ? "producao" : "aguardando";
   nd.orders = nd.orders.map((o, i) => i === oi ? { ...o, status } : o);
@@ -1406,7 +1434,7 @@ function ProductionTab({ data, setData, dark, user }) {
 
   const allRows = [];
   data.orders.forEach(order => {
-    const orderItems = (order.items || []).filter(it => !it.isMotor);
+    const orderItems = (order.items || []).filter(needsProduction);
     orderItems.forEach(item => {
       const prod = data.production.find(p => p.itemId === item.itemId) || {};
       allRows.push({ ...order, ...item, ...prod, done: prodPct(prod) === 100, _orderId: order.id, _itemId: item.itemId, _isMulti: orderItems.length > 1, priority: order.priority || false });
@@ -1535,7 +1563,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
     const item = order?.items?.find(it => it.itemId === fin.itemId);
     const prod = data.production.find(p => p.itemId === fin.itemId);
     if (order && item && (prodPct(prod) === 100 || prod?.done)) {
-      const toys = (order.items || []).filter(it => !it.isMotor);
+      const toys = (order.items || []).filter(needsProduction);
       finRows.push({ ...order, ...item, ...fin, stage: finStage(fin), done: finStage(fin) === "finalizado", _orderId: order.id, _itemId: fin.itemId, _isMulti: toys.length > 1, priority: order.priority || false });
     }
   });
@@ -1573,7 +1601,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
     if (!finalizersOf(row).length) return; // só depois de escolher quem está finalizando
     const next = row.stage === stage ? "" : stage;
     // 100% só com foto do brinquedo pronto → abre a câmera
-    if (next === "finalizado") { setCapture({ row, mode: "finalizar" }); return; }
+    if (next === "finalizado" && hasFeature("photos")) { setCapture({ row, mode: "finalizar" }); return; }
     update(row._itemId, { stage: next, done: next === "finalizado", finDate: next === "finalizado" ? TODAY_STR : null, finalizingAt: next === "finalizando" ? TODAY_STR : (row.finalizingAt || null) });
   };
 
@@ -1603,7 +1631,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
       <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
         <div className="mb-3">
           <h2 className={`text-xl font-black leading-tight ${dark ? "text-white" : "text-gray-900"}`}>Finalização</h2>
-          <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Itens que saíram da produção. Pendente 0% · Finalizando 50% · Finalizado 100% (com foto 📷 — o vendedor é avisado na hora)</p>
+          <p className={`text-xs ${dark ? "text-gray-500" : "text-gray-400"}`}>Itens que saíram da produção. Pendente 0% · Finalizando 50% · Finalizado 100%{hasFeature("photos") ? " (com foto 📷 — o vendedor é avisado na hora)" : " · Foto + aviso ao vendedor: disponível no PRO"}</p>
         </div>
         <StatChips dark={dark} items={[{ label: "Pendentes", value: pending.length, color: "#f97316" }, { label: "Finalizando", value: doing.length, color: "#eab308" }, { label: "Atrasados", value: delayed.length, color: "#ef4444" }, { label: "Finalizados", value: doneF.length, color: "#22c55e" }]} />
         <SearchBox value={search} onChange={setSearch} dark={dark} />
@@ -1846,7 +1874,7 @@ function ClientsTab({ data, setData, dark, user }) {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-sm font-black ${dark ? "text-white" : "text-gray-900"}`}>{it.toy}</span>
-                        {it.isMotor && <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/20 text-blue-400">Motor</span>}
+                        {it.isMotor && <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-500/20 text-blue-400">Motor</span>}{it.readyStock && <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-500">Pronta entrega</span>}
                       </div>
                       {!it.isMotor && <div className="flex gap-1">{(it.colors || []).map(cc => <span key={cc} title={cc} className="w-3.5 h-3.5 rounded-full border shadow-sm" style={{ background: COLOR_MAP[cc] || "#888", borderColor: dark ? "#374151" : "#e5e7eb" }} />)}</div>}
                     </div>
@@ -1889,8 +1917,8 @@ function toPermObj(p) {
   if (Array.isArray(p)) return Object.fromEntries(p.filter(k => EMPLOYEE_TABS.includes(k)).map(k => [k, "edit"]));
   return { ...(p || {}) };
 }
-const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', photos: 'Fotos', routes: 'Mapa', clients: 'Clientes', sales: 'Área dos Vendedores' };
-const PERM_TAB_HINT = { dashboard: 'números da empresa e IA do gerente', orders: 'criar, editar e excluir pedidos', production: 'escolher responsáveis das etapas', finalization: 'finalizando / finalizado', routes: 'mapa, filtros, rotas e fábrica', clients: 'dados e estado dos clientes', sales: 'clientes, vendas, CRM e IA de vendas' , photos: 'ver e baixar as fotos dos brinquedos finalizados (editar = apagar fotos)'};
+const PERM_TAB_LABELS = { dashboard: 'Dashboard', orders: 'Pedidos', production: 'Produção', finalization: 'Finalização', photos: 'Fotos', routes: 'Mapa', clients: 'Clientes', sales: 'Área dos Vendedores' , ready: 'Pronta entrega'};
+const PERM_TAB_HINT = { dashboard: 'números da empresa e IA do gerente', orders: 'criar, editar e excluir pedidos', production: 'escolher responsáveis das etapas', finalization: 'finalizando / finalizado', routes: 'mapa, filtros, rotas e fábrica', clients: 'dados e estado dos clientes', sales: 'clientes, vendas, CRM e IA de vendas' , photos: 'ver e baixar as fotos dos brinquedos finalizados (editar = apagar fotos)', ready: 'quadro de brinquedos prontos (vender = quem lança pedidos)'};
 function PermissionGrid({ value, onChange, dark }) {
   const perms = toPermObj(value);
   const opts = [["", "Sem acesso", "#64748b"], ["view", "Só visualizar", "#0ea5e9"], ["edit", "Visualizar e editar", "#10b981"]];
@@ -2155,15 +2183,21 @@ function TeamTab({ data, setData, dark, user }) {
 }
 // MAPA: ver src/tabs/MapTab.jsx
 
-const SESSION_KEY = "ags_session";
 function loadSession() {
-  try { const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); return s && s.company_id ? s : null; } catch { return null; }
+  // sessões antigas (sem token do servidor seguro) pedem login de novo
+  try { const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); return s && s.company_id && s.token ? s : null; } catch { return null; }
 }
+// ── Plano da empresa (vem do servidor) ──
+let PLAN = null;
+const FEATURE_OF_TAB = { dashboard: "dashboard", clients: "clients", sales: "sellers", photos: "photos", routes: "map", ready: "ready" };
+const hasFeature = (f) => !PLAN || !!PLAN.features?.[f];
+const tabFeatureOk = (tab) => !FEATURE_OF_TAB[tab] || hasFeature(FEATURE_OF_TAB[tab]);
+const PLAN_FOR_FEATURE = { photos: "PRO", clients: "PRO", sellers: "PRO", crm: "Ultra", dashboard: "Ultra", brain: "Ultra", map: "Ultra", ready: "Ultra" };
 // Abas que o usuário pode ver: dono vê tudo; funcionário vê só o que foi liberado em Equipe > Logins
 const allowedTabs = (user) => {
   if (!user) return [];
-  if (user.role === "admin") return Object.keys(TAB_META);
-  return Object.keys(TAB_META).filter(k => k !== "team" && permLevel(user, k));
+  if (user.role === "admin") return Object.keys(TAB_META).filter(k => k !== "creator" || PLAN?.creator); // dono vê tudo (o que o plano não inclui aparece com cadeado)
+  return Object.keys(TAB_META).filter(k => k !== "team" && k !== "creator" && permLevel(user, k) && tabFeatureOk(k));
 };
 
 // Primeira tela ao entrar: vendedor cai na área dele; gerente no Dashboard
@@ -2236,16 +2270,32 @@ function MainApp() {
   };
   const logout = () => {
     try { localStorage.removeItem(SESSION_KEY); } catch { }
-    CURRENT_COMPANY_ID = null; setData(emptyData()); setUser(null);
+    CURRENT_COMPANY_ID = null; PLAN = null; setPlan(null); setSuspended(""); setData(emptyData()); setUser(null);
   };
   useEffect(() => { try { localStorage.setItem("ags_dark", dark ? "1" : "0"); } catch { } }, [dark]);
   const persist = (nd) => { setData(nd); saveData(nd); };
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 900);
   const [loadingServer, setLoadingServer] = useState(true);
+  const [plan, setPlan] = useState(null);
+  const [suspended, setSuspended] = useState("");
+  const [limitHit, setLimitHit] = useState(null); // { code, message }
+  useEffect(() => { PLAN = plan; }, [plan]);
+  useEffect(() => {
+    const onPlan = (e) => { PLAN = e.detail; setPlan(e.detail); };
+    const onErr = async (e) => {
+      const d = e.detail || {};
+      if (d.code === "locked" || d.code?.startsWith("limit_")) setLimitHit(d);
+      // o servidor recusou: volta para o que está realmente salvo
+      if (d.status === 402 || d.status === 403) { try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); PLAN = r.plan; setPlan(r.plan); } catch { } }
+    };
+    window.addEventListener("inflatudo-plan", onPlan); window.addEventListener("inflatudo-save-error", onErr);
+    setOnAuthLost(() => { try { localStorage.removeItem(SESSION_KEY); } catch { } CURRENT_COMPANY_ID = null; setUser(null); });
+    return () => { window.removeEventListener("inflatudo-plan", onPlan); window.removeEventListener("inflatudo-save-error", onErr); };
+  }, []); // eslint-disable-line
   // Todo vendedor que aparece em pedido fica cadastrado automaticamente (com cor própria)
   useEffect(() => {
     if (!user || loadingServer) return;
-    const fixed = ensureSellers(data);
+    const fixed = ensureSellers(data, { logins: hasFeature("sellers") });
     if (fixed !== data) { setData(fixed); saveData(fixed, { system: true }); }
   }, [data, user, loadingServer]); // eslint-disable-line
   const [showPlans, setShowPlans] = useState(false);
@@ -2259,17 +2309,17 @@ function MainApp() {
       try {
         // Quem só visualiza a produção (ex.: vendedor) também recebe o andamento atualizado
         const viewOnly = !canEditProd(user) && !canEditFin(user) && permLevel(user, 'production');
-        const cols = 'notifications:app_data->notifications, photos:app_data->photos' + (viewOnly ? ', production:app_data->production, finalization:app_data->finalization, orders:app_data->orders' : '');
-        const { data: r, error } = await supabase.from('companies').select(cols).eq('id', user.company_id).single();
-        if (error || !alive || !r) return;
+        const r = await api("poll", { full: !!viewOnly });
+        if (!alive || !r) return;
+        if (r.plan) { PLAN = r.plan; setPlan(r.plan); }
         setData(d => {
           const patch = {};
-          ['notifications', 'photos', ...(viewOnly ? ['production', 'finalization', 'orders'] : [])].forEach(k => {
+          ['notifications', 'photos', 'readyStock', ...(viewOnly ? ['production', 'finalization', 'orders'] : [])].forEach(k => {
             if (r[k] && JSON.stringify(r[k]) !== JSON.stringify(d[k] || [])) patch[k] = r[k];
           });
           return Object.keys(patch).length ? { ...d, ...patch } : d;
         });
-      } catch { }
+      } catch (e) { if (e.code === "locked") setSuspended(e.message); }
     };
     const id = setInterval(tick, 15000);
     const vis = () => { if (document.visibilityState === "visible") tick(); };
@@ -2285,30 +2335,28 @@ function MainApp() {
     CURRENT_COMPANY_ID = user.company_id; CURRENT_USER = user; LAST_SNAP = null;
     async function fetchState() {
       try {
-        const { data: remote, error } = await supabase.from('companies').select('app_data, plan_id, status, trial_ends_at').eq('id', user.company_id).single();
-        if (error) throw error;
-        if (remote && remote.app_data) {
-          const merged = { ...emptyData(), ...JSON.parse(JSON.stringify(remote.app_data)) };
-          LAST_SNAP = snapOf(merged);
-          setData(merged);
-          try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
-        }
-        if (remote && user.role === "employee") {
-          const me = (remote.app_data?.users || []).find(u => String(u.id) === String(user.id));
-          if (!me) { try { localStorage.removeItem(SESSION_KEY); } catch { } setUser(null); return; }
-          if (JSON.stringify(me.permissions) !== JSON.stringify(user.permissions) || (me.sellerName || "") !== (user.sellerName || "")) {
-            const u = { ...user, permissions: me.permissions, sellerName: me.sellerName || "" };
+        const r = await api("load");
+        PLAN = r.plan; setPlan(r.plan);
+        const merged = { ...emptyData(), ...JSON.parse(JSON.stringify(r.app_data || {})) };
+        LAST_SNAP = snapOf(merged);
+        setData(merged);
+        try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
+        if (user.role === "employee" && r.user) {
+          if (JSON.stringify(r.user.permissions) !== JSON.stringify(user.permissions) || (r.user.sellerName || "") !== (user.sellerName || "")) {
+            const u = { ...user, permissions: r.user.permissions, sellerName: r.user.sellerName || "" };
             try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
             setUser(u);
           }
         }
-        if (remote && user.role === "admin" && (remote.plan_id !== user.plan || remote.status !== user.status)) {
-          const u = { ...user, plan: remote.plan_id, status: remote.status, trial_ends_at: remote.trial_ends_at };
+        if (user.role === "admin" && r.company && (r.company.plan !== user.plan || r.company.status !== user.status)) {
+          const u = { ...user, plan: r.company.plan, status: r.company.status, trial_ends_at: r.company.trial_ends_at };
           try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
         }
       } catch (err) {
         console.error(err);
-        // Sem internet / falha no banco: usa a última cópia salva neste aparelho
+        if (err.code === "locked") { setSuspended(err.message); return; }
+        if (err.status === 401) return; // sessão perdida: volta para o login
+        // Sem internet / falha no servidor: usa a última cópia salva neste aparelho
         try { const c = localStorage.getItem(`ags_v3_${user.company_id}`); if (c) setData({ ...emptyData(), ...JSON.parse(c) }); } catch { }
       }
       finally { setLoadingServer(false); }
@@ -2317,6 +2365,7 @@ function MainApp() {
   }, [user?.company_id, user?.id]);
 
   if (!user) return <LoginScreen onLogin={login} dark={dark} />;
+  if (suspended && user.role !== "admin") return <SuspendedScreen message={suspended} onLogout={logout} />;
   if (loadingServer) return <div className='flex items-center justify-center h-screen bg-gray-950'><div className='animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500'></div></div>;
 
   const tabs = allowedTabs(user);
@@ -2330,16 +2379,18 @@ function MainApp() {
     clients: ClientsTab, 
     team: TeamTab,
     sales: SalesTab,
-    photos: PhotosTab
+    photos: PhotosTab,
+    ready: ReadyTab,
+    creator: CreatorTab
   }[currentTab];
+  const tabLocked = !tabFeatureOk(currentTab);
   // Vendedor só enxerga, na Produção e na Finalização, os pedidos dele
   const tabData = (user.sellerName && user.role !== 'admin' && (currentTab === 'production' || currentTab === 'finalization'))
     ? { ...data, orders: data.orders.filter(o => sameSeller(data.sellers || [], o.seller, user.sellerName)) }
     : data;
 
   const isAdmin = user.role === 'admin';
-  const isTrial = isAdmin && (user.status === 'trial' || !user.plan || user.plan === 'trial' || user.plan === 'free');
-  const trialDays = user.trial_ends_at ? Math.ceil((new Date(user.trial_ends_at) - new Date()) / 86400000) : null;
+  const LOCK_INFO = { dashboard: ["Dashboard completo com o Cérebro", "Números da fábrica, ranking dos vendedores, rendimento da equipe e a IA que responde qualquer pergunta."], clients: ["Clientes", "Histórico de pedidos e contatos de cada cliente."], sales: ["Área dos vendedores", "Login do vendedor, aviso com foto do brinquedo pronto e pastas de fotos."], photos: ["Fotos dos brinquedos", "A finalizadora tira a foto e ela fica guardada na pasta do pedido."], routes: ["Mapa de clientes e rotas", "Veja onde estão seus clientes e monte rotas de entrega saindo da fábrica."], ready: ["Pronta entrega", "Um quadro com os brinquedos prontos para vender, com foto, nome e valor."] };
 
   return (
     <div className={`flex h-screen overflow-hidden ${dark ? 'bg-gray-950 text-white' : 'bg-gray-50 text-gray-900'}`}>
@@ -2359,14 +2410,15 @@ function MainApp() {
             return (
               <button key={k} onClick={() => { setTab(k); if (window.innerWidth < 900) setSidebarOpen(false); }} title={label} className={`w-full flex items-center ${sidebarOpen ? '' : 'justify-center'} gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
                 <Icon size={20} className={active ? 'text-orange-500' : ''} />
-                {sidebarOpen && <span className='text-sm'>{label}</span>}
+                {sidebarOpen && <span className='text-sm flex-1 text-left'>{label}</span>}
+                {sidebarOpen && !tabFeatureOk(k) && <Lock size={13} className='text-gray-500' />}
               </button>
             );
           })}
         </nav>
 
         <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t`} style={{ borderColor: dark ? '#1f2937' : '#f1f5f9' }}>
-          {sidebarOpen && isAdmin && (
+          {sidebarOpen && isAdmin && !plan?.creator && (
             <button onClick={() => setShowPlans(true)} className='w-full flex items-center gap-2 mb-4 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20 hover:scale-[1.02] transition-transform'>
               <CreditCard size={14} /> Planos e Assinatura
             </button>
@@ -2382,14 +2434,7 @@ function MainApp() {
 
       {/* MAIN CONTENT */}
       <main className='flex-1 min-w-0 flex flex-col relative overflow-hidden'>
-        {isTrial && (
-          <div className='bg-orange-500/10 border-b border-orange-500/20 px-6 py-2 flex items-center justify-between'>
-            <div className='flex items-center gap-2 text-xs font-bold text-orange-500'>
-               <Sparkles size={14} /> Período de teste ativo{trialDays !== null ? (trialDays > 0 ? ` — faltam ${trialDays} dia${trialDays === 1 ? '' : 's'}` : ' — expirado') : ''}
-            </div>
-            <button onClick={() => setShowPlans(true)} className='text-xs font-black uppercase text-orange-600 hover:underline'>Ver Planos</button>
-          </div>
-        )}
+        <PlanBanner plan={plan} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} />
 
         {isMobile && (
           <header className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(52px + env(safe-area-inset-top, 0px))' }}>
@@ -2401,47 +2446,15 @@ function MainApp() {
         <div data-main-scroll className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}
           onTouchStart={isMobile ? (e) => { const x = e.touches[0].clientX; edgeRef.current = x < 24 ? { x, y: e.touches[0].clientY } : null; } : undefined}
           onTouchEnd={isMobile ? (e) => { const st = edgeRef.current; if (!st) return; const t = e.changedTouches[0]; if (t.clientX - st.x > 60 && Math.abs(t.clientY - st.y) < 60) setDrawer(true); edgeRef.current = null; } : undefined}>
-          {ActiveTab ? <TabBoundary key={currentTab}><ActiveTab data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
+          {ActiveTab && tabLocked && isAdmin ? <LockedFeature dark={dark} title={LOCK_INFO[currentTab]?.[0] || TAB_META[currentTab]?.label} desc={LOCK_INFO[currentTab]?.[1]} planName={PLAN_FOR_FEATURE[FEATURE_OF_TAB[currentTab]] || "Ultra"} onPlans={() => setShowPlans(true)} />
+            : ActiveTab ? <TabBoundary key={currentTab}><ActiveTab plan={plan} onPlans={() => setShowPlans(true)} data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} canEditReady={!user.sellerName && canEdit(user, 'ready')} canSellReady={!user.sellerName && canEdit(user, 'orders')} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
-        {showPlans && (
-          <div className='fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md' onClick={() => setShowPlans(false)}>
-            <div className={`w-full max-w-4xl p-8 rounded-3xl shadow-2xl border overflow-y-auto max-h-[90vh] ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'}`} onClick={e => e.stopPropagation()}>
-              <div className='flex items-center justify-between mb-8'>
-                <div>
-                  <h2 className='text-3xl font-black'>Escolha seu Plano</h2>
-                  <p className='text-gray-500 mt-1'>Potencialize sua produção industrial</p>
-                </div>
-                <button onClick={() => setShowPlans(false)} className='p-2 rounded-full hover:bg-gray-800'><X size={24} /></button>
-              </div>
-              <div className='grid grid-cols-1 md:grid-cols-2 gap-8'>
-                <div className='p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col'>
-                  <h3 className='text-xl font-black mb-1'>Básico</h3>
-                  <div className='text-3xl font-black text-orange-500 mb-6'>R$ 379,90<span className='text-sm text-gray-500'>/mês</span></div>
-                  <ul className='space-y-3 mb-8 flex-1 text-sm font-medium'>
-                    <li className='flex items-center gap-2'><Check size={16} className='text-emerald-500' /> Extração de Pedidos via IA</li>
-                    <li className='flex items-center gap-2'><Check size={16} className='text-emerald-500' /> Controle de Produção (Esteira)</li>
-                  </ul>
-                  <a href='#' className='w-full text-center bg-gray-800 text-white font-bold py-3 rounded-xl transition hover:bg-gray-700'>Assinar Básico</a>
-                </div>
-                <div className='p-8 rounded-2xl border border-orange-500 bg-orange-500/5 dark:bg-orange-500/10 flex flex-col relative'>
-                  <div className='absolute top-0 right-6 -translate-y-1/2 bg-orange-500 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full'>Recomendado</div>
-                  <h3 className='text-xl font-black mb-1'>Completo</h3>
-                  <div className='text-3xl font-black text-orange-500 mb-6'>R$ 697,00<span className='text-sm text-gray-500'>/mês</span></div>
-                  <ul className='space-y-3 mb-8 flex-1 text-sm font-medium'>
-                    <li className='flex items-center gap-2'><Check size={16} className='text-orange-500' /> IA + Produção + MAPA</li>
-                    <li className='flex items-center gap-2'><Check size={16} className='text-orange-500' /> Dashboards Avançados</li>
-                    <li className='flex items-center gap-2'><Check size={16} className='text-orange-500' /> Gestão de Equipe</li>
-                  </ul>
-                  <a href='#' className='w-full text-center bg-orange-500 text-white font-bold py-3 rounded-xl transition hover:bg-orange-600 shadow-lg shadow-orange-500/30'>Assinar Completo</a>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
+        {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
       {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}
-      <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />
+      {hasFeature("brain") && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
     </div>
   );
 }

@@ -1,0 +1,60 @@
+// ── Planos do Inflatudo ───────────────────────────────────────────────────────
+// Usado pelo app (telas, travas) e pelo servidor (conferência dos limites).
+// Pedidos: total cadastrado desde o início (não renova). Fotos: total guardado.
+// Usuários: dono + logins da equipe (vendedor não conta).
+
+const ALL = { photos: true, clients: true, sellers: true, crm: true, dashboard: true, brain: true, map: true, ready: true };
+const NONE = { photos: false, clients: false, sellers: false, crm: false, dashboard: false, brain: false, map: false, ready: false };
+
+export const PLANS = {
+  free: { id: "free", label: "Teste grátis", price: 0, orders: 10, users: 1, photos: 0, trialDays: 7, features: { ...NONE } },
+  essencial: { id: "essencial", label: "Essencial", price: 147, orders: 300, users: 5, photos: 0, features: { ...NONE } },
+  pro: { id: "pro", label: "PRO", price: 297, orders: 1000, users: 10, photos: 3000, features: { ...NONE, photos: true, clients: true, sellers: true } },
+  ultra: { id: "ultra", label: "Ultra", price: 497, orders: Infinity, users: Infinity, photos: Infinity, features: { ...ALL } },
+  creator: { id: "creator", label: "Criador", price: 0, orders: Infinity, users: Infinity, photos: Infinity, features: { ...ALL } },
+};
+export const PLAN_ORDER = ["free", "essencial", "pro", "ultra"];
+export const EXTRAS = { orders: { qty: 50, price: 29 }, photos: { qty: 500, price: 19 } };
+export const OWNER_WHATSAPP = "5544984610136";
+
+// planos antigos do banco → planos novos
+export function normPlan(id) {
+  if (!id) return "free";
+  if (id === "premium" || id === "completo" || id === "full") return "ultra";
+  if (id === "basico" || id === "basic") return "essencial";
+  if (id === "trial") return "free";
+  return PLANS[id] ? id : "free";
+}
+
+// Situação da empresa: plano, limites (já com extras), se está travada
+export function planState(company) {
+  const id = normPlan(company?.plan_id);
+  const p = PLANS[id];
+  const extras = company?.extras || {};
+  const now = Date.now();
+  const trialEnd = company?.trial_ends_at ? new Date(company.trial_ends_at).getTime() : null;
+  const daysLeft = trialEnd ? Math.ceil((trialEnd - now) / 86400000) : null;
+  let locked = false, reason = "";
+  if (id === "free" && trialEnd && trialEnd < now) { locked = true; reason = "trial"; }
+  if (["expired", "canceled", "cancelled", "overdue", "blocked", "inactive"].includes(String(company?.status || "").toLowerCase()) && id !== "creator") { locked = true; reason = "expired"; }
+  return {
+    id, plan: p, label: p.label, features: p.features, creator: id === "creator",
+    limits: {
+      orders: p.orders === Infinity ? Infinity : p.orders + (Number(extras.orders) || 0),
+      photos: p.photos === Infinity ? Infinity : p.photos + (Number(extras.photos) || 0),
+      users: p.users,
+    },
+    trial: id === "free", daysLeft, locked, reason,
+  };
+}
+
+// Uso atual da empresa
+export function usageOf(appData, usage) {
+  const users = (appData?.users || []).filter(u => !u.sellerName).length + 1; // + o dono
+  return {
+    orders: Math.max(Number(usage?.orders_created) || 0, (appData?.orders || []).length),
+    photos: (appData?.photos || []).length + (appData?.readyStock || []).reduce((a, r) => a + (r.photos || []).length, 0),
+    users,
+  };
+}
+export const fmtLimit = (n) => n === Infinity ? "ilimitado" : Number(n).toLocaleString("pt-BR");

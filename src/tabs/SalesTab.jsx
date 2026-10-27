@@ -33,12 +33,13 @@ function health(days, orders) {
   return { label: "Inativo", color: "#ef4444" };
 }
 
-export default function SalesTab({ data, setData, persist, dark, user }) {
+export default function SalesTab({ data, setData, persist, dark, user, plan, onPlans }) {
+  const crmOn = !plan || !!plan.features?.crm; // CRM + IA de vendas: plano Ultra
   const locked = user?.role !== "admin" && user?.sellerName;
   const sellerList = (data.sellers || []).map(s => s.name);
   const [chosen, setChosen] = useState(locked || sellerList[0] || "");
   const seller = locked || chosen;
-  const [tab, setTab] = useState("crm");
+  const [tab, setTab] = useState(() => (!plan || plan.features?.crm) ? "crm" : "pedidos");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("todos");
   const [editing, setEditing] = useState(null);
@@ -133,7 +134,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
         {[["Vendido", moneyBR(kpi.period), DollarSign, color, growth === null ? (prev ? `${periodLabel} · sem base anterior` : periodLabel) : `${growth >= 0 ? "▲ +" : "▼ "}${growth.toFixed(1).replace(".", ",")}% vs anterior`],
           ["Pedidos", kpi.orders, Package, "#3b82f6", prev ? `anterior: ${minePrev.length}` : periodLabel],
           ["Brinquedos", kpi.toys, Layers, "#f97316", prev ? `anterior: ${toysOf(minePrev)}` : periodLabel],
-          ["Ticket médio", moneyBR(kpi.ticket), TrendingUp, "#a855f7", periodLabel],
+          ["Ticket médio", moneyBR(Math.round(kpi.ticket)), TrendingUp, "#a855f7", periodLabel],
           ["Clientes", kpi.clients, Users, "#14b8a6", "atendidos no período"],
           ["Em aberto", kpi.open, Clock, "#eab308", "agora"],
           ["Total geral", moneyBR(kpi.total), Star, "#22c55e", `${mine.length} pedidos`]].map(([l, v, I, c, sub]) => (
@@ -180,7 +181,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-4">
           <div className={`flex gap-1 p-1 rounded-xl border w-fit ${card}`}>
-            {[["crm", "Meus clientes"], ["pedidos", `Minhas vendas (${minePeriod.length})`]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-lg text-xs font-black ${tab === k ? "text-white" : "text-slate-500"}`} style={tab === k ? { background: color } : {}}>{l}</button>)}
+            {[...(crmOn ? [["crm", "Meus clientes"]] : []), ["pedidos", `Minhas vendas (${minePeriod.length})`]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 rounded-lg text-xs font-black ${tab === k ? "text-white" : "text-slate-500"}`} style={tab === k ? { background: color } : {}}>{l}</button>)}
           </div>
 
           <div className="relative">
@@ -188,7 +189,7 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente, cidade, brinquedo, nº do pedido…" className={`${inp} w-full pl-9`} />
           </div>
 
-          {tab === "crm" && (
+          {tab === "crm" && crmOn && (
             <>
               <div className="flex gap-1.5 flex-wrap chip-row">
                 {[["todos", `Todos (${clients.length})`], ["contatar", `Chamar hoje (${toContact.length})`], ["esfriando", "Esfriando / inativos"], ["abertos", "Com pedido em aberto"]].map(([k, l]) => <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${filter === k ? "bg-orange-500 text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}>{l}</button>)}
@@ -258,10 +259,18 @@ export default function SalesTab({ data, setData, persist, dark, user }) {
         </div>
 
         <div className="xl:sticky xl:top-0 self-start w-full">
-          <AIChat key={seller} dark={dark} accent={color} title={`IA de vendas de ${seller}`} subtitle="Pergunte sobre seus clientes e vendas" height={480} storageKey={`chat-vendas-${norm(seller)}`}
+          {!crmOn ? (
+            <div className={`rounded-2xl border p-6 text-center ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+              <div className="text-3xl mb-2">🔒</div>
+              <div className="text-xs font-black uppercase tracking-widest text-orange-500">Disponível no plano Ultra</div>
+              <div className={`text-lg font-black mt-1 ${dark ? "text-white" : "text-gray-900"}`}>CRM + IA de vendas</div>
+              <p className="text-sm text-slate-500 mt-2">Lista de clientes com etapas, quem chamar hoje, mensagens prontas no WhatsApp e uma IA que ajuda a vender mais.</p>
+              {user?.role === "admin" && onPlans && <button onClick={onPlans} className="mt-4 px-4 py-2.5 rounded-xl font-black text-white text-sm bg-gradient-to-r from-orange-500 to-orange-600">Ver planos</button>}
+            </div>
+          ) : <AIChat aiKind="sales" key={seller} dark={dark} accent={color} title={`IA de vendas de ${seller}`} subtitle="Pergunte sobre seus clientes e vendas" height={480} storageKey={`chat-vendas-${norm(seller)}`}
             system={`Você é o assistente comercial (CRM) do vendedor ${seller}, numa fábrica de brinquedos infláveis. Use SOMENTE os dados deste vendedor. Ajude a decidir quem chamar, quando oferecer recompra, quais clientes estão esfriando, e escreva mensagens de WhatsApp curtas e simpáticas com emojis quando pedirem.`}
             buildContext={() => aiSnapshot(data, { sellerName: seller })}
-            suggestions={["Quem eu devo chamar esta semana e por quê?", "Quais clientes estão esfriando?", "Escreva uma mensagem de WhatsApp de recompra para meu melhor cliente", "Quanto vendi este mês comparado ao mês passado?", "Quais brinquedos eu mais vendo?"]} />
+            suggestions={["Quem eu devo chamar esta semana e por quê?", "Quais clientes estão esfriando?", "Escreva uma mensagem de WhatsApp de recompra para meu melhor cliente", "Quanto vendi este mês comparado ao mês passado?", "Quais brinquedos eu mais vendo?"]} />}
         </div>
       </div>
 

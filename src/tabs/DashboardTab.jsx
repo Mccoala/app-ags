@@ -124,7 +124,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
         <Kpi dark={dark} label="Faturamento" value={moneyBR(curRev)} color="#f97316" icon={DollarSign} sub={<Delta cur={curRev} prev={prevRev} money />} />
         <Kpi dark={dark} label="Pedidos" value={m.cur.length} color="#3b82f6" icon={Package} sub={<Delta cur={m.cur.length} prev={m.prev ? m.prev.length : null} />} onClick={() => go("orders")} />
         <Kpi dark={dark} label="Brinquedos vendidos" value={curToys} color="#a855f7" icon={Layers} sub={<Delta cur={curToys} prev={prevToys} />} />
-        <Kpi dark={dark} label="Ticket médio" value={moneyBR(ticket)} color="#22c55e" icon={TrendingUp} sub={<span className="text-slate-500">por pedido no período</span>} />
+        <Kpi dark={dark} label="Ticket médio" value={moneyBR(Math.round(ticket))} color="#22c55e" icon={TrendingUp} sub={<span className="text-slate-500">por pedido no período</span>} />
         <Kpi dark={dark} label="Finalizados" value={m.finDone} color="#14b8a6" icon={CheckCircle} sub={<Delta cur={m.finDone} prev={m.finDonePrev} />} onClick={() => go("finalization")} />
         <Kpi dark={dark} label="Em aberto agora" value={m.open.length} color="#eab308" icon={Clock} sub={<span className={m.late.length ? "text-red-500" : "text-emerald-500"}><AlertTriangle size={11} className="inline -mt-0.5" /> {m.late.length} atrasado(s)</span>} onClick={() => go("production")} />
       </div>

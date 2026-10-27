@@ -1,3 +1,4 @@
+import { aiHeaders } from "./api";
 // Funções compartilhadas do Inflatudo (busca, vendedores, IA, formatação)
 
 export const SELLER_PALETTE = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#ec4899", "#eab308", "#14b8a6", "#ef4444", "#6366f1", "#84cc16", "#06b6d4", "#f43f5e"];
@@ -102,7 +103,7 @@ const slug = (s) => norm(s).replace(/[^a-z0-9 ]/g, "").trim().split(" ").filter(
 // 2) o nome do vendedor no pedido é unificado com o cadastro (assim nenhuma venda "some");
 // 3) cada vendedor tem uma cor diferente;
 // 4) cada vendedor ganha um login próprio (senha 1234) uma única vez.
-export function ensureSellers(data) {
+export function ensureSellers(data, opts = {}) {
   let changed = false;
   const sellers = (data.sellers || []).map(s => ({ ...s }));
   (data.orders || []).forEach(o => {
@@ -127,7 +128,7 @@ export function ensureSellers(data) {
   });
   const users = [...(data.users || [])].map((u, i) => u.id ? u : (changed = true, { ...u, id: Date.now() + 1000 + i }));
   sellers.forEach(s => {
-    if (s.loginCreated) return;
+    if (s.loginCreated || opts.logins === false) return; // login automático do vendedor só nos planos com área de vendedores
     const has = users.find(u => u.sellerName && norm(u.sellerName) === norm(s.name));
     if (!has) {
       const parts = slug(s.name);
@@ -169,10 +170,10 @@ export function whatsappLink(phone, text = "") {
 }
 
 // ── IA ───────────────────────────────────────────────────────────────────────
-export async function askAI({ system, messages, maxTokens = 1500 }) {
+export async function askAI({ system, messages, maxTokens = 1500, kind = "sales" }) {
   const res = await fetch("/.netlify/functions/anthropic", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: aiHeaders(kind),
     body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages })
   });
   const txt = await res.text();
@@ -186,9 +187,9 @@ export async function askAI({ system, messages, maxTokens = 1500 }) {
 export const finalizersOf = (f) => Array.isArray(f?.finalizers) ? f.finalizers.filter(Boolean) : (f?.finalizer ? String(f.finalizer).split(",").map(x => x.trim()).filter(Boolean) : []);
 
 // Chamada "crua" (com ferramentas): devolve a resposta completa da API
-export async function callClaude(body) {
+export async function callClaude(body, kind = "brain") {
   const res = await fetch("/.netlify/functions/anthropic", {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: aiHeaders(kind),
     body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 2000, ...body })
   });
   const txt = await res.text();

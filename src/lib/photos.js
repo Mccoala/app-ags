@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { api } from "./api";
 import { orderNumber } from "./core";
 import { importRetry } from "./safeImport";
 
@@ -59,25 +59,22 @@ async function smallDataURL(blob) {
   return blobToDataURL(await toBlob(draw(img, 720), 0.6));
 }
 
-// Envia uma foto e devolve { url, path, inline }
+// Envia uma foto pelo servidor seguro e devolve { id, url, path }
 export async function uploadPhoto(companyId, pedido, blob) {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const path = `${companyId}/${String(pedido).replace(/[^\w-]/g, "")}/${id}.jpg`;
+  const b64 = (await blobToDataURL(blob)).split(",")[1];
   try {
-    const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
-    if (error) throw error;
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    if (!data?.publicUrl) throw new Error("sem link");
-    return { id, url: data.publicUrl, path };
+    return await api("uploadPhoto", { pedido, data: b64 });
   } catch (e) {
-    console.warn("Storage indisponível, guardando a foto reduzida nos dados", e?.message || e);
+    if (e.code !== "storage") throw e; // limite do plano / plano vencido: avisa quem tirou a foto
+    console.warn("Armazenamento indisponível, guardando a foto reduzida nos dados", e.message);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     return { id, url: await smallDataURL(blob), path: null, inline: true };
   }
 }
 
 export async function deleteStoredPhoto(photo) {
   if (!photo?.path) return;
-  try { await supabase.storage.from(BUCKET).remove([photo.path]); } catch { }
+  try { await api("deletePhoto", { path: photo.path }); } catch { }
 }
 
 // Monta os registros que vão para data.photos

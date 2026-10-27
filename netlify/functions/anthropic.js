@@ -1,10 +1,13 @@
+import { verifyToken, tokenFromEvent, loadCompany, effective } from "../lib/server.js";
+import { planState } from "../../src/lib/plans.js";
+
 export const handler = async function(event, context) {
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-AI-Kind",
         "Access-Control-Allow-Methods": "POST, OPTIONS"
       },
       body: ""
@@ -35,6 +38,17 @@ export const handler = async function(event, context) {
         body: JSON.stringify({ error: { message: "API key not configured. Configure ANTHROPIC_API_KEY ou ANTHROPIC_KEY no painel do Netlify (Site configuration > Environment variables)." } })
       };
     }
+
+    // Só responde para quem está logado numa empresa com plano ativo
+    let session;
+    try { session = verifyToken(tokenFromEvent(event)); } catch (e) { return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: e.message } }) }; }
+    const company = await loadCompany(session.cid, "id, plan_id, status, trial_ends_at, app_data");
+    const ec = effective(company); const st = planState({ ...ec, extras: ec.app_data?._srv?.extras });
+    const kind = (event.headers["x-ai-kind"] || event.headers["X-AI-Kind"] || "extract").toLowerCase();
+    const deny = (m) => ({ statusCode: 403, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: m } }) });
+    if (st.locked) return deny("Seu plano está vencido. Renove para usar a IA.");
+    if (kind === "brain" && !st.features.brain) return deny("O Cérebro está disponível no plano Ultra.");
+    if (kind === "sales" && !st.features.crm) return deny("A IA de vendas está disponível no plano Ultra.");
 
     const requestBody = JSON.parse(event.body);
 

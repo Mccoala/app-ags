@@ -153,7 +153,7 @@ export default function MapTab({ data, setData, persist, dark, user }) {
           <p className="text-sm text-slate-500 mt-1 font-medium">Onde estão seus clientes, quanto cada região compra e como chegar até eles</p>
         </div>
         <div className={`flex gap-1 p-1 rounded-xl border ${card}`}>
-          <button onClick={() => setView("estados")} className={`px-3 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${view === "estados" ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30" : "text-slate-500 hover:text-orange-500"}`}><Layers size={14} />Por estado</button>
+          <button onClick={() => setView("estados")} className={`px-3 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${view === "estados" ? "bg-orange-500 text-white shadow-lg shadow-orange-500/30" : "text-slate-500 hover:text-orange-500"}`}><Layers size={14} />Mapa de clientes</button>
           <button onClick={() => setView("real")} className={`px-3 py-2 rounded-lg text-xs font-black flex items-center gap-1.5 transition-all ${view === "real" ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-500 hover:text-emerald-500"}`}><Navigation size={14} />Mapa real e rotas</button>
         </div>
       </div>

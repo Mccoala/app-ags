@@ -21,7 +21,7 @@ function RichText({ text }) {
   );
 }
 
-export default function AIChat({ title = "Assistente IA", subtitle, system, buildContext, suggestions = [], dark, accent = "#6366f1", height = 420, storageKey }) {
+export default function AIChat({ aiKind = "sales", title = "Assistente IA", subtitle, system, buildContext, suggestions = [], dark, accent = "#6366f1", height = 420, storageKey }) {
   const [msgs, setMsgs] = useState(() => { try { return storageKey ? JSON.parse(sessionStorage.getItem(storageKey) || "[]") : []; } catch { return []; } });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,7 +37,7 @@ export default function AIChat({ title = "Assistente IA", subtitle, system, buil
       let ctx = JSON.stringify(buildContext());
       if (ctx.length > 180000) ctx = ctx.slice(0, 180000) + "…(dados cortados por tamanho)";
       const sys = `${system}\n\nResponda sempre em português do Brasil, direto ao ponto, com números concretos tirados dos dados. Use listas curtas e **negrito** nos números importantes. Se a pergunta pedir previsão, explique em uma linha a base do cálculo. Nunca invente dados que não estão abaixo.\n\nDADOS ATUAIS DA EMPRESA (JSON):\n${ctx}`;
-      const answer = await askAI({ system: sys, messages: next.slice(-12).map(m => ({ role: m.role, content: m.content })), maxTokens: 1500 });
+      const answer = await askAI({ kind: aiKind, system: sys, messages: next.slice(-12).map(m => ({ role: m.role, content: m.content })), maxTokens: 1500 });
       setMsgs(m => [...m, { role: "assistant", content: answer || "Sem resposta." }]);
     } catch (e) {
       setMsgs(m => [...m, { role: "assistant", content: `⚠️ Não consegui responder agora: ${e.message}`, error: true }]);
