@@ -1,98 +1,115 @@
 import React from "react";
-import { X, Check, Lock, MessageCircle, Crown, AlertTriangle, Sparkles, Package, Camera, Users } from "lucide-react";
-import { PLANS, PLAN_ORDER, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
+import { X, Check, Lock, Crown, AlertTriangle, Sparkles, Package, Camera, Users, Sprout, Factory, Rocket } from "lucide-react";
+import { PLANS, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
 
 const lim = (v) => v === null || v === undefined || v === Infinity ? "ilimitado" : Number(v).toLocaleString("pt-BR");
 export const dBR = (iso) => { try { return iso ? new Date(iso).toLocaleDateString("pt-BR") : "—"; } catch { return "—"; } };
 const pct = (u, l) => (l === null || l === undefined || l === Infinity) ? 0 : Math.min(100, Math.round((u / Math.max(1, l)) * 100));
 export const waLink = (text) => `https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(text)}`;
 
-const ROWS = [
-  ["Pedidos (total)", (p) => lim(p.orders)],
-  ["Extrator de pedidos com IA", () => true],
-  ["Usuários (vendedor não conta)", (p) => p.users === 1 ? "1" : p.users === Infinity ? "ilimitado" : `até ${p.users}`],
-  ["Produção e finalização", (p) => p.features.photos ? "com foto" : "sem foto"],
-  ["Fotos guardadas", (p) => p.photos ? lim(p.photos) : false],
-  ["Clientes", (p) => p.features.clients],
-  ["Vendedor: login, aviso com foto, pastas", (p) => p.features.sellers],
-  ["Vendedor: CRM + IA de vendas", (p) => p.features.crm],
-  ["Dashboard + Cérebro + IA 24h", (p) => p.features.dashboard],
-  ["Mapa de clientes + rotas", (p) => p.features.map],
-  ["Pronta entrega", (p) => p.features.ready],
-];
 
 export function UsageBar({ label, used, limit, icon: Icon, dark }) {
   const p = pct(used, limit); const c = p >= 100 ? "#ef4444" : p >= 80 ? "#f59e0b" : "#10b981";
   return (
-    <div className={`p-3 rounded-xl border ${dark ? "border-gray-800 bg-gray-950/50" : "border-gray-200 bg-gray-50"}`}>
-      <div className="flex items-center justify-between text-xs font-bold mb-1.5"><span className="flex items-center gap-1.5 text-gray-400">{Icon && <Icon size={13} />}{label}</span><span>{Number(used || 0).toLocaleString("pt-BR")} <span className="text-gray-500">/ {lim(limit)}</span></span></div>
-      <div className={`h-2 rounded-full overflow-hidden ${dark ? "bg-gray-800" : "bg-gray-200"}`}><div className="h-full rounded-full" style={{ width: `${limit === null ? 4 : p}%`, background: c }} /></div>
+    <div className={`p-2.5 sm:p-3 rounded-xl ${dark ? "bg-[#161616]" : "bg-[#f3f1ed]"}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-0.5 text-[11px] sm:text-xs font-bold mb-1.5"><span className={`flex items-center gap-1.5 ${dark ? "text-[#a3a3a3]" : "text-[#6b6b6b]"}`}>{Icon && <Icon size={13} />}{label}</span><span>{Number(used || 0).toLocaleString("pt-BR")} <span className={dark ? "text-[#737373]" : "text-[#8a8a8a]"}>/ {lim(limit)}</span></span></div>
+      <div className={`h-1.5 rounded-full overflow-hidden ${dark ? "bg-[#2a2a2a]" : "bg-[#e2dfd9]"}`}><div className="h-full rounded-full" style={{ width: `${limit === null ? 4 : p}%`, background: c }} /></div>
     </div>
   );
 }
 
+// O que cada plano acrescenta ao anterior
+const PLAN_COPY = {
+  essencial: { icon: Sprout, tag: "Para organizar a produção", base: "Inclui:", items: ["300 pedidos no total", "Até 5 usuários (vendedor não conta)", "Extrator de pedidos com IA", "Produção por etapas e finalização"] },
+  pro: { icon: Factory, tag: "Para fábricas com vendedores", base: "Tudo do Essencial, mais:", items: ["1.000 pedidos no total", "Até 10 usuários", "Finalização com foto (3.000 fotos)", "Área de clientes", "Login do vendedor com aviso e foto do brinquedo pronto", "Pastas de fotos por pedido"] },
+  ultra: { icon: Rocket, tag: "Para crescer sem limite", base: "Tudo do PRO, mais:", items: ["Pedidos, usuários e fotos ilimitados", "CRM + IA de vendas para os vendedores", "Dashboard com o Cérebro 24h", "Mapa de clientes e rotas de entrega", "Quadro de pronta entrega"] },
+};
+const PAID = ["essencial", "pro", "ultra"];
+
 export function PlansModal({ plan, companyName, companyId, email, onClose, dark, isAdmin }) {
   const buy = (kind, text) => checkoutLink(kind, companyId, email) || waLink(text);
-  const cur = plan?.id || "free";
-  const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
+  const cur = plan?.creator ? "creator" : (plan?.id || "free");
+  const curRank = PAID.indexOf(cur);
+  const showExtras = isAdmin && (cur === "pro" || cur === "ultra"); // pacotes avulsos só a partir do PRO
+  const T = dark
+    ? { bg: "bg-[#1b1b1b] text-[#ececec]", card: "bg-[#222222] border-[#333]", soft: "text-[#a3a3a3]", line: "border-[#333]", note: "bg-[#161616]", btn: "bg-[#3a3a3a] hover:bg-[#474747] text-white", btnMain: "bg-[#f2f2f2] hover:bg-white text-[#141414]" }
+    : { bg: "bg-[#faf9f7] text-[#1a1a1a]", card: "bg-white border-[#e7e5e0]", soft: "text-[#6b6b6b]", line: "border-[#ebe8e3]", note: "bg-[#f3f1ed]", btn: "bg-[#ecebe7] hover:bg-[#e2e0db] text-[#1a1a1a]", btnMain: "bg-[#1a1a1a] hover:bg-black text-white" };
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md" onClick={onClose}>
-      <div className={`w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-3xl border shadow-2xl p-5 sm:p-8 ${dark ? "bg-gray-950 border-gray-800 text-white" : "bg-white border-gray-100 text-gray-900"}`} onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl sm:text-3xl font-black">Planos e Assinatura</h2>
-            <p className="text-gray-500 mt-1 text-sm">Seu plano: <b className="text-orange-500">{plan?.creator ? "Criador (acesso total)" : PLANS[cur]?.label}</b>{plan?.trial && plan?.daysLeft !== null ? ` · ${plan.daysLeft > 0 ? `faltam ${plan.daysLeft} dia(s) de teste` : "teste encerrado"}` : ""}{plan?.locked && !plan?.trial ? " · vencido" : ""}</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-800/50"><X size={22} /></button>
-        </div>
+      <div className={`relative w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-3xl shadow-2xl px-5 py-8 sm:px-10 sm:py-12 ${T.bg}`} onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className={`absolute top-4 right-4 p-2 rounded-xl ${T.soft} hover:opacity-80`}><X size={22} /></button>
 
-        {plan?.billing && !plan?.creator && (
-          <div className={`rounded-2xl border p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm ${plan.billing.pastDue ? "border-red-500/40 bg-red-500/10" : card}`}>
-            <div><div className="text-[11px] font-black uppercase text-gray-500">Ativo desde</div><div className="font-black">{dBR(plan.billing.activeSince)}</div></div>
-            <div><div className="text-[11px] font-black uppercase text-gray-500">Último pagamento</div><div className="font-black">{dBR(plan.billing.paidAt)}</div></div>
-            <div><div className="text-[11px] font-black uppercase text-gray-500">Próxima cobrança</div><div className={`font-black ${plan.billing.pastDue ? "text-red-400" : ""}`}>{dBR(plan.billing.nextChargeAt)}{plan.billing.daysToCharge !== null && !plan.billing.pastDue ? <span className="text-gray-500 font-bold"> · faltam {plan.billing.daysToCharge} dia(s)</span> : null}</div>
-              {plan.billing.pastDue && <div className="text-xs font-bold text-red-400 mt-0.5">{plan.locked ? "Pagamento não confirmado — acesso travado." : `Pagamento pendente: trava em ${plan.billing.graceLeft} dia(s).`}</div>}</div>
+        <h2 className="text-center text-[26px] leading-tight sm:text-4xl tracking-tight px-8" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>Planos que crescem com a sua fábrica</h2>
+        <p className={`text-center text-sm mt-2 ${T.soft}`}>
+          {plan?.creator ? "Conta do criador: acesso total." : cur === "free" ? (plan?.locked ? "Seu teste grátis terminou. Escolha um plano para continuar — seus dados estão salvos." : `Você está no teste grátis${plan?.daysLeft != null ? ` · faltam ${plan.daysLeft} dia(s)` : ""}.`) : <>Seu plano: <b className={dark ? "text-white" : "text-black"}>{PLANS[cur]?.label}</b>{plan?.locked ? " · vencido" : ""}</>}
+        </p>
+
+        {(plan?.usage || plan?.billing) && !plan?.creator && (
+          <div className="mt-6 max-w-3xl mx-auto grid grid-cols-3 gap-2">
+            {plan?.usage && <>
+              <UsageBar dark={dark} icon={Package} label="Pedidos" used={plan.usage.orders} limit={plan.limits?.orders} />
+              <UsageBar dark={dark} icon={Camera} label="Fotos" used={plan.usage.photos} limit={plan.limits?.photos ?? 0} />
+              <UsageBar dark={dark} icon={Users} label="Usuários" used={plan.usage.users} limit={plan.limits?.users} />
+            </>}
+            {plan?.billing && (
+              <div className={`col-span-3 rounded-xl px-4 py-3 text-sm flex flex-wrap gap-x-6 gap-y-1 ${plan.billing.pastDue ? "bg-red-500/10 text-red-400" : T.note}`}>
+                <span>Ativo desde <b>{dBR(plan.billing.activeSince)}</b></span>
+                <span>Último pagamento <b>{dBR(plan.billing.paidAt)}</b></span>
+                <span>Próxima cobrança <b>{dBR(plan.billing.nextChargeAt)}</b>{plan.billing.pastDue ? (plan.locked ? " · pagamento não confirmado" : ` · pendente, trava em ${plan.billing.graceLeft} dia(s)`) : plan.billing.daysToCharge != null ? ` · faltam ${plan.billing.daysToCharge} dia(s)` : ""}</span>
+              </div>
+            )}
           </div>
         )}
 
-        {plan?.usage && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-6">
-            <UsageBar dark={dark} icon={Package} label="Pedidos" used={plan.usage.orders} limit={plan.limits?.orders} />
-            <UsageBar dark={dark} icon={Camera} label="Fotos" used={plan.usage.photos} limit={plan.limits?.photos ?? 0} />
-            <UsageBar dark={dark} icon={Users} label="Usuários" used={plan.usage.users} limit={plan.limits?.users} />
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {PLAN_ORDER.map(id => {
-            const p = PLANS[id]; const isCur = id === cur && !plan?.creator; const rec = id === "pro";
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {PAID.map((id, idx) => {
+            const p = PLANS[id], c = PLAN_COPY[id], Icon = c.icon;
+            const isCur = id === cur, rec = id === "pro";
+            const label = isCur ? "Seu plano atual" : curRank >= 0 && idx < curRank ? `Mudar para ${p.label}` : `Assinar ${p.label}`;
             return (
-              <div key={id} className={`relative rounded-2xl border p-5 flex flex-col ${card} ${rec ? "ring-2 ring-orange-500" : ""}`}>
-                {rec && <div className="absolute -top-3 left-5 bg-orange-500 text-white text-[11px] font-black uppercase px-3 py-1 rounded-full">Recomendado</div>}
-                <div className="text-lg font-black">{p.label}</div>
-                <div className="mt-1 mb-4">{id === "free" ? <span className="text-3xl font-black text-orange-500">7 dias grátis</span> : <><span className="text-3xl font-black text-orange-500">R$ {p.price}</span><span className="text-sm text-gray-500">/mês</span></>}</div>
-                <ul className="space-y-2 text-sm flex-1">
-                  {ROWS.map(([l, f]) => { const v = f(p); const on = v !== false; return <li key={l} className={`flex items-start gap-2 ${on ? "" : "opacity-40"}`}>{on ? <Check size={15} className="text-emerald-500 mt-0.5 flex-shrink-0" /> : <X size={15} className="mt-0.5 flex-shrink-0" />}<span>{l}{typeof v === "string" ? <b className="ml-1">{v}</b> : null}</span></li>; })}
-                </ul>
-                {isCur ? <div className="mt-5 text-center py-2.5 rounded-xl font-black text-sm border border-emerald-500 text-emerald-500">Seu plano atual</div>
-                  : id === "free" ? <div className="mt-5 text-center py-2.5 text-xs text-gray-500 font-bold">Para conhecer o sistema</div>
-                    : isAdmin ? <a href={buy(p.id, `Olá! Quero assinar o plano ${p.label} do Inflatudo para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`mt-5 text-center py-2.5 rounded-xl font-black text-sm text-white ${rec ? "bg-gradient-to-r from-orange-500 to-orange-600" : "bg-gray-700 hover:bg-gray-600"}`}>Quero o {p.label}</a> : null}
+              <div key={id} className={`relative rounded-2xl border flex flex-col ${T.card} ${rec && !isCur ? (dark ? "ring-1 ring-orange-500/60" : "ring-1 ring-orange-500/50") : ""}`}>
+                {rec && <div className="absolute top-5 right-5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-orange-500/15 text-orange-500">Mais escolhido</div>}
+                <div className="p-6 pb-5">
+                  <Icon size={46} strokeWidth={1.1} className={dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"} />
+                  <div className="mt-4 text-xl font-bold">{p.label}</div>
+                  <div className={`text-sm ${T.soft}`}>{c.tag}</div>
+                  <div className="mt-5 flex items-end gap-2">
+                    <span className="text-4xl font-bold tracking-tight">R$ {p.price}</span>
+                    <span className={`text-xs leading-tight pb-1 ${T.soft}`}>BRL / mês<br />cobrado mensalmente</span>
+                  </div>
+                  {isCur && <div className={`mt-4 rounded-xl px-3.5 py-3 text-sm flex gap-2 ${T.note}`}><Check size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" /><span><b>Você está neste plano.</b>{plan?.billing?.nextChargeAt ? <span className={T.soft}> Renova em {dBR(plan.billing.nextChargeAt)}.</span> : null}</span></div>}
+                  {isCur ? <div className={`mt-4 w-full text-center py-3 rounded-xl text-sm font-semibold opacity-60 ${T.btn}`}>{label}</div>
+                    : isAdmin ? <a href={buy(id, `Olá! Quero assinar o plano ${p.label} do Inflatudo para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`mt-4 block w-full text-center py-3 rounded-xl text-sm font-semibold transition-colors ${rec ? T.btnMain : T.btn}`}>{label}</a>
+                    : <div className={`mt-4 text-center text-xs ${T.soft}`}>Só o dono da conta pode trocar o plano.</div>}
+                  {!isCur && isAdmin && <div className={`mt-2 text-center text-[11px] ${T.soft}`}>Sem fidelidade · Cancele quando quiser</div>}
+                </div>
+                <div className={`border-t ${T.line} p-6 pt-5 flex-1`}>
+                  <div className={`text-sm font-semibold mb-3 ${T.soft}`}>{c.base}</div>
+                  <ul className="space-y-2.5 text-sm">
+                    {c.items.map(t => <li key={t} className="flex items-start gap-2.5"><Check size={16} strokeWidth={2} className={`mt-0.5 flex-shrink-0 ${T.soft}`} /><span>{t}</span></li>)}
+                  </ul>
+                </div>
               </div>
             );
           })}
         </div>
 
-        {isAdmin && !plan?.creator && (
-          <div className={`mt-6 rounded-2xl border p-5 ${card}`}>
-            <div className="font-black mb-1">Precisa de mais espaço sem trocar de plano?</div>
-            <p className="text-sm text-gray-500 mb-3">Pacotes avulsos somam ao limite do seu plano.</p>
-            <div className="flex flex-wrap gap-2">
-              <a href={buy("orders", `Olá! Quero comprar o pacote de +${EXTRAS.orders.qty} pedidos (R$ ${EXTRAS.orders.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.orders.qty} pedidos · R$ {EXTRAS.orders.price}</a>
-              <a href={buy("photos", `Olá! Quero comprar o pacote de +${EXTRAS.photos.qty} fotos (R$ ${EXTRAS.photos.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.photos.qty} fotos · R$ {EXTRAS.photos.price}</a>
+        {showExtras && (
+          <div className={`mt-6 rounded-2xl border p-6 ${T.card}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="text-lg font-bold">Precisa de mais espaço?</div>
+                <p className={`text-sm mt-0.5 ${T.soft}`}>Pacotes avulsos somam ao limite do seu plano, sem mudar a mensalidade.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <a href={buy("orders", `Olá! Quero comprar o pacote de +${EXTRAS.orders.qty} pedidos para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`px-4 py-2.5 rounded-xl text-sm font-semibold ${T.btn}`}>+{EXTRAS.orders.qty} pedidos · R$ {EXTRAS.orders.price}</a>
+                <a href={buy("photos", `Olá! Quero comprar o pacote de +${EXTRAS.photos.qty} fotos para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`px-4 py-2.5 rounded-xl text-sm font-semibold ${T.btn}`}>+{EXTRAS.photos.qty} fotos · R$ {EXTRAS.photos.price}</a>
+              </div>
             </div>
           </div>
         )}
-        <p className="text-xs text-gray-500 mt-4 flex items-center gap-1.5"><MessageCircle size={13} />A assinatura é feita pelo WhatsApp. A troca de plano vale na hora e a cobrança passa para o valor do plano novo.</p>
+
+        <p className={`text-xs text-center mt-8 ${T.soft}`}>Pagamento seguro pela Cakto. Ao trocar de plano, o novo vale na hora e a cobrança passa a ser do plano novo.</p>
       </div>
     </div>
   );
@@ -123,12 +140,29 @@ export function LimitModal({ hit, onClose, onPlans, dark, isAdmin }) {
 
 export function LockedFeature({ title, planName, desc, onPlans, dark }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center py-16 px-4">
-      <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5 text-white shadow-xl" style={{ background: "linear-gradient(135deg,#f97316,#a855f7)" }}><Lock size={34} /></div>
-      <div className="text-xs font-black uppercase tracking-widest text-orange-500">Disponível no plano {planName}</div>
-      <h2 className={`text-2xl sm:text-3xl font-black mt-2 ${dark ? "text-white" : "text-gray-900"}`}>{title}</h2>
-      {desc && <p className="text-gray-500 mt-3 max-w-md">{desc}</p>}
-      <button onClick={onPlans} className="mt-6 px-6 py-3 rounded-xl font-black text-white bg-gradient-to-r from-orange-500 to-orange-600 flex items-center gap-2"><Crown size={18} />Quero esse plano</button>
+    <div className={`lf-wrap relative overflow-hidden rounded-3xl border min-h-[70vh] flex items-center justify-center ${dark ? "border-white/5 bg-[#070a14]" : "border-black/5 bg-[#fbf7f2]"}`}>
+      {/* fundo animado: manchas de luz que flutuam + grade que desliza + faíscas */}
+      <div className="lf-blob lf-blob-a" /><div className="lf-blob lf-blob-b" /><div className="lf-blob lf-blob-c" />
+      <div className={`lf-grid ${dark ? "" : "lf-grid-light"}`} />
+      {Array.from({ length: 14 }).map((_, k) => <span key={k} className="lf-spark" style={{ left: `${(k * 53) % 100}%`, animationDelay: `${(k * 0.7) % 6}s`, animationDuration: `${6 + (k % 5)}s` }} />)}
+
+      <div className="relative z-10 flex flex-col items-center text-center px-6 py-16">
+        <div className="lf-lock relative w-24 h-24 mb-7">
+          <div className="lf-ring absolute -inset-3 rounded-[2rem]" />
+          <div className="lf-halo absolute -inset-6 rounded-full" />
+          <div className="relative w-full h-full rounded-[1.75rem] flex items-center justify-center text-white shadow-2xl" style={{ background: "linear-gradient(135deg,#f97316,#ec4899 55%,#a855f7)" }}>
+            <Lock size={40} className="lf-shackle" />
+            <span className="lf-glint absolute inset-0 rounded-[1.75rem]" />
+          </div>
+        </div>
+        <div className="text-xs font-black uppercase tracking-[0.2em] text-orange-500">Disponível no plano {planName}</div>
+        <h2 className={`text-3xl sm:text-4xl font-black mt-3 ${dark ? "text-white" : "text-gray-900"}`}>{title}</h2>
+        {desc && <p className={`mt-3 max-w-md ${dark ? "text-gray-400" : "text-gray-600"}`}>{desc}</p>}
+        <button onClick={onPlans} className="lf-btn relative overflow-hidden mt-8 px-7 py-3.5 rounded-2xl font-black text-white flex items-center gap-2 shadow-xl shadow-orange-500/30" style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}>
+          <Crown size={18} className="lf-crown" />Quero esse plano
+          <span className="lf-btn-shine" />
+        </button>
+      </div>
     </div>
   );
 }
