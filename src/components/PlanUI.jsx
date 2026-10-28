@@ -27,6 +27,27 @@ const PLAN_COPY = {
 };
 const PAID = ["essencial", "pro", "ultra"];
 
+// Vídeo de apresentação: só carrega quando a pessoa aperta o play (economiza internet)
+export function PromoVideo({ dark }) {
+  const [on, setOn] = useState(false);
+  return (
+    <div className="mt-6 max-w-3xl mx-auto">
+      <div className={`relative w-full aspect-video rounded-2xl overflow-hidden shadow-xl ${dark ? "bg-black" : "bg-[#111]"}`}>
+        {on ? (
+          <video src="/video/inflatudo-apresentacao.mp4" poster="/video/inflatudo-apresentacao.jpg" controls autoPlay playsInline preload="auto" className="w-full h-full object-contain bg-black" />
+        ) : (
+          <button onClick={() => setOn(true)} className="group absolute inset-0 w-full h-full" aria-label="Assistir à apresentação do Inflatudo">
+            <img src="/video/inflatudo-apresentacao.jpg" alt="" className="w-full h-full object-cover" />
+            <span className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
+            <span className="absolute inset-0 flex items-center justify-center"><span className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-2xl shadow-orange-500/40 group-hover:scale-105 transition-transform"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z" /></svg></span></span>
+            <span className="absolute left-3 bottom-3 px-3 py-1.5 rounded-full bg-black/70 text-white text-xs sm:text-sm font-bold">Veja o Inflatudo funcionando · 1:54</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function PlansModal({ plan, companyName, companyId, email, onClose, dark, isAdmin }) {
   const buy = (kind, text) => checkoutLink(kind, companyId, email) || waLink(text);
   const cur = plan?.creator ? "creator" : (plan?.id || "free");
@@ -45,6 +66,8 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
         <p className={`text-center text-sm mt-2 ${T.soft}`}>
           {plan?.creator ? "Conta do criador: acesso total." : cur === "free" ? (plan?.locked ? "Seu teste grátis terminou. Escolha um plano para continuar — seus dados estão salvos." : `Você está no teste grátis${plan?.daysLeft != null ? ` · faltam ${plan.daysLeft} dia(s)` : ""}.`) : <>Seu plano: <b className={dark ? "text-white" : "text-black"}>{PLANS[cur]?.label}</b>{plan?.locked ? " · vencido" : ""}</>}
         </p>
+
+        <PromoVideo dark={dark} />
 
         {(plan?.usage || plan?.billing) && !plan?.creator && (
           <div className="mt-6 max-w-3xl mx-auto grid grid-cols-3 gap-2">
