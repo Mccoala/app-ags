@@ -119,12 +119,15 @@ export async function downloadZip(photos, zipName, onProgress) {
   const { default: JSZip } = await importRetry(() => import("jszip"));
   const zip = new JSZip();
   const multi = new Set(photos.map(p => p.pedido)).size > 1;
+  const toysOf = {}; photos.forEach(p => { (toysOf[p.pedido] ||= new Set()).add(String(p.itemId || p.toy || "")); });
   const counter = {};
   for (let i = 0; i < photos.length; i++) {
     const p = photos[i];
-    counter[p.pedido] = (counter[p.pedido] || 0) + 1;
-    const name = `pedido-${safe(p.pedido)}-${counter[p.pedido]}.jpg`;
-    const folder = multi ? `Pedido ${safe(p.pedido)}${p.cliente ? ` - ${safe(p.cliente)}` : ""}/` : "";
+    const byToy = toysOf[p.pedido].size > 1; // pedido com mais de um brinquedo: uma pasta por brinquedo
+    const ck = `${p.pedido}|${byToy ? (p.itemId || p.toy) : ""}`;
+    counter[ck] = (counter[ck] || 0) + 1;
+    const name = `pedido-${safe(p.pedido)}${byToy ? `-${safe(p.toy)}` : ""}-${counter[ck]}.jpg`;
+    const folder = (multi ? `Pedido ${safe(p.pedido)}${p.cliente ? ` - ${safe(p.cliente)}` : ""}/` : "") + (byToy ? `${safe(p.toy) || "Brinquedo"}/` : "");
     zip.file(folder + name, await fetchBlob(p.url));
     onProgress && onProgress(i + 1, photos.length);
   }

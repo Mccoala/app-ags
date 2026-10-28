@@ -36,6 +36,7 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
   const [q, setQ] = useState("");
   const [seller, setSeller] = useState(null);
   const [pedido, setPedido] = useState(null);
+  const [toyKey, setToyKey] = useState(null); // pasta do brinquedo dentro do pedido
   const [sel, setSel] = useState(new Set());
   const [lb, setLb] = useState(null);
   const [dl, setDl] = useState("");
@@ -68,7 +69,7 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
   useEffect(() => {
     if (!focus) return;
     const p = photos.find(x => String(x.pedido) === String(focus));
-    if (p) { setQ(""); setSeller(p.vendedor); setPedido(p.pedido); setSel(new Set()); }
+    if (p) { setQ(""); setSeller(p.vendedor); setPedido(p.pedido); setToyKey(null); setSel(new Set()); }
     clearFocus && clearFocus();
   }, [focus]); // eslint-disable-line
 
@@ -89,9 +90,22 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
   }, [q, tree]); // eslint-disable-line
 
   const curFolders = seller && tree.get(seller) ? [...tree.get(seller).entries()].map(([ped, list]) => orderFolder(seller, ped, list)).sort((a, b) => (b.ultima || "").localeCompare(a.ultima || "")) : [];
-  const curPhotos = seller && pedido ? (tree.get(seller)?.get(pedido) || []) : [];
+  const orderPhotos = seller && pedido ? (tree.get(seller)?.get(pedido) || []) : [];
+  // dentro do pedido: uma pasta por brinquedo
+  const keyOf = (p) => String(p.itemId || p.toy || "—");
+  const toyGroups = useMemo(() => {
+    const m = new Map();
+    orderPhotos.forEach(p => { const k = keyOf(p); if (!m.has(k)) m.set(k, []); m.get(k).push(p); });
+    const names = {}; const list = [...m.entries()].map(([k, fotos]) => ({ key: k, toy: fotos[0].toy || "Brinquedo", fotos, capa: fotos[0], ultima: fotos[0].em }));
+    list.forEach(g => { names[g.toy] = (names[g.toy] || 0) + 1; });
+    const seen = {}; list.forEach(g => { if (names[g.toy] > 1) { seen[g.toy] = (seen[g.toy] || 0) + 1; g.label = `${g.toy} (${seen[g.toy]})`; } else g.label = g.toy; });
+    return list;
+  }, [orderPhotos]); // eslint-disable-line
+  const showToyFolders = toyGroups.length > 1 && !toyKey;
+  const curToy = toyKey ? toyGroups.find(g => g.key === toyKey) : null;
+  const curPhotos = curToy ? curToy.fotos : orderPhotos;
 
-  const go = (v, p) => { setSeller(v); setPedido(p); setSel(new Set()); setConfirmDel(null); };
+  const go = (v, p, t = null) => { setSeller(v); setPedido(p); setToyKey(t); setSel(new Set()); setConfirmDel(null); };
   const toggle = (id) => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const runDownload = async (list, name) => {
@@ -105,13 +119,14 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
     await deleteStoredPhoto(p);
     persist({ ...data, photos: (data.photos || []).filter(x => x.id !== p.id) });
     setConfirmDel(null); setSel(s => { const n = new Set(s); n.delete(p.id); return n; });
-    if (curPhotos.length <= 1) setPedido(null);
+    if (curPhotos.length <= 1) { if (curToy && orderPhotos.length > 1) setToyKey(null); else setPedido(null); }
   };
 
   // Fotos novas dentro de uma pasta que já existe
   const curOrder = curPhotos[0] ? (data.orders || []).find(o => String(o.id) === String(curPhotos[0].orderId)) : null;
   const orderToys = curOrder ? (curOrder.items || []).filter(it => !it.isMotor) : [];
   const startAdd = () => {
+    if (curToy) { setAddFor(orderToys.find(it => String(it.itemId) === curToy.key) || { itemId: curToy.fotos[0]?.itemId, toy: curToy.toy }); return; }
     if (orderToys.length > 1) { setPickToy(true); return; }
     const it = orderToys[0] || { itemId: curPhotos[0]?.itemId, toy: curPhotos[0]?.toy };
     setAddFor(it);
@@ -185,7 +200,8 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
         <div className="flex items-center gap-1 text-sm font-bold flex-wrap">
           <button onClick={() => go(null, null)} className={`flex items-center gap-1 px-2 py-1 rounded-lg ${sub} hover:text-orange-500`}><Folder size={15} />Todas as pastas</button>
           {seller && <><ChevronRight size={14} className={sub} /><button onClick={() => go(seller, null)} className="px-2 py-1 rounded-lg hover:underline" style={{ color: sellerColorOf(sellers, seller) }}>{seller}</button></>}
-          {pedido && <><ChevronRight size={14} className={sub} /><span className={`px-2 py-1 ${txt}`}>Pedido {pedido}</span></>}
+          {pedido && <><ChevronRight size={14} className={sub} />{curToy ? <button onClick={() => go(seller, pedido)} className={`px-2 py-1 rounded-lg hover:underline ${txt}`}>Pedido {pedido}</button> : <span className={`px-2 py-1 ${txt}`}>Pedido {pedido}</span>}</>}
+          {curToy && <><ChevronRight size={14} className={sub} /><span className="px-2 py-1 text-orange-500">{curToy.label}</span></>}
         </div>
       )}
 
@@ -247,17 +263,33 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
           <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
             <div>
               <div className={`text-xl font-black ${txt}`}><span className="text-orange-500">Pedido</span> {pedido}</div>
-              <div className={`text-sm ${sub}`}>{curPhotos[0]?.cliente || "—"} · {[...new Set(curPhotos.map(p => p.toy).filter(Boolean))].join(", ")}</div>
+              <div className={`text-sm ${sub}`}>{orderPhotos[0]?.cliente || "—"} · {curToy ? <b className="text-orange-500">{curToy.label}</b> : [...new Set(orderPhotos.map(p => p.toy).filter(Boolean))].join(", ")}</div>
               <div className="text-xs font-bold mt-0.5" style={{ color: sellerColorOf(sellers, seller) }}>● {seller}</div>
             </div>
             <div className="flex gap-2 flex-wrap">
               {canEditPhotos && curPhotos[0]?.orderId != null && <button onClick={startAdd} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-500"><ImagePlus size={15} />Adicionar fotos</button>}
-              <button onClick={() => setSel(sel.size === curPhotos.length ? new Set() : new Set(curPhotos.map(p => p.id)))} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><Check size={15} />{sel.size === curPhotos.length ? "Desmarcar" : "Marcar todas"}</button>
+              {!showToyFolders && <button onClick={() => setSel(sel.size === curPhotos.length ? new Set() : new Set(curPhotos.map(p => p.id)))} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><Check size={15} />{sel.size === curPhotos.length ? "Desmarcar" : "Marcar todas"}</button>}
               {sel.size > 0 && <button disabled={!!dl} onClick={() => runDownload(curPhotos.filter(p => sel.has(p.id)), `Pedido ${pedido}`)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border border-orange-500 text-orange-500 hover:bg-orange-500/10`}><Download size={15} />Baixar selecionadas ({sel.size})</button>}
-              <button disabled={!!dl} onClick={() => runDownload(curPhotos, `Pedido ${pedido}`)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-white" style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}><Download size={15} />Baixar pasta ({curPhotos.length})</button>
+              <button disabled={!!dl} onClick={() => runDownload(curPhotos, curToy ? `Pedido ${pedido} - ${curToy.label}` : `Pedido ${pedido}`)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-white" style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}><Download size={15} />{showToyFolders ? "Baixar tudo do pedido" : "Baixar pasta"} ({curPhotos.length})</button>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {showToyFolders && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {toyGroups.map(g => (
+                <button key={g.key} onClick={() => { setToyKey(g.key); setSel(new Set()); setConfirmDel(null); }} className={`text-left rounded-2xl border overflow-hidden group hover:border-orange-500/60 transition ${dark ? "border-gray-800 bg-gray-950" : "border-gray-200 bg-gray-50"}`}>
+                  <div className="relative aspect-square bg-gray-800 overflow-hidden">
+                    <img src={g.capa?.url} alt="" loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <span className="absolute top-2 right-2 flex items-center gap-1 text-[11px] font-black px-2 py-1 rounded-lg bg-black/65 text-white"><Camera size={12} />{g.fotos.length}</span>
+                    <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/85 to-transparent">
+                      <div className="flex items-center gap-1.5 text-white font-black text-sm leading-tight"><Folder size={15} className="text-orange-400 flex-shrink-0" /><span className="line-clamp-2">{g.label}</span></div>
+                    </div>
+                  </div>
+                  <div className={`px-3 py-2 text-[11px] flex justify-between gap-2 ${sub}`}><span>{g.fotos.length} foto{g.fotos.length === 1 ? "" : "s"}</span><span>{dt(g.ultima)}</span></div>
+                </button>
+              ))}
+            </div>
+          )}
+          {!showToyFolders && <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {curPhotos.map((p, i) => {
               const on = sel.has(p.id);
               return (
@@ -271,7 +303,7 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
                 </div>
               );
             })}
-          </div>
+          </div>}
           {!curPhotos.length && <div className={`text-center py-10 ${sub}`}><ImageIcon size={30} className="mx-auto mb-2 opacity-30" />Pasta vazia</div>}
         </div>
       )}
