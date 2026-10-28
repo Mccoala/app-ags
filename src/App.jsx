@@ -11,7 +11,8 @@ import PhotosTab from "./tabs/PhotosTab";
 import PhotoCapture from "./components/PhotoCapture";
 import { photoRecords } from "./lib/photos";
 import { isChunkError, reloadForNewVersion } from "./lib/safeImport";
-import { Camera as CameraIcon, PackageCheck, Crown } from "lucide-react";
+import { Camera as CameraIcon, PackageCheck, Crown, HelpCircle as TourIcon, Factory as FactoryIcon, CheckCircle2 as DoneIcon, Users as TeamIcon, LayoutDashboard as DashIcon, Map as MapIcon2, CreditCard as CardIcon, Zap as ZapIcon } from "lucide-react";
+import Tour, { TourWelcome } from "./components/Tour";
 import { PlansModal, LimitModal, LockedFeature, PlanBanner, SuspendedScreen } from "./components/PlanUI";
 import ReadyTab from "./tabs/ReadyTab";
 import CreatorTab from "./tabs/CreatorTab";
@@ -292,6 +293,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
       if (mode === "admin_register") {
         if (!companyName || !email || !pw) throw new Error("Preencha todos os campos.");
         const r = await api("register", { companyName, email, password: pw });
+        try { localStorage.setItem(`inflatudo_tour_${r.user.company_id}`, "pending"); } catch { } // conta nova: abre o tutorial
         onLogin({ ...r.user, token: r.token });
       } else {
         if (!email || !pw) throw new Error("Preencha todos os campos.");
@@ -880,12 +882,12 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
                                     ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
               <Check size={15} />Selecionar
             </button>
-            <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 px-4
+            <button data-tour="manual" onClick={() => setShowForm(!showForm)} className="flex items-center gap-2 px-4
                                     py-2 rounded-xl text-sm font-bold text-white"
               style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>
               <Plus size={16} />Novo Manual
             </button>
-            <button onClick={() => setView(view === "list" ? "ai" : "list")} className={`flex items-center
+            <button data-tour="extract" onClick={() => setView(view === "list" ? "ai" : "list")} className={`flex items-center
                                     gap-2 px-4 py-2 rounded-xl text-sm font-bold border ${dark ? "border-orange-500/50 text-orange-400" : "border-orange-400 text-orange-600"}`}>
               <Zap size={16} />{view === "list" ? "Extrair com IA" : "Ver Pedidos"}
             </button>
@@ -2218,7 +2220,31 @@ function useIsMobile() {
 }
 
 // Celular: o menu lateral fica escondido. Abre pela seta no topo ou arrastando da borda esquerda.
-function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout }) {
+// Passos do tutorial (só mostra o que a conta tem)
+function tourSteps(tabs, isMobile, plan) {
+  const nav = (k) => (isMobile ? null : `[data-tour="nav-${k}"]`);
+  const has = (k) => tabs.includes(k) && tabFeatureOk(k);
+  const S = [];
+  S.push({ tab: tabs.includes("orders") ? "orders" : undefined, title: "Seu painel da fábrica", text: isMobile ? "Este é o Inflatudo. Toque no botão de menu, no canto de cima, para trocar de tela a qualquer momento." : "Este é o Inflatudo. No menu da esquerda ficam todas as telas da sua fábrica. Vamos passar por cada uma.", target: isMobile ? "[data-drawer-open]" : null, icon: Sparkles });
+  if (tabs.includes("orders")) {
+    S.push({ tab: "orders", target: nav("orders"), title: "Pedidos", text: "Aqui ficam todos os pedidos: cliente, vendedor, prazo e brinquedos. Dá para buscar, filtrar e editar qualquer pedido.", icon: Package });
+    S.push({ tab: "orders", target: '[data-tour="extract"]', title: "Extrair com IA", text: "O jeito mais rápido de lançar um pedido: escolha o PDF do pedido e a IA preenche tudo sozinha. Você só confere e salva.", icon: ZapIcon });
+    S.push({ tab: "orders", target: '[data-tour="manual"]', title: "Novo pedido manual", text: "Prefere digitar? Lance o pedido na mão por aqui. Ao salvar, cada brinquedo vai direto para a produção.", icon: Plus });
+  }
+  if (tabs.includes("production")) S.push({ tab: "production", target: nav("production"), title: "Produção", text: "Cada brinquedo passa por Corte, Costura, Preparação e Montagem. Escolha quem fez cada etapa e acompanhe o andamento de cada pedido.", icon: FactoryIcon });
+  if (tabs.includes("finalization")) S.push({ tab: "finalization", target: nav("finalization"), title: "Finalização", text: "Brinquedo saiu da produção? Aqui ele é finalizado." + (hasFeature("photos") ? " Ao finalizar, tire a foto: ela fica guardada e o vendedor é avisado na hora." : ""), icon: DoneIcon });
+  if (has("photos")) S.push({ tab: "photos", target: nav("photos"), title: "Fotos", text: "Todas as fotos dos brinquedos finalizados, separadas em pastas por pedido. Dá para baixar uma ou todas.", icon: CameraIcon });
+  if (has("ready")) S.push({ tab: "ready", target: nav("ready"), title: "Pronta entrega", text: "Seu quadro de brinquedos prontos para vender, com foto, nome e valor. Os vendedores enxergam o quadro e você marca o que foi vendido.", icon: PackageCheck });
+  if (has("dashboard")) S.push({ tab: "dashboard", target: nav("dashboard"), title: "Dashboard e Cérebro", text: "Faturamento, pedidos, ranking dos vendedores e rendimento da equipe. E o Cérebro: pergunte qualquer coisa da fábrica e ele responde.", icon: DashIcon });
+  if (has("sales")) S.push({ tab: "sales", target: nav("sales"), title: "Vendedores", text: "A área de cada vendedor: as vendas dele, os clientes" + (hasFeature("crm") ? " e o CRM com IA, que diz quem chamar hoje." : "."), icon: TrendingUp });
+  if (has("routes")) S.push({ tab: "routes", target: nav("routes"), title: "Mapa de clientes", text: "Veja no mapa onde estão seus clientes e monte rotas de entrega saindo da fábrica.", icon: MapIcon2 });
+  if (tabs.includes("team")) S.push({ tab: "team", target: nav("team"), title: "Equipe e acessos", text: "Crie o login de cada funcionário e escolha o que cada um pode ver ou editar. O link de acesso dos funcionários é só da sua fábrica.", icon: TeamIcon });
+  if (!plan?.creator) S.push({ target: isMobile ? null : '[data-tour="plans"]', title: "Planos e assinatura", text: "Aqui você vê seu plano, quanto já usou e quando renova. As telas com cadeado ficam liberadas nos planos maiores.", icon: CardIcon });
+  S.push({ tab: tabs.includes("orders") ? "orders" : undefined, title: "Tudo pronto!", text: "Comece lançando seu primeiro pedido. Para rever este tutorial, clique em \"Tutorial\" no menu." });
+  return S;
+}
+
+function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout, onTour }) {
   const touch = useRef(null);
   const go = (k) => { onGo(k); setOpen(false); };
   return (
@@ -2246,6 +2272,7 @@ function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user,
         </nav>
         <div className="p-3 border-t space-y-2" style={{ borderColor: dark ? "#1f2937" : "#f1f5f9" }}>
           {isAdmin && <button onClick={() => { setOpen(false); onPlans(); }} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-gradient-to-r from-orange-500 to-orange-600"><CreditCard size={14} />Planos e Assinatura</button>}
+          {isAdmin && onTour && <button onClick={() => { setOpen(false); onTour(); }} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-bold ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}><TourIcon size={17} />Ver tutorial</button>}
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => setDark(!dark)} className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-bold ${dark ? "border-gray-700 text-yellow-400" : "border-gray-200 text-blue-600"}`}>{dark ? <Sun size={17} /> : <Moon size={17} />}{dark ? "Claro" : "Escuro"}</button>
             <button onClick={onLogout} className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-bold text-red-500 ${dark ? "border-gray-700" : "border-gray-200"}`}><LogOut size={17} />Sair</button>
@@ -2305,6 +2332,13 @@ function MainApp() {
     if (fixed !== data) { setData(fixed); saveData(fixed, { system: true }); }
   }, [data, user, loadingServer]); // eslint-disable-line
   const [showPlans, setShowPlans] = useState(false);
+  const [tour, setTour] = useState(null); // null | "welcome" | "run"
+  const tourKey = user?.company_id ? `inflatudo_tour_${user.company_id}` : null;
+  useEffect(() => {
+    if (!tourKey || loadingServer || user?.role !== "admin") return;
+    try { if (localStorage.getItem(tourKey) === "pending") setTour("welcome"); } catch { }
+  }, [tourKey, loadingServer]); // eslint-disable-line
+  const endTour = () => { setTour(null); try { tourKey && localStorage.setItem(tourKey, "done"); } catch { } };
   const [photoFocus, setPhotoFocus] = useState(null);
   const openPhotos = (pedido) => { setPhotoFocus(String(pedido)); setTab("photos"); };
   // Avisos e fotos chegam de outros aparelhos: confere a cada 15 s (só esses dois campos)
@@ -2419,7 +2453,7 @@ function MainApp() {
           {Object.entries(TAB_META).filter(([k]) => tabs.includes(k)).map(([k, { label, Icon }]) => {
             const active = currentTab === k;
             return (
-              <button key={k} onClick={() => { setTab(k); if (window.innerWidth < 900) setSidebarOpen(false); }} title={label} className={`w-full flex items-center ${sidebarOpen ? '' : 'justify-center'} gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+              <button key={k} data-tour={`nav-${k}`} onClick={() => { setTab(k); if (window.innerWidth < 900) setSidebarOpen(false); }} title={label} className={`w-full flex items-center ${sidebarOpen ? '' : 'justify-center'} gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
                 <Icon size={20} className={active ? 'text-orange-500' : ''} />
                 {sidebarOpen && <span className='text-sm flex-1 text-left'>{label}</span>}
                 {sidebarOpen && !tabFeatureOk(k) && <Lock size={13} className='text-gray-500' />}
@@ -2430,7 +2464,7 @@ function MainApp() {
 
         <div className={`${sidebarOpen ? 'p-4' : 'p-2'} border-t`} style={{ borderColor: dark ? '#1f2937' : '#f1f5f9' }}>
           {sidebarOpen && isAdmin && !plan?.creator && (
-            <button onClick={() => setShowPlans(true)} className='w-full flex items-center gap-2 mb-4 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20 hover:scale-[1.02] transition-transform'>
+            <button data-tour="plans" onClick={() => setShowPlans(true)} className='w-full flex items-center gap-2 mb-4 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20 hover:scale-[1.02] transition-transform'>
               <CreditCard size={14} /> Planos e Assinatura
             </button>
           )}
@@ -2438,6 +2472,7 @@ function MainApp() {
             <button onClick={() => setDark(!dark)} className={`p-2.5 rounded-xl border transition-all ${dark ? 'border-gray-700 bg-gray-800 text-yellow-400' : 'border-gray-200 bg-gray-100 text-blue-600'}`}>
               {dark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
+            {isAdmin && <button onClick={() => setTour("run")} title='Ver tutorial' className='p-2.5 text-gray-500 hover:text-orange-500 transition-colors flex items-center gap-2'><TourIcon size={20} />{sidebarOpen && <span className='text-xs font-bold'>Tutorial</span>}</button>}
             <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors flex items-center gap-2'><LogOut size={20} />{sidebarOpen && <span className='text-xs font-bold'>Sair</span>}</button>
           </div>
         </div>
@@ -2461,10 +2496,12 @@ function MainApp() {
             : ActiveTab ? <TabBoundary key={currentTab}><ActiveTab plan={plan} onPlans={() => setShowPlans(true)} data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} canEditReady={!user.sellerName && canEdit(user, 'ready')} canSellReady={!user.sellerName && canEdit(user, 'orders')} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
+        {tour === "welcome" && <TourWelcome dark={dark} name={user.company_name} onStart={() => setTour("run")} onSkip={endTour} />}
+        {tour === "run" && <Tour dark={dark} steps={tourSteps(tabs, isMobile, plan)} onGo={(t) => { if (tabs.includes(t)) setTab(t); }} onClose={endTour} />}
         {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.role === "admin" ? user.email : undefined} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
         {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
-      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}
+      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={() => setTour("run")} />}
       {hasFeature("brain") && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
     </div>
   );
