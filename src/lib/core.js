@@ -139,7 +139,7 @@ export function ensureSellers(data, opts = {}) {
       if (users.some(u => (u.email || "").toLowerCase() === login)) login = parts.slice(0, 2).join(".");
       let k = 2; const base = login;
       while (users.some(u => (u.email || "").toLowerCase() === login)) login = `${base}${k++}`;
-      users.push({ id: Date.now() + users.length + 7, name: s.name, email: login, password: "1234", role: "user", permissions: { sales: "edit", routes: "view" }, sellerName: s.name, autoLogin: true });
+      users.push({ id: Date.now() + users.length + 7, name: s.name, email: login, password: "", mustChange: true, role: "user", permissions: { sales: "edit", routes: "view" }, sellerName: s.name, autoLogin: true }); // sem senha: o gerente define e manda para ele
     }
     s.loginCreated = true; changed = true;
   });

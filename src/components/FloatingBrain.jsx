@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import ChatBox from "./ChatBox";
-import { Brain, Send, X, RefreshCw, Trash2, Bell, Camera, ChevronRight } from "lucide-react";
+import { Brain, Send, X, RefreshCw, Trash2, Bell, Camera, ChevronRight, Mic } from "lucide-react";
+import VoiceBrain from "./VoiceBrain";
 import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
 import { sameSeller } from "../lib/core";
 
@@ -69,6 +70,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
   const { msgs, setMsgs, ask, busy, scope } = useBrainAgent({ data, user, persist, allowSave: isAdmin, storageKey: `float-chat-${user?.id || "x"}` });
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy, open]);
   const send = (q) => { const t = (q ?? input).trim(); if (!t) return; setInput(""); ask(t); };
+  const [voiceOn, setVoiceOn] = useState(false);
   const suggestions = scope === "none"
     ? ["Qual pedido está mais atrasado?", "Quais brinquedos estão esperando costura?", "O que foi finalizado hoje?", "Quantos itens eu fiz este mês?"]
     : scope === "own"
@@ -77,6 +79,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
 
   return (
     <>
+      {voiceOn && <VoiceBrain ask={ask} busy={busy} userName={user?.name?.split(" ")[0]} onClose={() => setVoiceOn(false)} />}
       <style>{`@keyframes fbPulse{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.8);opacity:0}}`}</style>
       {!open && (
         <button onClick={openPanel} title="Pergunte ao Cérebro" className="fab-pos fixed bottom-5 right-5 z-[150] w-14 h-14 rounded-full text-white flex items-center justify-center shadow-2xl hover:scale-105 transition-transform" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)", boxShadow: "0 12px 30px rgba(168,85,247,.5)" }}>
@@ -158,6 +161,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
             <div ref={endRef} />
           </div>
           <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex items-end gap-2 ${dark ? "border-white/5" : "border-fuchsia-100"}`}>
+            {isAdmin && <button type="button" onClick={() => setVoiceOn(true)} title="Conversar por voz" className="px-3 h-[42px] rounded-xl text-white flex-shrink-0" style={{ background: "linear-gradient(135deg,#7c3aed,#db2777)" }}><Mic size={16} /></button>}
             <ChatBox autoFocus value={input} onChange={setInput} onSend={() => send()} placeholder="Pergunte ao cérebro…" className={`px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-white/5 border-white/10 text-white placeholder-slate-500" : "bg-white border-fuchsia-100"} focus:border-fuchsia-500`} />
             <button disabled={!!busy || !input.trim()} className="px-4 h-[42px] rounded-xl text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Send size={15} /></button>
           </form>

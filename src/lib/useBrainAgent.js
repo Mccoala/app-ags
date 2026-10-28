@@ -40,8 +40,10 @@ export function useBrainAgent({ data, user, persist, allowSave = false, storageK
     onNoteSaved && onNoteSaved(note);
   };
 
-  const ask = async (question, { noSave = false } = {}) => {
-    const q = String(question || "").trim(); if (!q || busy) return;
+  const VOICE = "\n\nMODO CONVERSA POR VOZ: sua resposta vai ser FALADA em voz alta. Responda como numa conversa ao vivo: no máximo 3 frases curtas, linguagem natural, SEM markdown, sem asteriscos, sem listas, sem emojis, sem tabelas. Arredonde números grandes (\"uns 120 mil reais\"). Se a pergunta pedir uma lista longa, diga os 2 ou 3 principais e ofereça mandar o resto por escrito. Termine, quando fizer sentido, com uma pergunta curta para continuar a conversa.";
+  const ask = async (question, { noSave = false, voice = false } = {}) => {
+    const q = String(question || "").trim(); if (!q || busy) return null;
+    let answer = null;
     const canSave = allowSave && !noSave;
     const tools = TOOLS.filter(t => canSave || t.name !== "salvar_no_cerebro");
     const history = msgs.filter(m => !m.error).slice(-8).map(m => ({ role: m.role, content: m.content }));
@@ -53,7 +55,7 @@ export function useBrainAgent({ data, user, persist, allowSave = false, storageK
       for (let step = 0; step < 10; step++) {
         setBusy(step ? `Pensando… (${used.length} consulta${used.length === 1 ? "" : "s"})` : "Pensando…");
         const view = scrubForUser(dataRef.current, user);
-        const system = `${BASE}${rulesFor(user, scope, canSave)}${noSave ? "\nEsta é uma análise pontual: NÃO salve nada no cérebro." : ""}\n\nCONTEXTO RÁPIDO (JSON):\n${JSON.stringify(scope === "none" ? redactMoney(brainContext(view)) : brainContext(view))}`;
+        const system = `${BASE}${rulesFor(user, scope, canSave)}${noSave ? "\nEsta é uma análise pontual: NÃO salve nada no cérebro." : ""}${voice ? VOICE : ""}\n\nCONTEXTO RÁPIDO (JSON):\n${JSON.stringify(scope === "none" ? redactMoney(brainContext(view)) : brainContext(view))}`;
         let d;
         try { d = await callClaude({ model, system, messages: apiMsgs, tools, max_tokens: 1400 }); }
         catch (e) { if (model !== "claude-haiku-4-5" && /demorou|respondeu/.test(e.message)) { model = "claude-haiku-4-5"; d = await callClaude({ model, system, messages: apiMsgs, tools, max_tokens: 1200 }); } else throw e; }
@@ -61,7 +63,8 @@ export function useBrainAgent({ data, user, persist, allowSave = false, storageK
         const calls = (d.content || []).filter(c => c.type === "tool_use");
         if (d.stop_reason !== "tool_use" || !calls.length) {
           const text = (d.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim();
-          setMsgs(m => [...m, { role: "assistant", content: text || "Pronto.", tools: used }]);
+          answer = text || "Pronto.";
+          setMsgs(m => [...m, { role: "assistant", content: answer, tools: used, voice: voice || undefined }]);
           break;
         }
         const results = [];
@@ -81,8 +84,10 @@ export function useBrainAgent({ data, user, persist, allowSave = false, storageK
       }
     } catch (e) {
       setMsgs(m => [...m, { role: "assistant", content: `⚠️ Não consegui responder agora: ${e.message}`, error: true }]);
+      answer = null;
     }
     setBusy(null);
+    return answer;
   };
 
   return { msgs, setMsgs, ask, busy, scope };

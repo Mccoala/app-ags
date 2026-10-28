@@ -203,7 +203,7 @@ function saveData(d, opts = {}) {
   if (CURRENT_COMPANY_ID) { try { appendLog(d, opts.system); } catch (e) { console.warn("log", e); } }
   if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
   if (!LOAD_OK) { if (!opts.system) window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { code: "not_loaded", message: "Os dados ainda não carregaram. Atualize a página antes de mexer." } })); return; }
-  try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
+  try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify({ ...d, users: (d.users || []).map(({ password, ...u }) => ({ ...u, hasPassword: !!(password || u.hasPassword) })) })); } catch { }
   LAST_LOCAL_SAVE = Date.now();
   saveToSupabase(d, opts);
 }
@@ -289,6 +289,8 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
   const [forgot, setForgot] = useState(false); const [forgotEmail, setForgotEmail] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [firstAccess, setFirstAccess] = useState(false); // primeiro acesso do funcionário: cria a própria senha
+  const [newPw, setNewPw] = useState(""); const [newPw2, setNewPw2] = useState("");
 
   const handleAdminAuth = async () => {
     setLoading(true); setErr("");
@@ -312,9 +314,16 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     try {
       if (!qsCompanyId) throw new Error("Link de empresa inválido. Peça o link correto ao seu administrador.");
       if (!email || !pw) throw new Error("Preencha usuário e senha.");
-      const r = await api("employeeLogin", { companyId: qsCompanyId, login: email, password: pw });
+      if (firstAccess) {
+        if (newPw.length < 6) throw new Error("A senha nova precisa ter pelo menos 6 caracteres.");
+        if (newPw !== newPw2) throw new Error("As duas senhas novas não são iguais.");
+      }
+      const r = await api("employeeLogin", { companyId: qsCompanyId, login: email, password: pw, ...(firstAccess ? { newPassword: newPw } : {}) });
       onLogin({ ...r.user, token: r.token });
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      if (e.code === "must_change" && !firstAccess) { setFirstAccess(true); setErr(""); }
+      else setErr(e.message);
+    }
     setLoading(false);
   };
 
@@ -376,8 +385,15 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
               </div>
             </div>
 
+            {mode === "employee" && firstAccess && (
+              <div className="p-4 rounded-xl border border-orange-500/40 bg-orange-500/10 space-y-3">
+                <div><div className="font-black text-sm text-orange-400">Primeiro acesso: crie a sua senha</div><div className="text-xs text-gray-400 mt-0.5">A senha que você recebeu é provisória. Escolha uma só sua (mínimo 6 caracteres).</div></div>
+                <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Nova senha" autoComplete="new-password" className="input-dark w-full" />
+                <input type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="Repita a nova senha" autoComplete="new-password" className="input-dark w-full" />
+              </div>
+            )}
             <button onClick={handleSubmit} disabled={loading} className="btn-brand press-scale w-full mt-2 justify-center py-3 text-sm">
-              {loading ? <><RefreshCw size={16} className="animate-spin" /> Aguarde...</> : mode === "admin_register" ? "Criar Conta & Iniciar Trial" : "Entrar"}
+              {loading ? <><RefreshCw size={16} className="animate-spin" /> Aguarde...</> : mode === "admin_register" ? "Criar Conta & Iniciar Trial" : firstAccess ? "Salvar senha e entrar" : "Entrar"}
             </button>
           </div>
         </div>
@@ -2029,7 +2045,9 @@ function TeamTab({ data, setData, dark, user }) {
   const pickSub = (id) => { if (freeTeam && (id === 'logins' || id === 'sellers')) { setPlanToast(`${id === 'logins' ? 'Logins da equipe' : 'Vendedores'}: disponível no plano Essencial`); clearTimeout(window.__planToastT); window.__planToastT = setTimeout(() => setPlanToast(null), 2600); return; } setActiveSubTab(id); };
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
-  const EMPTY_USER = { name: '', email: '', password: '', permissions: { production: 'edit' } };
+  const EMPTY_USER = { kind: '', name: '', email: '', password: '', permissions: { production: 'edit' }, sellerName: '', newSeller: '' };
+  const SELLER_PERMS = { sales: 'edit', routes: 'view' }; // vendedor: só a área dele (produção, finalização e fotos ele vê só dos próprios pedidos)
+  const [share, setShare] = useState(null); // { name, login, password } — mostrado uma vez, para mandar ao funcionário
   const [userForm, setUserForm] = useState(EMPTY_USER);
   const [openUser, setOpenUser] = useState(null);
   const [showPw, setShowPw] = useState({});
@@ -2072,12 +2090,25 @@ function TeamTab({ data, setData, dark, user }) {
   const permSummary = (p) => { const o = toPermObj(p); const e = Object.keys(o).filter(k => o[k] === 'edit').map(k => PERM_TAB_LABELS[k]); const v = Object.keys(o).filter(k => o[k] === 'view').map(k => PERM_TAB_LABELS[k]); return [e.length ? `Edita: ${e.join(', ')}` : '', v.length ? `Vê: ${v.join(', ')}` : ''].filter(Boolean).join(' · ') || 'Sem acesso a nenhuma aba'; };
   const toggleMemberStatus = (id) => { const nd = { ...data }; nd.team = nd.team.map(m => m.id !== id ? m : { ...m, status: m.status === 'ativo' ? 'inativo' : 'ativo' }); setData(nd); saveData(nd); };
 
+  const loginOfSeller = (name) => (data.users || []).find(u => u.sellerName && sameSeller(data.sellers || [], u.sellerName, name));
+  const slugLogin = (n) => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().split(/\s+/)[0]?.replace(/[^a-z0-9.]/g, '') || '';
   const addUser = () => {
-    if (!userForm.name || !userForm.email || !userForm.password) { alert('Preencha nome, usuário e senha.'); return; }
-    if ((data.users || []).some(u => (u.email || '').toLowerCase() === userForm.email.trim().toLowerCase())) { alert('Esse usuário já existe.'); return; }
-    const nd = { ...data }; nd.users = nd.users || []; nd.users.push({ id: Date.now(), name: userForm.name, email: userForm.email.trim().toLowerCase(), password: userForm.password, role: 'user', permissions: toPermObj(userForm.permissions), sellerName: userForm.sellerName || '' });
-    setData(nd); saveData(nd); setUserForm(EMPTY_USER); setShowUserForm(false);
+    const isSeller = userForm.kind === 'seller';
+    const sellerName = isSeller ? (userForm.sellerName === '__new' ? userForm.newSeller.trim() : userForm.sellerName) : '';
+    const name = isSeller ? sellerName : userForm.name.trim();
+    const login = userForm.email.trim().toLowerCase();
+    if (!name || !login || !userForm.password) { alert(isSeller ? 'Escolha o vendedor e preencha usuário e senha.' : 'Preencha nome, usuário e senha.'); return; }
+    if (userForm.password.length < 6) { alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
+    if ((data.users || []).some(u => (u.email || '').toLowerCase() === login)) { alert('Esse usuário já existe. Escolha outro.'); return; }
+    if (isSeller && loginOfSeller(sellerName)) { alert(`${sellerName} já tem login. Use "Trocar senha" no login dele.`); return; }
+    let nd = isSeller ? addSeller(data, sellerName).data : { ...data };
+    const canon = isSeller ? (findSeller(nd.sellers || [], sellerName)?.name || sellerName) : '';
+    nd = { ...nd, users: [...(nd.users || []), { id: Date.now(), name, email: login, password: userForm.password, mustChange: true, role: 'user', permissions: isSeller ? SELLER_PERMS : toPermObj(userForm.permissions), sellerName: canon }] };
+    persistTeam(nd);
+    setShare({ name, login, password: userForm.password });
+    setUserForm(EMPTY_USER); setShowUserForm(false);
   };
+  const shareText = (sh) => `Olá, ${sh.name}! Seu acesso ao Inflatudo:\n${accessLink}\nUsuário: ${sh.login}\nSenha provisória: ${sh.password}\nNo primeiro acesso você cria a sua própria senha.`;
 
   const ic = `w-full px-3 py-2 rounded-lg border text-sm outline-none ${dark ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`;
 
@@ -2143,28 +2174,75 @@ function TeamTab({ data, setData, dark, user }) {
               <button onClick={() => setShowUserForm(true)} className='btn-brand text-xs'><Shield size={14}/> Novo Login</button>
             </div>
           </div>
-          {showUserForm && (
-            <div className='card-surface p-4 border-orange-500/30 animate-slide-up'>
-              <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-4'>
-                <input placeholder='Nome' value={userForm.name} onChange={e => setUserForm({...userForm, name:e.target.value})} className={ic} />
-                <input placeholder='Usuário' value={userForm.email} onChange={e => setUserForm({...userForm, email:e.target.value})} className={ic} />
-                <input placeholder='Senha' type='password' value={userForm.password} onChange={e => setUserForm({...userForm, password:e.target.value})} className={ic} />
-              </div>
-              <div className='mb-4'>
-                <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>O que este funcionário pode fazer</div>
-                <PermissionGrid value={userForm.permissions} onChange={(p) => setUserForm({ ...userForm, permissions: p })} dark={dark} />
-                <div className='mt-3'>
-                  <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1'>Este login é de um vendedor?</div>
-                  <select value={userForm.sellerName || ''} onChange={e => setUserForm({ ...userForm, sellerName: e.target.value })} className={ic}>
-                    <option value=''>Não — é da fábrica/escritório</option>
-                    {(data.sellers || []).map(sv => <option key={sv.id || sv.name} value={sv.name}>Sim — {sv.name} (vê só os próprios clientes e vendas)</option>)}
-                  </select>
+          {share && (
+            <div className='card-surface p-4 border-emerald-500/40 animate-slide-up'>
+              <div className='flex items-start justify-between gap-3'>
+                <div>
+                  <div className='font-black text-sm text-emerald-500'>Acesso pronto para {share.name}</div>
+                  <div className='text-xs text-slate-500 mt-0.5'>Mande agora: por segurança, a senha não fica visível depois. No primeiro acesso a pessoa cria a própria senha.</div>
                 </div>
-                <p className='text-[11px] text-slate-500 mt-2'>A aba Equipe (logins, colaboradores e vendedores) é só do gerente.</p>
+                <button onClick={() => setShare(null)} className='p-1 text-slate-400 hover:text-red-500'><X size={16}/></button>
               </div>
-              <div className='flex gap-2'><button onClick={addUser} className='btn-brand'>Criar Acesso</button><button onClick={() => setShowUserForm(false)} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>Cancelar</button></div>
+              <pre className={`mt-3 p-3 rounded-xl text-xs whitespace-pre-wrap font-mono ${dark ? 'bg-gray-950 text-gray-300' : 'bg-gray-50 text-gray-700'}`}>{shareText(share)}</pre>
+              <div className='mt-3 flex gap-2 flex-wrap'>
+                <a href={`https://wa.me/?text=${encodeURIComponent(shareText(share))}`} target='_blank' rel='noreferrer' className='px-3 py-2 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500'>Enviar no WhatsApp</a>
+                <button onClick={async () => { try { await navigator.clipboard.writeText(shareText(share)); } catch { window.prompt('Copie:', shareText(share)); } }} className={`px-3 py-2 rounded-xl text-xs font-bold border ${dark ? 'border-gray-700 text-gray-300' : 'border-gray-300 text-gray-700'}`}>Copiar</button>
+              </div>
             </div>
           )}
+          {showUserForm && (() => {
+            const isSeller = userForm.kind === 'seller';
+            const pickedSeller = userForm.sellerName === '__new' ? userForm.newSeller.trim() : userForm.sellerName;
+            const already = isSeller && pickedSeller ? loginOfSeller(pickedSeller) : null;
+            const kindBtn = (k, title, desc) => (
+              <button type='button' onClick={() => setUserForm({ ...EMPTY_USER, kind: k })} className={`flex-1 text-left p-3 rounded-xl border-2 transition ${userForm.kind === k ? 'border-orange-500 bg-orange-500/10' : dark ? 'border-gray-700 hover:border-gray-600' : 'border-gray-200 hover:border-gray-300'}`}>
+                <div className='font-black text-sm'>{title}</div><div className='text-[11px] text-slate-500 mt-0.5'>{desc}</div>
+              </button>
+            );
+            return (
+              <div className='card-surface p-4 border-orange-500/30 animate-slide-up space-y-4'>
+                <div>
+                  <div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>Tipo de acesso</div>
+                  <div className='flex flex-col sm:flex-row gap-2'>
+                    {kindBtn('staff', 'Funcionário da fábrica', 'Produção, finalização, escritório… você escolhe o que ele pode fazer.')}
+                    {kindBtn('seller', 'Vendedor', 'Vê só os próprios clientes, pedidos, vendas e fotos.')}
+                  </div>
+                </div>
+                {isSeller && (
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                    <select value={userForm.sellerName} onChange={e => { const v = e.target.value; setUserForm({ ...userForm, sellerName: v, email: userForm.email || (v && v !== '__new' ? slugLogin(v) : '') }); }} className={ic}>
+                      <option value=''>Qual vendedor?</option>
+                      {(data.sellers || []).map(sv => <option key={sv.id || sv.name} value={sv.name}>{sv.name}{loginOfSeller(sv.name) ? ' — já tem login' : ''}</option>)}
+                      <option value='__new'>+ Vendedor novo</option>
+                    </select>
+                    {userForm.sellerName === '__new' && <input placeholder='Nome do vendedor' value={userForm.newSeller} onChange={e => setUserForm({ ...userForm, newSeller: e.target.value, email: slugLogin(e.target.value) })} className={ic} />}
+                  </div>
+                )}
+                {already ? (
+                  <div className='p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 text-sm'>
+                    <b>{pickedSeller}</b> já tem login (usuário <b>{already.email}</b>). Não precisa criar outro.
+                    <button onClick={() => { setShowUserForm(false); setUserForm(EMPTY_USER); setPwEdit({ id: already.id, value: '' }); }} className='ml-2 underline font-bold text-orange-500'>Definir nova senha para ele</button>
+                  </div>
+                ) : userForm.kind && (
+                  <>
+                    <div className={`grid grid-cols-1 ${isSeller ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-3`}>
+                      {!isSeller && <input placeholder='Nome' value={userForm.name} onChange={e => setUserForm({ ...userForm, name: e.target.value, email: userForm.email || '' })} className={ic} />}
+                      <input placeholder='Usuário (para entrar)' value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} className={ic} />
+                      <input placeholder='Senha provisória (mín. 6)' type='text' autoComplete='off' value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} className={ic} />
+                    </div>
+                    {isSeller
+                      ? <p className='text-[11px] text-slate-500'>O vendedor entra na Área dos Vendedores e vê só os pedidos, clientes, valores e fotos dele. Nunca vê os outros vendedores.</p>
+                      : <div><div className='text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2'>O que este funcionário pode fazer</div><PermissionGrid value={userForm.permissions} onChange={(p) => setUserForm({ ...userForm, permissions: p })} dark={dark} /></div>}
+                    <p className='text-[11px] text-slate-500'>No primeiro acesso a pessoa troca a senha provisória pela dela. A aba Equipe é só do gerente.</p>
+                  </>
+                )}
+                <div className='flex gap-2'>
+                  {userForm.kind && !already && <button onClick={addUser} className='btn-brand'>Criar Acesso</button>}
+                  <button onClick={() => { setShowUserForm(false); setUserForm(EMPTY_USER); }} className={`px-4 py-2 rounded-xl text-sm font-bold ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>Cancelar</button>
+                </div>
+              </div>
+            );
+          })()}
           <div className='space-y-2'>
             {(data.users || []).length === 0 && <div className='text-center py-10 text-sm text-slate-500'>Nenhum login de funcionário criado ainda.</div>}
             {(data.users || []).map(u => (
@@ -2172,7 +2250,7 @@ function TeamTab({ data, setData, dark, user }) {
                 <div className='flex items-center justify-between gap-3 flex-wrap'>
                   <div className='min-w-0'>
                     <p className='font-bold text-sm'>{u.name}</p>
-                    <p className='text-xs text-slate-500'>usuário: <b>{u.email}</b> · senha: <span className='font-mono'>{showPw[u.id] ? u.password : '••••'}</span> <button onClick={() => setShowPw({ ...showPw, [u.id]: !showPw[u.id] })} className='underline ml-1'>{showPw[u.id] ? 'ocultar' : 'mostrar'}</button></p>
+                    <p className='text-xs text-slate-500'>usuário: <b>{u.email}</b> · {(u.password || u.hasPassword) ? (u.mustChange ? <span>senha provisória (troca no 1º acesso)</span> : <span>senha definida 🔒</span>) : <span className='text-amber-500 font-bold'>sem senha — defina para liberar o acesso</span>}</p>
                     <p className='text-[11px] text-slate-500 mt-1'>{permSummary(u.permissions)}{u.sellerName ? ` · vendedor: ${u.sellerName}` : ''}</p>
                   </div>
                   <div className='flex gap-2'>
@@ -2183,8 +2261,8 @@ function TeamTab({ data, setData, dark, user }) {
                 </div>
                 {pwEdit?.id === u.id && (
                   <div className='mt-3 flex gap-2 flex-wrap items-center animate-slide-up'>
-                    <input autoFocus type='text' value={pwEdit.value} onChange={e => setPwEdit({ ...pwEdit, value: e.target.value })} placeholder='Nova senha' className={`${ic} !w-56`} />
-                    <button disabled={!pwEdit.value.trim()} onClick={() => { updateUser(u.id, { password: pwEdit.value.trim() }); setPwEdit(null); setShowPw({ ...showPw, [u.id]: true }); }} className='px-3 py-2 rounded-xl text-xs font-black bg-emerald-500 text-white disabled:opacity-40'>Salvar senha</button>
+                    <input autoFocus type='text' value={pwEdit.value} onChange={e => setPwEdit({ ...pwEdit, value: e.target.value })} placeholder='Senha provisória (mín. 6)' className={`${ic} !w-56`} />
+                    <button disabled={pwEdit.value.trim().length < 6} onClick={() => { const v = pwEdit.value.trim(); updateUser(u.id, { password: v, mustChange: true }); setPwEdit(null); setShare({ name: u.name, login: u.email, password: v }); }} className='px-3 py-2 rounded-xl text-xs font-black bg-emerald-500 text-white disabled:opacity-40'>Salvar senha</button>
                     <button onClick={() => setPwEdit(null)} className='px-3 py-2 rounded-xl text-xs font-bold text-slate-500'>Cancelar</button>
                   </div>
                 )}
@@ -2209,7 +2287,7 @@ function TeamTab({ data, setData, dark, user }) {
       {activeSubTab === 'sellers' && (
         <div className='space-y-4'>
           <div className='flex items-center justify-between gap-2 flex-wrap'>
-            <p className='text-xs text-slate-500'>Vendedores entram sozinhos quando aparecem num pedido, cada um com cor própria e login automático (senha 1234). A cor escolhida aqui vale para o app inteiro.</p>
+            <p className='text-xs text-slate-500'>Vendedores entram sozinhos quando aparecem num pedido, cada um com cor própria e login automático (em Logins você define a senha e manda para ele). A cor escolhida aqui vale para o app inteiro.</p>
             <button onClick={() => setShowSellerForm(true)} className='btn-brand text-xs'><Plus size={14}/> Novo Vendedor</button>
           </div>
           {sellerMsg && <div className='p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-bold text-amber-500'>{sellerMsg}</div>}

@@ -14,6 +14,25 @@ const stateOf = (c0) => { const c = effective(c0); const s = planState({ ...c, e
 const publicState = (st) => ({ ...st, limits: Object.fromEntries(Object.entries(st.limits).map(([k, v]) => [k, v === Infinity ? null : v])) }); // Infinity não existe em JSON
 
 // Funcionário não recebe senhas nem dados do dono
+// Senhas dos funcionários: guardadas embaralhadas (scrypt) e nunca mandadas para a tela
+const isHashed = (p) => String(p || "").startsWith("scrypt$");
+const publicUsers = (users) => (users || []).map(u => { const { password, ...rest } = u; return { ...rest, hasPassword: !!password }; });
+function mergeUsers(incoming, old) {
+  return (incoming || []).map(u => {
+    const o = (old || []).find(x => String(x.id) === String(u.id));
+    const { hasPassword, ...out } = u;
+    let pw = out.password;
+    if (pw === undefined || pw === null || pw === "") pw = o?.password || ""; // a tela não manda a senha: mantém a guardada
+    if (pw && !isHashed(pw)) {
+      if (pw === "1234" && out.autoLogin && out.mustChange === undefined) out.mustChange = true; // senha automática antiga: troca no 1º acesso
+      pw = hashPassword(pw);
+    }
+    out.password = pw;
+    return out;
+  });
+}
+const hasPlainPasswords = (users) => (users || []).some(u => u.password && !isHashed(u.password));
+
 function scrubForEmployee(appData) {
   const d = { ...appData };
   d.users = (d.users || []).map(u => ({ ...u, password: undefined }));
@@ -54,15 +73,29 @@ const actions = {
     return { token, user: { id: c.id, name: c.company_name, email: c.admin_email, role: "admin", ...meta(c) } };
   },
 
-  async employeeLogin({ companyId, login, password }) {
+  async employeeLogin({ companyId, login, password, newPassword }) {
     if (!companyId) throw httpError(400, "Link de empresa inválido. Peça o link correto ao seu administrador.");
     if (!login || !password) throw httpError(400, "Preencha usuário e senha.");
     let c; try { c = await loadCompany(companyId, "id, company_name, plan_id, status, trial_ends_at, app_data"); } catch { throw httpError(404, "Empresa não encontrada. Confira o link com o seu administrador."); }
     const l = String(login).trim().toLowerCase();
-    const emp = (c.app_data?.users || []).find(u => String(u.email || "").trim().toLowerCase() === l && checkPassword(password, u.password));
+    const byLogin = (c.app_data?.users || []).find(u => String(u.email || "").trim().toLowerCase() === l);
+    if (byLogin && !byLogin.password) throw httpError(403, "Seu acesso ainda não foi liberado. Peça ao gerente para definir sua senha.", { code: "no_password" });
+    const emp = byLogin && checkPassword(password, byLogin.password) ? byLogin : null;
     if (!emp) throw httpError(401, "Usuário ou senha incorretos.");
     const st = stateOf(c);
     if (st.locked) throw httpError(402, "O acesso desta empresa está suspenso. Fale com o responsável.", { code: "locked" });
+    // primeiro acesso (ou senha 1234 antiga): a pessoa cria a própria senha antes de entrar
+    const weak = String(password) === "1234";
+    if (emp.mustChange || weak) {
+      if (!newPassword) throw httpError(409, "Primeiro acesso: crie sua senha.", { code: "must_change" });
+      if (String(newPassword).length < 6) throw httpError(400, "A senha nova precisa ter pelo menos 6 caracteres.", { code: "must_change" });
+      if (String(newPassword) === String(password)) throw httpError(400, "A senha nova precisa ser diferente da atual.", { code: "must_change" });
+      const a = c.app_data || {};
+      const users = (a.users || []).map(u => u.id === emp.id ? { ...u, password: hashPassword(newPassword), mustChange: false } : u);
+      const fixed = mergeUsers(users, users); // aproveita e embaralha qualquer senha antiga
+      const { error } = await db().from("companies").update({ app_data: { ...a, users: fixed } }).eq("id", c.id);
+      if (error) throw httpError(500, "Não consegui salvar a senha agora.");
+    }
     const token = signToken({ cid: c.id, uid: emp.id, role: "employee" });
     return { token, user: { id: emp.id, name: emp.name, role: "employee", permissions: emp.permissions || [], sellerName: emp.sellerName || "", company_id: c.id, company_name: c.company_name } };
   },
@@ -79,6 +112,11 @@ const actions = {
         }
       } catch (e) { console.warn("migração de fotos adiada", e.message); }
     }
+    if (c.app_data && hasPlainPasswords(c.app_data.users)) {
+      const moved = { ...c.app_data, users: mergeUsers(c.app_data.users, c.app_data.users) };
+      const { error } = await db().from("companies").update({ app_data: moved }).eq("id", c.id);
+      if (!error) c.app_data = moved;
+    }
     const st = stateOf(c);
     let user = null, app_data = c.app_data || {};
     if (s.role === "employee") {
@@ -87,7 +125,7 @@ const actions = {
       user = { permissions: emp.permissions || [], sellerName: emp.sellerName || "", name: emp.name };
       app_data = scrubForEmployee(app_data);
     }
-    app_data = await signForClient(app_data);
+    app_data = await signForClient({ ...app_data, users: publicUsers(app_data.users) });
     return { app_data, company: meta(c), plan: publicState(st), user };
   },
 
@@ -126,7 +164,7 @@ const actions = {
     if (s.role === "employee") {
       await currentEmployee(c, s.uid);
       next.users = cur.users || []; // funcionário não mexe em logins e senhas
-    }
+    } else next.users = mergeUsers(app_data.users, cur.users); // senha nova → embaralhada; sem senha na tela → mantém a guardada
     // limites do plano (só bloqueia o que aumenta)
     if (newOrders > 0 && srv.orders_created + newOrders > st.limits.orders) throw httpError(403, "Você chegou ao limite de pedidos do seu plano.", { code: "limit_orders", limit: st.limits.orders });
     const before = usageOf(cur, srv), after = usageOf(next, srv);
