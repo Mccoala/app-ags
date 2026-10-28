@@ -79,9 +79,21 @@ const actions = {
     return { app_data, company: meta(c), plan: publicState(st), user };
   },
 
-  async save({ app_data }, s) {
+  async save({ app_data, allowShrink }, s) {
     if (!app_data || typeof app_data !== "object") throw httpError(400, "Dados inválidos.");
     const c = await loadCompany(s.cid);
+    // Proteção: nunca deixa uma tela vazia (que não carregou) gravar por cima da empresa
+    {
+      const cur0 = c.app_data || {};
+      const n0 = (cur0.orders || []).length, n1 = Array.isArray(app_data.orders) ? app_data.orders.length : 0;
+      const filled = (a) => ["orders", "clients", "team", "production", "finalization", "users"].reduce((t, k) => t + ((a?.[k] || []).length || 0), 0);
+      const wipe = filled(cur0) >= 3 && filled(app_data) === 0;
+      const bigDrop = n0 >= 3 && n1 < n0 * 0.5 && !allowShrink;
+      if (wipe || bigDrop) {
+        console.warn("save bloqueado (encolheu demais)", { cid: s.cid, antes: n0, depois: n1, wipe });
+        throw httpError(409, "Para proteger seus dados, esta gravação foi bloqueada: a tela estava com informações faltando. Atualize a página.", { code: "shrink_blocked" });
+      }
+    }
     const st = stateOf(c);
     if (st.locked) throw httpError(402, st.reason === "trial" ? "Seu teste grátis terminou. Escolha um plano para continuar." : "Seu plano está vencido. Renove para continuar.", { code: "locked" });
     const cur = c.app_data || {};
@@ -90,6 +102,13 @@ const actions = {
     srv.orders_created = Math.max(srv.orders_created || 0, (cur.orders || []).length);
     const curIds = new Set((cur.orders || []).map(o => String(o.id)));
     const newOrders = (app_data.orders || []).filter(o => !curIds.has(String(o.id))).length;
+    // Pedidos excluídos ficam guardados na lixeira (dá para recuperar)
+    const newIds = new Set((app_data.orders || []).map(o => String(o.id)));
+    const gone = (cur.orders || []).filter(o => !newIds.has(String(o.id)));
+    if (gone.length) {
+      const at = new Date().toISOString(), by = s.role === "employee" ? `func:${s.uid}` : "admin";
+      srv.trash = [...(srv.trash || []), ...gone.map(o => ({ at, by, order: o, production: (cur.production || []).filter(p => String(p.orderId) === String(o.id)), finalization: (cur.finalization || []).filter(f => String(f.orderId) === String(o.id)) }))].slice(-300);
+    }
     const next = { ...app_data, _srv: srv };
     if (s.role === "employee") {
       await currentEmployee(c, s.uid);

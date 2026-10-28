@@ -140,19 +140,20 @@ const INITIAL_DATA = emptyData();
 let CURRENT_COMPANY_ID = null;
 // Gravação pelo servidor seguro, uma de cada vez (a mais recente sempre vence)
 let SAVE_BUSY = false, SAVE_NEXT = null, LAST_LOCAL_SAVE = 0;
-async function saveToSupabase(d) {
-  if (!CURRENT_COMPANY_ID) return;
-  if (SAVE_BUSY) { SAVE_NEXT = d; return; }
+let LOAD_OK = false; // só grava depois que os dados da empresa chegaram de verdade
+async function saveToSupabase(d, opts = {}) {
+  if (!CURRENT_COMPANY_ID || !LOAD_OK) return;
+  if (SAVE_BUSY) { SAVE_NEXT = { d, opts: { allowShrink: !!(opts.allowShrink || SAVE_NEXT?.opts?.allowShrink) } }; return; }
   SAVE_BUSY = true;
   try {
-    const r = await api("save", { app_data: d });
+    const r = await api("save", { app_data: d, ...(opts.allowShrink ? { allowShrink: true } : {}) });
     if (r?.plan) window.dispatchEvent(new CustomEvent("inflatudo-plan", { detail: r.plan }));
   } catch (err) {
     console.error("save error", err);
     window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { message: err.message, code: err.code, status: err.status } }));
   } finally {
     SAVE_BUSY = false;
-    if (SAVE_NEXT) { const n = SAVE_NEXT; SAVE_NEXT = null; saveToSupabase(n); }
+    if (SAVE_NEXT) { const n = SAVE_NEXT; SAVE_NEXT = null; saveToSupabase(n.d, n.opts); }
   }
 }
 // ── Histórico de ações: compara o que mudou desde o último salvamento e anota quem fez ──
@@ -201,9 +202,10 @@ function saveData(d, opts = {}) {
   if (PLAN?.locked) { if (!opts.system) window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { code: "locked", status: 402, message: "Plano vencido" } })); return; }
   if (CURRENT_COMPANY_ID) { try { appendLog(d, opts.system); } catch (e) { console.warn("log", e); } }
   if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
+  if (!LOAD_OK) { if (!opts.system) window.dispatchEvent(new CustomEvent("inflatudo-save-error", { detail: { code: "not_loaded", message: "Os dados ainda não carregaram. Atualize a página antes de mexer." } })); return; }
   try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
   LAST_LOCAL_SAVE = Date.now();
-  saveToSupabase(d);
+  saveToSupabase(d, opts);
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -708,7 +710,7 @@ function OrdersTab({ data, setData, dark, user }) {
         }
       }
     });
-    setData(nd); saveData(nd); setSelected(new Set()); setSelectMode(false); setConfirmDelete(false);
+    setData(nd); saveData(nd, { allowShrink: true }); setSelected(new Set()); setSelectMode(false); setConfirmDelete(false);
   };
 
   const handlePdf = (e) => {
@@ -2345,13 +2347,13 @@ function MainApp() {
   useEffect(() => { const el = document.querySelector('[data-main-scroll]'); if (el) el.scrollTop = 0; }, [tab]);
   const login = (u) => {
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
-    setData(emptyData()); setLoadingServer(true);
+    LOAD_OK = false; setData(emptyData()); setLoadingServer(true);
     setTab(firstTab(u));
     setUser(u);
   };
   const logout = () => {
     try { localStorage.removeItem(SESSION_KEY); } catch { }
-    CURRENT_COMPANY_ID = null; PLAN = null; setPlan(null); setSuspended(""); setData(emptyData()); setUser(null);
+    CURRENT_COMPANY_ID = null; LOAD_OK = false; PLAN = null; setPlan(null); setSuspended(""); setData(emptyData()); setUser(null);
   };
   useEffect(() => { try { localStorage.setItem("ags_dark", dark ? "1" : "0"); } catch { } }, [dark]);
   const persist = (nd) => { setData(nd); saveData(nd); };
@@ -2367,7 +2369,8 @@ function MainApp() {
       const d = e.detail || {};
       if (d.code === "locked" || d.code?.startsWith("limit_")) setLimitHit(d);
       // o servidor recusou: volta para o que está realmente salvo
-      if (d.status === 402 || d.status === 403) { try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); PLAN = r.plan; setPlan(r.plan); } catch { } }
+      if (d.code === "not_loaded" || d.code === "shrink_blocked") { alert(d.message); return; }
+      if (d.status === 402 || d.status === 403 || d.status === 409) { try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); LOAD_OK = true; PLAN = r.plan; setPlan(r.plan); } catch { } }
     };
     window.addEventListener("inflatudo-plan", onPlan); window.addEventListener("inflatudo-save-error", onErr);
     setOnAuthLost(() => { try { localStorage.removeItem(SESSION_KEY); } catch { } CURRENT_COMPANY_ID = null; setUser(null); });
@@ -2427,14 +2430,14 @@ function MainApp() {
        setLoadingServer(false);
        return;
     }
-    CURRENT_COMPANY_ID = user.company_id; CURRENT_USER = user; LAST_SNAP = null;
+    CURRENT_COMPANY_ID = user.company_id; CURRENT_USER = user; LAST_SNAP = null; LOAD_OK = false;
     async function fetchState() {
       try {
         const r = await api("load");
         PLAN = r.plan; setPlan(r.plan);
         const merged = { ...emptyData(), ...JSON.parse(JSON.stringify(r.app_data || {})) };
         LAST_SNAP = snapOf(merged);
-        setData(merged);
+        setData(merged); LOAD_OK = true;
         try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
         if (user.role === "employee" && r.user) {
           if (JSON.stringify(r.user.permissions) !== JSON.stringify(user.permissions) || (r.user.sellerName || "") !== (user.sellerName || "")) {
