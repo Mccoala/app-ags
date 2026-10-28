@@ -781,3 +781,14 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .lf-blob, .lf-grid, .lf-spark, .lf-lock, .lf-ring, .lf-halo, .lf-shackle, .lf-glint::after, .lf-btn, .lf-btn-shine, .lf-crown { animation: none !important; }
 }
+
+/* ── Cadeados do menu: abertos no tutorial, fecham um por um ── */
+.lock-open-pulse { animation: lock-open-pulse 1.4s ease-in-out infinite; }
+@keyframes lock-open-pulse { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.18); opacity: 1; } }
+.lock-snap { animation: lock-snap .8s cubic-bezier(.34,1.56,.64,1); }
+@keyframes lock-snap {
+  0% { transform: scale(1.6) rotate(-18deg); color: #fb923c; filter: drop-shadow(0 0 6px #f97316); }
+  45% { transform: scale(.85) rotate(6deg); color: #fb923c; }
+  100% { transform: scale(1) rotate(0); filter: none; }
+}
+@media (prefers-reduced-motion: reduce) { .lock-open-pulse, .lock-snap { animation: none !important; } }

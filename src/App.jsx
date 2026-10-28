@@ -11,7 +11,7 @@ import PhotosTab from "./tabs/PhotosTab";
 import PhotoCapture from "./components/PhotoCapture";
 import { photoRecords } from "./lib/photos";
 import { isChunkError, reloadForNewVersion } from "./lib/safeImport";
-import { Camera as CameraIcon, PackageCheck, Crown, HelpCircle as TourIcon, Factory as FactoryIcon, CheckCircle2 as DoneIcon, Users as TeamIcon, LayoutDashboard as DashIcon, Map as MapIcon2, CreditCard as CardIcon, Zap as ZapIcon } from "lucide-react";
+import { Camera as CameraIcon, PackageCheck, Crown, Unlock as LockOpen, HelpCircle as TourIcon, Factory as FactoryIcon, CheckCircle2 as DoneIcon, Users as TeamIcon, LayoutDashboard as DashIcon, Map as MapIcon2, CreditCard as CardIcon, Zap as ZapIcon } from "lucide-react";
 import Tour, { TourWelcome } from "./components/Tour";
 import { PlansModal, LimitModal, LockedFeature, PlanBanner, SuspendedScreen } from "./components/PlanUI";
 import ReadyTab from "./tabs/ReadyTab";
@@ -2199,7 +2199,26 @@ function loadSession() {
 let PLAN = null;
 const FEATURE_OF_TAB = { dashboard: "dashboard", clients: "clients", sales: "sellers", photos: "photos", routes: "map", ready: "ready" };
 const hasFeature = (f) => !PLAN || !!PLAN.features?.[f];
-const tabFeatureOk = (tab) => !FEATURE_OF_TAB[tab] || hasFeature(FEATURE_OF_TAB[tab]);
+let TOUR_OPEN = false; // durante o tutorial todas as telas ficam abertas
+const featureLocked = (tab) => !!FEATURE_OF_TAB[tab] && !hasFeature(FEATURE_OF_TAB[tab]);
+const tabFeatureOk = (tab) => TOUR_OPEN || !featureLocked(tab);
+
+// Cadeado do menu: aberto no tutorial; depois fecha um por um, de cima para baixo
+function TabLock({ order, closeAt, size = 13 }) {
+  const [closed, setClosed] = useState(() => !closeAt || Date.now() - closeAt > 8000);
+  const [snap, setSnap] = useState(false);
+  useEffect(() => {
+    if (TOUR_OPEN) { setClosed(false); return; }
+    if (!closeAt || Date.now() - closeAt > 8000) { setClosed(true); return; }
+    setClosed(false); setSnap(false);
+    const t = setTimeout(() => { setClosed(true); setSnap(true); }, 500 + order * 260);
+    const t2 = setTimeout(() => setSnap(false), 1300 + order * 260);
+    return () => { clearTimeout(t); clearTimeout(t2); };
+  }, [closeAt, order, TOUR_OPEN]); // eslint-disable-line
+  return closed
+    ? <Lock size={size} className={`text-gray-500 ${snap ? "lock-snap" : ""}`} />
+    : <LockOpen size={size} className="text-orange-400 lock-open-pulse" />;
+}
 const PLAN_FOR_FEATURE = { photos: "PRO", clients: "PRO", sellers: "PRO", crm: "Ultra", dashboard: "Ultra", brain: "Ultra", map: "Ultra", ready: "Ultra" };
 // Abas que o usuário pode ver: dono vê tudo; funcionário vê só o que foi liberado em Equipe > Logins
 const allowedTabs = (user) => {
@@ -2223,7 +2242,8 @@ function useIsMobile() {
 // Passos do tutorial (só mostra o que a conta tem)
 function tourSteps(tabs, isMobile, plan) {
   const nav = (k) => (isMobile ? null : `[data-tour="nav-${k}"]`);
-  const has = (k) => tabs.includes(k) && tabFeatureOk(k);
+  const has = (k) => tabs.includes(k);
+  const tag = (k) => featureLocked(k) ? ` (No plano ${PLAN_FOR_FEATURE[FEATURE_OF_TAB[k]] || "Ultra"}.)` : "";
   const S = [];
   S.push({ tab: tabs.includes("orders") ? "orders" : undefined, title: "Seu painel da fábrica", text: isMobile ? "Este é o Inflatudo. Toque no botão de menu, no canto de cima, para trocar de tela a qualquer momento." : "Este é o Inflatudo. No menu da esquerda ficam todas as telas da sua fábrica. Vamos passar por cada uma.", target: isMobile ? "[data-drawer-open]" : null, icon: Sparkles });
   if (tabs.includes("orders")) {
@@ -2232,19 +2252,20 @@ function tourSteps(tabs, isMobile, plan) {
     S.push({ tab: "orders", target: '[data-tour="manual"]', title: "Novo pedido manual", text: "Prefere digitar? Lance o pedido na mão por aqui. Ao salvar, cada brinquedo vai direto para a produção.", icon: Plus });
   }
   if (tabs.includes("production")) S.push({ tab: "production", target: nav("production"), title: "Produção", text: "Cada brinquedo passa por Corte, Costura, Preparação e Montagem. Escolha quem fez cada etapa e acompanhe o andamento de cada pedido.", icon: FactoryIcon });
-  if (tabs.includes("finalization")) S.push({ tab: "finalization", target: nav("finalization"), title: "Finalização", text: "Brinquedo saiu da produção? Aqui ele é finalizado." + (hasFeature("photos") ? " Ao finalizar, tire a foto: ela fica guardada e o vendedor é avisado na hora." : ""), icon: DoneIcon });
-  if (has("photos")) S.push({ tab: "photos", target: nav("photos"), title: "Fotos", text: "Todas as fotos dos brinquedos finalizados, separadas em pastas por pedido. Dá para baixar uma ou todas.", icon: CameraIcon });
-  if (has("ready")) S.push({ tab: "ready", target: nav("ready"), title: "Pronta entrega", text: "Seu quadro de brinquedos prontos para vender, com foto, nome e valor. Os vendedores enxergam o quadro e você marca o que foi vendido.", icon: PackageCheck });
-  if (has("dashboard")) S.push({ tab: "dashboard", target: nav("dashboard"), title: "Dashboard e Cérebro", text: "Faturamento, pedidos, ranking dos vendedores e rendimento da equipe. E o Cérebro: pergunte qualquer coisa da fábrica e ele responde.", icon: DashIcon });
-  if (has("sales")) S.push({ tab: "sales", target: nav("sales"), title: "Vendedores", text: "A área de cada vendedor: as vendas dele, os clientes" + (hasFeature("crm") ? " e o CRM com IA, que diz quem chamar hoje." : "."), icon: TrendingUp });
-  if (has("routes")) S.push({ tab: "routes", target: nav("routes"), title: "Mapa de clientes", text: "Veja no mapa onde estão seus clientes e monte rotas de entrega saindo da fábrica.", icon: MapIcon2 });
+  if (tabs.includes("finalization")) S.push({ tab: "finalization", target: nav("finalization"), title: "Finalização", text: "Brinquedo saiu da produção? Aqui ele é finalizado." + (hasFeature("photos") ? " Ao finalizar, tire a foto: ela fica guardada e o vendedor é avisado na hora." : " A partir do plano PRO, ao finalizar você tira a foto e o vendedor é avisado na hora."), icon: DoneIcon });
+  if (has("photos")) S.push({ tab: "photos", target: nav("photos"), title: "Fotos", text: "Todas as fotos dos brinquedos finalizados, separadas em pastas por pedido. Dá para baixar uma ou todas." + tag("photos"), icon: CameraIcon });
+  if (has("ready")) S.push({ tab: "ready", target: nav("ready"), title: "Pronta entrega", text: "Seu quadro de brinquedos prontos para vender, com foto, nome e valor. Os vendedores enxergam o quadro e você marca o que foi vendido." + tag("ready"), icon: PackageCheck });
+  if (has("dashboard")) S.push({ tab: "dashboard", target: nav("dashboard"), title: "Dashboard e Cérebro", text: "Faturamento, pedidos, ranking dos vendedores e rendimento da equipe. E o Cérebro: pergunte qualquer coisa da fábrica e ele responde." + tag("dashboard"), icon: DashIcon });
+  if (has("sales")) S.push({ tab: "sales", target: nav("sales"), title: "Vendedores", text: "A área de cada vendedor: as vendas dele, os clientes e o CRM com IA, que diz quem chamar hoje." + tag("sales"), icon: TrendingUp });
+  if (has("routes")) S.push({ tab: "routes", target: nav("routes"), title: "Mapa de clientes", text: "Veja no mapa onde estão seus clientes e monte rotas de entrega saindo da fábrica." + tag("routes"), icon: MapIcon2 });
+  if (has("clients")) S.push({ tab: "clients", target: nav("clients"), title: "Clientes", text: "Cada cliente com telefone, cidade, histórico de pedidos e quanto já comprou." + tag("clients"), icon: TeamIcon });
   if (tabs.includes("team")) S.push({ tab: "team", target: nav("team"), title: "Equipe e acessos", text: "Crie o login de cada funcionário e escolha o que cada um pode ver ou editar. O link de acesso dos funcionários é só da sua fábrica.", icon: TeamIcon });
-  if (!plan?.creator) S.push({ target: isMobile ? null : '[data-tour="plans"]', title: "Planos e assinatura", text: "Aqui você vê seu plano, quanto já usou e quando renova. As telas com cadeado ficam liberadas nos planos maiores.", icon: CardIcon });
+  if (!plan?.creator) S.push({ target: isMobile ? null : '[data-tour="plans"]', title: "Planos e assinatura", text: "Aqui você vê seu plano, quanto já usou e quando renova. Durante o tour abrimos todas as telas; as que têm cadeado ficam liberadas nos planos maiores.", icon: CardIcon });
   S.push({ tab: tabs.includes("orders") ? "orders" : undefined, title: "Tudo pronto!", text: "Comece lançando seu primeiro pedido. Para rever este tutorial, clique em \"Tutorial\" no menu." });
   return S;
 }
 
-function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout, onTour }) {
+function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout, onTour, lockAnim }) {
   const touch = useRef(null);
   const go = (k) => { onGo(k); setOpen(false); };
   return (
@@ -2265,7 +2286,7 @@ function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user,
             const active = current === k;
             return (
               <button key={k} data-nav={label} onClick={() => go(k)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl font-bold text-[15px] ${active ? (dark ? "bg-gray-800 text-orange-500" : "bg-orange-50 text-orange-600") : (dark ? "text-gray-300" : "text-gray-600")}`}>
-                <Icon size={20} className={active ? "text-orange-500" : ""} />{label}
+                <Icon size={20} className={active ? "text-orange-500" : ""} /><span className="flex-1 text-left">{label}</span>{featureLocked(k) && <TabLock order={tabs.filter(featureLocked).indexOf(k)} closeAt={open ? lockAnim : null} size={15} />}
               </button>
             );
           })}
@@ -2338,7 +2359,8 @@ function MainApp() {
     if (!tourKey || loadingServer || user?.role !== "admin") return;
     try { if (localStorage.getItem(tourKey) === "pending") setTour("welcome"); } catch { }
   }, [tourKey, loadingServer]); // eslint-disable-line
-  const endTour = () => { setTour(null); try { tourKey && localStorage.setItem(tourKey, "done"); } catch { } };
+  const [lockAnim, setLockAnim] = useState(null);
+  const endTour = () => { TOUR_OPEN = false; setTour(null); setLockAnim(Date.now()); try { tourKey && localStorage.setItem(tourKey, "done"); } catch { } };
   const [photoFocus, setPhotoFocus] = useState(null);
   const openPhotos = (pedido) => { setPhotoFocus(String(pedido)); setTab("photos"); };
   // Avisos e fotos chegam de outros aparelhos: confere a cada 15 s (só esses dois campos)
@@ -2413,7 +2435,9 @@ function MainApp() {
   if (suspended && user.role !== "admin") return <SuspendedScreen message={suspended} onLogout={logout} />;
   if (loadingServer) return <div className='flex items-center justify-center h-screen bg-gray-950'><div className='animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500'></div></div>;
 
+  TOUR_OPEN = tour === "run";
   const tabs = allowedTabs(user);
+  const lockedOrder = Object.keys(TAB_META).filter(k => tabs.includes(k) && featureLocked(k));
   const currentTab = tabs.includes(tab) ? tab : (tabs[0] || 'orders');
   const ActiveTab = { 
     orders: OrdersTab, 
@@ -2456,7 +2480,7 @@ function MainApp() {
               <button key={k} data-tour={`nav-${k}`} onClick={() => { setTab(k); if (window.innerWidth < 900) setSidebarOpen(false); }} title={label} className={`w-full flex items-center ${sidebarOpen ? '' : 'justify-center'} gap-3 px-3 py-3 rounded-xl font-bold transition-all ${active ? (dark ? 'bg-gray-800 text-orange-500 shadow-sm' : 'bg-orange-50 text-orange-600 shadow-sm') : (dark ? 'text-gray-400 hover:text-white hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
                 <Icon size={20} className={active ? 'text-orange-500' : ''} />
                 {sidebarOpen && <span className='text-sm flex-1 text-left'>{label}</span>}
-                {sidebarOpen && !tabFeatureOk(k) && <Lock size={13} className='text-gray-500' />}
+                {sidebarOpen && featureLocked(k) && <TabLock order={lockedOrder.indexOf(k)} closeAt={lockAnim} />}
               </button>
             );
           })}
@@ -2501,7 +2525,7 @@ function MainApp() {
         {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.role === "admin" ? user.email : undefined} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
         {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
-      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={() => setTour("run")} />}
+      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={() => setTour("run")} lockAnim={lockAnim} />}
       {hasFeature("brain") && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
     </div>
   );
