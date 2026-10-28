@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Camera, Folder, FolderOpen, Search, X, Download, ChevronRight, ChevronLeft, Check, Trash2, Loader2, Image as ImageIcon, Eye } from "lucide-react";
+import { Camera, ImagePlus, Folder, FolderOpen, Search, X, Download, ChevronRight, ChevronLeft, Check, Trash2, Loader2, Image as ImageIcon, Eye } from "lucide-react";
 import { sameSeller, sellerColorOf, norm, cleanOrderNumber } from "../lib/core";
-import { downloadZip, downloadOne, deleteStoredPhoto } from "../lib/photos";
+import { downloadZip, downloadOne, deleteStoredPhoto, photoRecords } from "../lib/photos";
+import PhotoCapture from "../components/PhotoCapture";
+import { findSeller } from "../lib/core";
 
 const dt = (iso) => { try { const d = new Date(iso); return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`; } catch { return ""; } };
 
@@ -38,6 +40,8 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
   const [lb, setLb] = useState(null);
   const [dl, setDl] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [addFor, setAddFor] = useState(null);   // item do pedido que vai receber fotos novas
+  const [pickToy, setPickToy] = useState(false); // escolher o brinquedo quando o pedido tem mais de um
   const sellers = data.sellers || [];
   const canon = (n) => sellers.find(s => sameSeller(sellers, s.name, n))?.name || n || "Sem vendedor";
   const mySeller = user?.sellerName ? canon(user.sellerName) : null;
@@ -104,6 +108,22 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
     if (curPhotos.length <= 1) setPedido(null);
   };
 
+  // Fotos novas dentro de uma pasta que já existe
+  const curOrder = curPhotos[0] ? (data.orders || []).find(o => String(o.id) === String(curPhotos[0].orderId)) : null;
+  const orderToys = curOrder ? (curOrder.items || []).filter(it => !it.isMotor) : [];
+  const startAdd = () => {
+    if (orderToys.length > 1) { setPickToy(true); return; }
+    const it = orderToys[0] || { itemId: curPhotos[0]?.itemId, toy: curPhotos[0]?.toy };
+    setAddFor(it);
+  };
+  const saveAdded = (uploaded) => {
+    const order = curOrder || { id: curPhotos[0]?.orderId, clientName: curPhotos[0]?.cliente, seller: seller };
+    const sellerName = order.seller ? (findSeller(data.sellers || [], order.seller)?.name || order.seller) : seller;
+    const recs = photoRecords(uploaded, { order, item: addFor, seller: sellerName, by: user?.name });
+    persist({ ...data, photos: [...(data.photos || []), ...recs] });
+    setAddFor(null);
+  };
+
   const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   const sub = dark ? "text-gray-400" : "text-gray-500";
   const txt = dark ? "text-white" : "text-gray-900";
@@ -131,6 +151,21 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
   return (
     <div className="space-y-5">
       {lb !== null && <Lightbox list={curPhotos} index={lb} onIndex={setLb} onClose={() => setLb(null)} />}
+      {addFor && <PhotoCapture mode="adicionar" dark={dark} companyId={user?.company_id}
+        row={{ _orderId: curPhotos[0]?.orderId, orderId: curPhotos[0]?.orderId, toy: addFor.toy || "", clientName: curPhotos[0]?.cliente || "" }}
+        onCancel={() => setAddFor(null)} onDone={saveAdded} />}
+      {pickToy && (
+        <div className="fixed inset-0 z-[300] bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={() => setPickToy(false)}>
+          <div className={`w-full max-w-sm rounded-3xl border p-5 ${card}`} onClick={e => e.stopPropagation()}>
+            <div className={`font-black text-lg ${txt}`}>Fotos de qual brinquedo?</div>
+            <div className={`text-sm ${sub}`}>Pedido {pedido}</div>
+            <div className="mt-4 space-y-2">
+              {orderToys.map(it => <button key={it.itemId} onClick={() => { setPickToy(false); setAddFor(it); }} className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold border hover:border-orange-500 ${dark ? "border-gray-700 text-white" : "border-gray-200 text-gray-900"}`}>{it.toy || "Brinquedo"}</button>)}
+            </div>
+            <button onClick={() => setPickToy(false)} className={`mt-3 w-full py-2.5 text-sm font-bold ${sub}`}>Cancelar</button>
+          </div>
+        </div>
+      )}
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h2 className={`text-2xl font-black ${txt}`}>Fotos</h2>
@@ -216,6 +251,7 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
               <div className="text-xs font-bold mt-0.5" style={{ color: sellerColorOf(sellers, seller) }}>● {seller}</div>
             </div>
             <div className="flex gap-2 flex-wrap">
+              {canEditPhotos && curPhotos[0]?.orderId != null && <button onClick={startAdd} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-500"><ImagePlus size={15} />Adicionar fotos</button>}
               <button onClick={() => setSel(sel.size === curPhotos.length ? new Set() : new Set(curPhotos.map(p => p.id)))} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border ${dark ? "border-gray-700 text-gray-300 hover:bg-gray-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}><Check size={15} />{sel.size === curPhotos.length ? "Desmarcar" : "Marcar todas"}</button>
               {sel.size > 0 && <button disabled={!!dl} onClick={() => runDownload(curPhotos.filter(p => sel.has(p.id)), `Pedido ${pedido}`)} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border border-orange-500 text-orange-500 hover:bg-orange-500/10`}><Download size={15} />Baixar selecionadas ({sel.size})</button>}
               <button disabled={!!dl} onClick={() => runDownload(curPhotos, `Pedido ${pedido}`)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-white" style={{ background: "linear-gradient(135deg,#f97316,#ea580c)" }}><Download size={15} />Baixar pasta ({curPhotos.length})</button>
