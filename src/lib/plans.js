@@ -17,6 +17,24 @@ export const PLAN_ORDER = ["free", "essencial", "pro", "ultra"];
 export const EXTRAS = { orders: { qty: 50, price: 29 }, photos: { qty: 500, price: 19 } };
 export const OWNER_WHATSAPP = "5544984610136";
 
+// Links de pagamento da Cakto (preencher quando os produtos forem criados).
+// O app junta ?sck=<id da empresa> para o pagamento cair na empresa certa.
+export const CHECKOUT = {
+  essencial: "",
+  pro: "",
+  ultra: "",
+  orders: "", // +50 pedidos
+  photos: "", // +500 fotos
+};
+export function checkoutLink(kind, companyId, email) {
+  const base = CHECKOUT[kind];
+  if (!base) return null;
+  const u = new URL(base);
+  if (companyId) u.searchParams.set("sck", companyId);
+  if (email) u.searchParams.set("email", email);
+  return u.toString();
+}
+
 // planos antigos do banco → planos novos
 export function normPlan(id) {
   if (!id) return "free";

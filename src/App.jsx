@@ -2450,7 +2450,7 @@ function MainApp() {
             : ActiveTab ? <TabBoundary key={currentTab}><ActiveTab plan={plan} onPlans={() => setShowPlans(true)} data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} canEditReady={!user.sellerName && canEdit(user, 'ready')} canSellReady={!user.sellerName && canEdit(user, 'orders')} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
-        {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
+        {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.role === "admin" ? user.email : undefined} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
         {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
       {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} />}

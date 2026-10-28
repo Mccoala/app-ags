@@ -1,6 +1,6 @@
 import React from "react";
 import { X, Check, Lock, MessageCircle, Crown, AlertTriangle, Sparkles, Package, Camera, Users } from "lucide-react";
-import { PLANS, PLAN_ORDER, EXTRAS, OWNER_WHATSAPP } from "../lib/plans";
+import { PLANS, PLAN_ORDER, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
 
 const lim = (v) => v === null || v === undefined || v === Infinity ? "ilimitado" : Number(v).toLocaleString("pt-BR");
 const pct = (u, l) => (l === null || l === undefined || l === Infinity) ? 0 : Math.min(100, Math.round((u / Math.max(1, l)) * 100));
@@ -30,7 +30,8 @@ export function UsageBar({ label, used, limit, icon: Icon, dark }) {
   );
 }
 
-export function PlansModal({ plan, companyName, onClose, dark, isAdmin }) {
+export function PlansModal({ plan, companyName, companyId, email, onClose, dark, isAdmin }) {
+  const buy = (kind, text) => checkoutLink(kind, companyId, email) || waLink(text);
   const cur = plan?.id || "free";
   const card = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   return (
@@ -65,7 +66,7 @@ export function PlansModal({ plan, companyName, onClose, dark, isAdmin }) {
                 </ul>
                 {isCur ? <div className="mt-5 text-center py-2.5 rounded-xl font-black text-sm border border-emerald-500 text-emerald-500">Seu plano atual</div>
                   : id === "free" ? <div className="mt-5 text-center py-2.5 text-xs text-gray-500 font-bold">Para conhecer o sistema</div>
-                    : isAdmin ? <a href={waLink(`Olá! Quero assinar o plano ${p.label} do Inflatudo para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`mt-5 text-center py-2.5 rounded-xl font-black text-sm text-white ${rec ? "bg-gradient-to-r from-orange-500 to-orange-600" : "bg-gray-700 hover:bg-gray-600"}`}>Quero o {p.label}</a> : null}
+                    : isAdmin ? <a href={buy(p.id, `Olá! Quero assinar o plano ${p.label} do Inflatudo para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className={`mt-5 text-center py-2.5 rounded-xl font-black text-sm text-white ${rec ? "bg-gradient-to-r from-orange-500 to-orange-600" : "bg-gray-700 hover:bg-gray-600"}`}>Quero o {p.label}</a> : null}
               </div>
             );
           })}
@@ -76,8 +77,8 @@ export function PlansModal({ plan, companyName, onClose, dark, isAdmin }) {
             <div className="font-black mb-1">Precisa de mais espaço sem trocar de plano?</div>
             <p className="text-sm text-gray-500 mb-3">Pacotes avulsos somam ao limite do seu plano.</p>
             <div className="flex flex-wrap gap-2">
-              <a href={waLink(`Olá! Quero comprar o pacote de +${EXTRAS.orders.qty} pedidos (R$ ${EXTRAS.orders.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.orders.qty} pedidos · R$ {EXTRAS.orders.price}</a>
-              <a href={waLink(`Olá! Quero comprar o pacote de +${EXTRAS.photos.qty} fotos (R$ ${EXTRAS.photos.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.photos.qty} fotos · R$ {EXTRAS.photos.price}</a>
+              <a href={buy("orders", `Olá! Quero comprar o pacote de +${EXTRAS.orders.qty} pedidos (R$ ${EXTRAS.orders.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.orders.qty} pedidos · R$ {EXTRAS.orders.price}</a>
+              <a href={buy("photos", `Olá! Quero comprar o pacote de +${EXTRAS.photos.qty} fotos (R$ ${EXTRAS.photos.price}) para a empresa ${companyName || ""}.`)} target="_blank" rel="noreferrer" className="px-4 py-2.5 rounded-xl font-bold text-sm border border-orange-500 text-orange-500 hover:bg-orange-500/10">+{EXTRAS.photos.qty} fotos · R$ {EXTRAS.photos.price}</a>
             </div>
           </div>
         )}
