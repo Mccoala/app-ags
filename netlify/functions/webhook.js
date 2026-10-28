@@ -44,14 +44,20 @@ async function findCompany(d) {
 
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
-  const secret = process.env.CAKTO_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
+  const secret = String(process.env.CAKTO_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || "").trim();
   if (!secret) return ok("Webhook desligado (configure CAKTO_WEBHOOK_SECRET)");
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { statusCode: 500, body: "Servidor sem SUPABASE_SERVICE_ROLE_KEY" };
 
   let p;
   try { p = JSON.parse(event.body || "{}"); } catch { return { statusCode: 400, body: "JSON inválido" }; }
-  const given = p.secret || (event.queryStringParameters || {}).token || (event.headers || {})["x-webhook-token"];
-  if (given !== secret) return { statusCode: 401, body: "Unauthorized" };
+  const h = event.headers || {};
+  const candidates = [p.secret, p?.data?.secret, (event.queryStringParameters || {}).token, h["x-webhook-token"], h["x-cakto-secret"], h["x-webhook-secret"], h["secret"]]
+    .filter(v => typeof v === "string").map(v => v.trim());
+  if (!candidates.includes(secret)) {
+    // diagnóstico sem expor a senha: onde veio algo e com quantos caracteres
+    console.warn("Cakto 401", { esperado: secret.length, body_secret: typeof p.secret === "string" ? p.secret.trim().length : typeof p.secret, data_secret: typeof p?.data?.secret, headers: Object.keys(h).filter(k => !/cookie|authorization/i.test(k)), event: p.event });
+    return { statusCode: 401, body: "Unauthorized" };
+  }
 
   const ev = String(p.event || "").toLowerCase();
   const d = p.data || {};
