@@ -463,21 +463,55 @@ function EditOrderModal({ order, data, setData, dark, onClose }) {
     setForm({ ...form, items: a });
   };
   const save = () => {
-    let nd = { ...data }; if (form.seller?.trim()) nd = addSeller(nd, form.seller).data; const oi = nd.orders.findIndex(o => o.id === order.id); if (oi < 0) return; const
-      si = form.items.map((it, i) => ({
-        ...it, itemId: it.itemId || `${order.id}-${i + 1}`, colors: typeof
-          it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price), isMotor: !!it.isMotor, readyStock: !it.isMotor && !!it.readyStock
-      }));
-    nd.orders[oi] = { ...nd.orders[oi], ...form, items: si, totalPrice: si.reduce((a, b) => a + b.price, 0) };
+    // cópias novas de cada lista: assim todas as telas (dashboard, mapa, vendas...) percebem a mudança na hora
+    let nd = { ...data, orders: [...(data.orders || [])], production: [...(data.production || [])], finalization: [...(data.finalization || [])], clients: [...(data.clients || [])] };
+    if (form.seller?.trim()) nd = addSeller(nd, form.seller).data;
+    const oi = nd.orders.findIndex(o => o.id === order.id); if (oi < 0) return;
+    const old = nd.orders[oi];
+    const si = form.items.map((it, i) => ({
+      ...it, itemId: it.itemId || `${order.id}-${i + 1}`, colors: typeof
+        it.colors === "string" ? it.colors.split(",").map(c => c.trim()).filter(Boolean) : it.colors, price: Number(it.price), isMotor: !!it.isMotor, readyStock: !it.isMotor && !!it.readyStock
+    }));
+    const clientName = (form.clientName || "").trim() || old.clientName;
+    nd.orders[oi] = { ...old, ...form, clientName, items: si, totalPrice: si.reduce((a, b) => a + b.price, 0) };
+    const cur = nd.orders[oi];
+
+    // produção e finalização: entram os brinquedos novos, saem os removidos
     const sIds = si.filter(needsProduction).map(it => it.itemId);
     const ex = nd.production.filter(p => p.orderId === order.id).map(p => p.itemId);
-    markStockSold(nd, si, nd.orders[oi], CURRENT_USER?.name);
+    markStockSold(nd, si, cur, CURRENT_USER?.name);
     si.filter(needsProduction).forEach(it => {
       if (!ex.includes(it.itemId))
         nd.production.push({ itemId: it.itemId, orderId: order.id, cutter: "", tailor: "", prep: "", assembler: "", cutDone: false, tailorDone: false, prepDone: false, assembleDone: false, done: false });
     });
     nd.production = nd.production.filter(p => p.orderId !== order.id || sIds.includes(p.itemId));
-    nd.finalization = (nd.finalization || []).filter(f => f.orderId !== order.id || sIds.includes(f.itemId));
+    nd.finalization = nd.finalization.filter(f => f.orderId !== order.id || sIds.includes(f.itemId));
+
+    // cliente: trocou o nome → a ficha do cliente acompanha (cidade, estado e telefone continuam)
+    const oldName = old.clientName || "";
+    if (clientName !== oldName && !nd.clients.some(c => norm(c.name) === norm(clientName))) {
+      const ci = nd.clients.findIndex(c => c.name === oldName);
+      const othersUseOld = nd.orders.some(o => o.id !== order.id && o.clientName === oldName);
+      if (ci >= 0 && !othersUseOld) nd.clients[ci] = { ...nd.clients[ci], name: clientName };
+      else { const base = ci >= 0 ? nd.clients[ci] : {}; nd.clients.push({ id: Date.now(), name: clientName, city: base.city || "", state: base.state || "", phone: base.phone || "", email: base.email || "" }); }
+    }
+
+    // fotos, avisos e pronta entrega guardam nome do cliente, vendedor e brinquedo: atualiza tudo
+    const sellerName = cur.seller ? (findSeller(nd.sellers || [], cur.seller)?.name || cur.seller) : "";
+    const toyOf = (itemId, fallback) => si.find(it => String(it.itemId) === String(itemId))?.toy || fallback;
+    const sameOrder = (x) => String(x.orderId) === String(order.id);
+    if (nd.photos) nd.photos = nd.photos.map(p => sameOrder(p) ? { ...p, cliente: clientName, vendedor: sellerName || p.vendedor, toy: toyOf(p.itemId, p.toy) } : p);
+    if (nd.notifications) nd.notifications = nd.notifications.map(n => sameOrder(n) ? { ...n, cliente: clientName, para: sellerName || n.para, toy: toyOf(n.itemId, n.toy) } : n);
+    if (nd.readyStock) {
+      const before = new Set((old.items || []).filter(it => it.readyStock && it.readyId).map(it => String(it.readyId)));
+      const now = new Set(si.filter(it => it.readyStock && it.readyId).map(it => String(it.readyId)));
+      nd.readyStock = nd.readyStock.map(r => {
+        const id = String(r.id);
+        if (before.has(id) && !now.has(id) && sameOrder(r)) return { ...r, status: "disponivel", soldAt: null, soldBy: "", orderId: null, soldTo: "", seller: "" }; // saiu do pedido: volta para o quadro
+        if (sameOrder(r)) return { ...r, soldTo: clientName, seller: cur.seller || r.seller };
+        return r;
+      });
+    }
     syncOrderStatus(nd, order.id);
     setData(nd); saveData(nd); onClose();
   };
@@ -1755,13 +1789,20 @@ function ClientsTab({ data, setData, dark, user }) {
 
   const saveClientEdit = (e) => {
     e.preventDefault();
-    const nd = { ...data };
+    const nd = { ...data, clients: [...(data.clients || [])] };
     const ci = nd.clients.findIndex(c => c.id === editingClient.id);
     if (ci >= 0) {
       const oldName = nd.clients[ci].name;
       const newName = (editingClient.name || "").trim() || oldName;
       nd.clients[ci] = { ...editingClient, name: newName };
-      if (newName !== oldName) nd.orders = nd.orders.map(o => o.clientName === oldName ? { ...o, clientName: newName } : o);
+      if (newName !== oldName) {
+        // o nome novo vale em todo o sistema: pedidos, fotos, avisos e pronta entrega
+        const ids = new Set(nd.orders.filter(o => o.clientName === oldName).map(o => String(o.id)));
+        nd.orders = nd.orders.map(o => o.clientName === oldName ? { ...o, clientName: newName } : o);
+        if (nd.photos) nd.photos = nd.photos.map(p => ids.has(String(p.orderId)) ? { ...p, cliente: newName } : p);
+        if (nd.notifications) nd.notifications = nd.notifications.map(n => ids.has(String(n.orderId)) ? { ...n, cliente: newName } : n);
+        if (nd.readyStock) nd.readyStock = nd.readyStock.map(r => ids.has(String(r.orderId)) ? { ...r, soldTo: newName } : r);
+      }
       setData(nd);
       saveData(nd);
     }
