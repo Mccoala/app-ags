@@ -138,6 +138,7 @@ const emptyData = () => ({ users: [], clients: [], team: [], sellers: [], orders
 const INITIAL_DATA = emptyData();
 
 let CURRENT_COMPANY_ID = null;
+const APP_URL = "https://inflatudo.netlify.app";
 // Gravação pelo servidor seguro, uma de cada vez (a mais recente sempre vence)
 let SAVE_BUSY = false, SAVE_NEXT = null, LAST_LOCAL_SAVE = 0;
 let LOAD_OK = false; // só grava depois que os dados da empresa chegaram de verdade
@@ -2084,7 +2085,7 @@ function TeamTab({ data, setData, dark, user }) {
   };
 
   const [copied, setCopied] = useState(false);
-  const accessLink = `${window.location.origin}/?empresa=${user?.company_id || ""}`;
+  const accessLink = `${APP_URL}/?empresa=${user?.company_id || ""}`; // link fixo da empresa (o mesmo para toda a equipe)
   const copyLink = async () => { try { await navigator.clipboard.writeText(accessLink); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", accessLink); } };
   const updateUser = (uid, patch) => { const nd = { ...data }; nd.users = nd.users.map(u => u.id !== uid ? u : { ...u, ...patch }); setData(nd); saveData(nd); };
   const permSummary = (p) => { const o = toPermObj(p); const e = Object.keys(o).filter(k => o[k] === 'edit').map(k => PERM_TAB_LABELS[k]); const v = Object.keys(o).filter(k => o[k] === 'view').map(k => PERM_TAB_LABELS[k]); return [e.length ? `Edita: ${e.join(', ')}` : '', v.length ? `Vê: ${v.join(', ')}` : ''].filter(Boolean).join(' · ') || 'Sem acesso a nenhuma aba'; };

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import ChatBox from "./ChatBox";
-import { Brain, Send, X, RefreshCw, Trash2, Bell, Camera, ChevronRight, Mic } from "lucide-react";
+import { Brain, Send, X, RefreshCw, Trash2, Bell, Camera, ChevronRight, Mic, Volume2, VolumeX, Square } from "lucide-react";
+import SpaceOrb from "./SpaceOrb";
+import { speakText, stopSpeaking, unlockAudio, getLevel, getVoicePref } from "../lib/voice";
 import VoiceBrain from "./VoiceBrain";
 import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
 import { sameSeller } from "../lib/core";
@@ -69,8 +71,22 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
   const isAdmin = user?.role === "admin";
   const { msgs, setMsgs, ask, busy, scope } = useBrainAgent({ data, user, persist, allowSave: isAdmin, storageKey: `float-chat-${user?.id || "x"}` });
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy, open]);
-  const send = (q) => { const t = (q ?? input).trim(); if (!t) return; setInput(""); ask(t); };
   const [voiceOn, setVoiceOn] = useState(false);
+  // respostas também em áudio (cada pessoa escolhe; fica lembrado neste aparelho)
+  const [audioOn, setAudioOn] = useState(() => { try { return localStorage.getItem("inflatudo_audio_replies") === "1"; } catch { return false; } });
+  const [speakingIdx, setSpeakingIdx] = useState(null);
+  useEffect(() => { try { localStorage.setItem("inflatudo_audio_replies", audioOn ? "1" : "0"); } catch { } if (!audioOn) { stopSpeaking(); setSpeakingIdx(null); } }, [audioOn]);
+  const say = async (i, text) => { unlockAudio(); setSpeakingIdx(i); await speakText(text, getVoicePref()); setSpeakingIdx(cur => (cur === i ? null : cur)); };
+  const stopSay = () => { stopSpeaking(); setSpeakingIdx(null); };
+  const spokenCount = useRef(msgs.length);
+  useEffect(() => { // resposta nova chegou: lê em voz alta se o áudio estiver ligado
+    if (msgs.length <= spokenCount.current) { spokenCount.current = msgs.length; return; }
+    spokenCount.current = msgs.length;
+    const i = msgs.length - 1, m = msgs[i];
+    if (audioOn && open && !voiceOn && m?.role === "assistant" && !m.error && !m.voice) say(i, m.content);
+  }, [msgs.length]); // eslint-disable-line
+  useEffect(() => { if (!open) stopSay(); }, [open]); // eslint-disable-line
+  const send = (q) => { const t = (q ?? input).trim(); if (!t) return; if (audioOn) unlockAudio(); setInput(""); ask(t); };
   const suggestions = scope === "none"
     ? ["Qual pedido está mais atrasado?", "Quais brinquedos estão esperando costura?", "O que foi finalizado hoje?", "Quantos itens eu fiz este mês?"]
     : scope === "own"
@@ -112,6 +128,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
               <div className="min-w-0"><div className="font-black text-sm">Cérebro Inflatudo</div><div className="text-[11px] text-slate-400 truncate">{scope === "none" ? "Produção, prazos e equipe" : scope === "own" ? "Seus pedidos, clientes e a produção" : "Pergunte qualquer coisa do app"}</div></div>
             </div>
             <div className="flex items-center gap-1">
+              <button onClick={() => { unlockAudio(); setAudioOn(a => !a); }} title={audioOn ? "Respostas em áudio: ligado" : "Ouvir as respostas em áudio"} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-black ${audioOn ? "text-white" : "text-slate-400 hover:text-fuchsia-300"}`} style={audioOn ? { background: "linear-gradient(135deg,#a855f7,#ec4899)" } : {}}>{audioOn ? <Volume2 size={14} /> : <VolumeX size={14} />}<span className="hidden sm:inline">Áudio</span></button>
               {msgs.length > 0 && <button onClick={() => setMsgs([])} title="Limpar conversa" className="p-1.5 text-slate-400 hover:text-red-400"><Trash2 size={15} /></button>}
               <button onClick={() => setOpen(false)} className="p-1.5 text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
@@ -142,6 +159,12 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
               })}
             </div>
           ) : (<>
+          {speakingIdx !== null && (
+            <div className="relative h-36 flex-shrink-0 overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 50%, #1b0b33 0%, #08051a 70%, #020108 100%)" }}>
+              <SpaceOrb phase="speaking" getLevel={getLevel} size={1.1} />
+              <button onClick={stopSay} className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-[11px] font-black"><Square size={10} />Parar</button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {msgs.length === 0 && (
               <div className="space-y-2">
@@ -154,6 +177,9 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
                 <div className={`max-w-[90%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${m.role === "user" ? "text-white rounded-br-md" : dark ? "bg-white/5 rounded-bl-md border border-white/5" : "bg-fuchsia-50 rounded-bl-md"} ${m.error ? "!text-red-400" : ""}`} style={m.role === "user" ? { background: "linear-gradient(135deg,#a855f7,#ec4899)" } : {}}>
                   {m.role === "user" ? m.content : <RichText text={m.content} />}
                   {m.tools?.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{m.tools.map((t, j) => <span key={j} className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/20 text-slate-400">🔎 {TOOL_LABEL[t.name] || t.name}</span>)}</div>}
+                  {m.role === "assistant" && !m.error && (speakingIdx === i
+                    ? <button onClick={stopSay} className="mt-2 flex items-center gap-1 text-[11px] font-black text-fuchsia-300"><Square size={11} />Parar áudio</button>
+                    : <button onClick={() => say(i, m.content)} className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-fuchsia-300"><Volume2 size={12} />Ouvir</button>)}
                 </div>
               </div>
             ))}
@@ -161,7 +187,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
             <div ref={endRef} />
           </div>
           <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex items-end gap-2 ${dark ? "border-white/5" : "border-fuchsia-100"}`}>
-            {isAdmin && <button type="button" onClick={() => setVoiceOn(true)} title="Conversar por voz" className="px-3 h-[42px] rounded-xl text-white flex-shrink-0" style={{ background: "linear-gradient(135deg,#7c3aed,#db2777)" }}><Mic size={16} /></button>}
+            {<button type="button" onClick={() => { stopSay(); setVoiceOn(true); }} title="Conversar por voz" className="px-3 h-[42px] rounded-xl text-white flex-shrink-0" style={{ background: "linear-gradient(135deg,#7c3aed,#db2777)" }}><Mic size={16} /></button>}
             <ChatBox autoFocus value={input} onChange={setInput} onSend={() => send()} placeholder="Pergunte ao cérebro…" className={`px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-white/5 border-white/10 text-white placeholder-slate-500" : "bg-white border-fuchsia-100"} focus:border-fuchsia-500`} />
             <button disabled={!!busy || !input.trim()} className="px-4 h-[42px] rounded-xl text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Send size={15} /></button>
           </form>

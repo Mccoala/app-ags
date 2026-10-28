@@ -22,7 +22,7 @@ function Access({ c, dark, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [copied, setCopied] = useState(false);
-  const link = `${window.location.origin}/?empresa=${c.company_id}`;
+  const link = `https://inflatudo.netlify.app/?empresa=${c.company_id}`; // link fixo da equipe
   const dirty = email.trim().toLowerCase() !== (c.admin_email || "") || pw.length > 0;
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", link); } };
   const save = async () => {

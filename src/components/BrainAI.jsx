@@ -55,7 +55,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy]);
   const ask = (q, opts) => { const t = (q ?? input); setInput(""); return agentAsk(t, opts); };
   const [voiceOn, setVoiceOn] = useState(false);
-  const canVoice = user?.role === "admin";
+  const canVoice = true;
 
   const notes = data.brain?.notes || [];
   const totalItems = itemRows(data).length;
