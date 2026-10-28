@@ -67,7 +67,9 @@ export const handler = async (event) => {
   // 2) Senha no corpo (o jeito antigo da Cakto) ou na URL
   const candidates = [p.secret, (event.queryStringParameters || {}).token, h["x-webhook-token"]].filter(v => typeof v === "string").map(v => v.trim());
   if (!sigOk && !candidates.includes(secret)) {
-    console.warn("Cakto 401", { esperado: secret.length, body_secret: typeof p.secret === "string" ? p.secret.trim().length : typeof p.secret, assinatura: !!h["x-cakto-signature"], formato: String(h["x-cakto-signature"] || "").slice(0, 3), ts: h["x-cakto-timestamp"], event: p.event });
+    const tsH = String(h["x-cakto-timestamp"] || ""), sigH = String(h["x-cakto-signature"] || "").replace(/^v1=/, "");
+    const withBody = typeof p.secret === "string" && sigH ? [crypto.createHmac("sha256", p.secret).update(`${tsH}.${raw}`).digest("hex"), crypto.createHmac("sha256", p.secret).update(`${tsH}.${raw}`).digest("base64")].includes(sigH) : false;
+    console.warn("Cakto 401", { assinada_com_codigo_do_corpo: withBody, esperado: secret.length, body_secret: typeof p.secret === "string" ? p.secret.trim().length : typeof p.secret, assinatura: !!h["x-cakto-signature"], formato: String(h["x-cakto-signature"] || "").slice(0, 3), ts: h["x-cakto-timestamp"], event: p.event });
     return { statusCode: 401, body: "Unauthorized" };
   }
 
