@@ -1,5 +1,6 @@
-import React from "react";
-import { X, Check, Lock, Crown, AlertTriangle, Sparkles, Package, Camera, Users, Sprout, Factory, Rocket } from "lucide-react";
+import React, { useState } from "react";
+import SupportWizard from "./SupportWizard";
+import { X, Check, Lock, Crown, MessageCircle, AlertTriangle, Sparkles, Package, Camera, Users, Sprout, Factory, Rocket } from "lucide-react";
 import { PLANS, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
 
 const lim = (v) => v === null || v === undefined || v === Infinity ? "ilimitado" : Number(v).toLocaleString("pt-BR");
@@ -31,6 +32,7 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
   const cur = plan?.creator ? "creator" : (plan?.id || "free");
   const curRank = PAID.indexOf(cur);
   const showExtras = isAdmin && (cur === "pro" || cur === "ultra"); // pacotes avulsos só a partir do PRO
+  const [help, setHelp] = useState(false);
   const T = dark
     ? { bg: "bg-[#1b1b1b] text-[#ececec]", card: "bg-[#222222] border-[#333]", soft: "text-[#a3a3a3]", line: "border-[#333]", note: "bg-[#161616]", btn: "bg-[#3a3a3a] hover:bg-[#474747] text-white", btnMain: "bg-[#f2f2f2] hover:bg-white text-[#141414]" }
     : { bg: "bg-[#faf9f7] text-[#1a1a1a]", card: "bg-white border-[#e7e5e0]", soft: "text-[#6b6b6b]", line: "border-[#ebe8e3]", note: "bg-[#f3f1ed]", btn: "bg-[#ecebe7] hover:bg-[#e2e0db] text-[#1a1a1a]", btnMain: "bg-[#1a1a1a] hover:bg-black text-white" };
@@ -109,8 +111,11 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
           </div>
         )}
 
-        <p className={`text-xs text-center mt-8 ${T.soft}`}>Pagamento seguro pela Cakto. Ao trocar de plano, o novo vale na hora e a cobrança passa a ser do plano novo.</p>
+        <div className="mt-8 flex justify-center"><button onClick={() => setHelp(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#25D366] hover:bg-[#1fbe5b]"><MessageCircle size={17} />Ficou com dúvida? Fale no WhatsApp</button></div>
+        <p className={`text-xs text-center mt-4 ${T.soft}`}>Pagamento seguro pela Cakto. Ao trocar de plano, o novo vale na hora e a cobrança passa a ser do plano novo.</p>
       </div>
+      <button onClick={e => { e.stopPropagation(); setHelp(true); }} title="Tirar dúvidas no WhatsApp" className="fixed bottom-5 right-5 z-[210] w-14 h-14 rounded-full bg-[#25D366] text-white shadow-2xl shadow-green-500/30 flex items-center justify-center hover:scale-105 transition-transform"><MessageCircle size={26} /></button>
+      {help && <div onClick={e => e.stopPropagation()}><SupportWizard dark={dark} onClose={() => setHelp(false)} companyName={companyName} email={email} planLabel={plan?.creator ? "Criador" : PLANS[cur]?.label} /></div>}
     </div>
   );
 }
