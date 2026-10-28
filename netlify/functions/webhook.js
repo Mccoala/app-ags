@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { db, isCreatorCo } from "../lib/server.js";
 import { normPlan } from "../../src/lib/plans.js";
 
@@ -48,14 +49,25 @@ export const handler = async (event) => {
   if (!secret) return ok("Webhook desligado (configure CAKTO_WEBHOOK_SECRET)");
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { statusCode: 500, body: "Servidor sem SUPABASE_SERVICE_ROLE_KEY" };
 
+  const raw = event.isBase64Encoded ? Buffer.from(event.body || "", "base64").toString("utf8") : (event.body || "");
   let p;
-  try { p = JSON.parse(event.body || "{}"); } catch { return { statusCode: 400, body: "JSON inválido" }; }
-  const h = event.headers || {};
-  const candidates = [p.secret, p?.data?.secret, (event.queryStringParameters || {}).token, h["x-webhook-token"], h["x-cakto-secret"], h["x-webhook-secret"], h["secret"]]
-    .filter(v => typeof v === "string").map(v => v.trim());
-  if (!candidates.includes(secret)) {
-    // diagnóstico sem expor a senha: onde veio algo e com quantos caracteres
-    console.warn("Cakto 401", { esperado: secret.length, body_secret: typeof p.secret === "string" ? p.secret.trim().length : typeof p.secret, data_secret: typeof p?.data?.secret, headers: Object.keys(h).filter(k => !/cookie|authorization/i.test(k)), event: p.event });
+  try { p = JSON.parse(raw || "{}"); } catch { return { statusCode: 400, body: "JSON inválido" }; }
+  const h = Object.fromEntries(Object.entries(event.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+
+  // 1) Assinatura da Cakto: X-Cakto-Signature = v1=HMAC-SHA256(senha, "{timestamp}.{corpo}")
+  const sigOk = (() => {
+    const sig = String(h["x-cakto-signature"] || "").trim(), ts = String(h["x-cakto-timestamp"] || "").trim();
+    if (!sig || !ts) return false;
+    const tsMs = Number(ts) > 1e12 ? Number(ts) : Number(ts) * 1000;
+    if (!isFinite(tsMs) || Math.abs(Date.now() - tsMs) > 10 * 60 * 1000) return false; // aviso velho/repetido
+    const mac = crypto.createHmac("sha256", secret).update(`${ts}.${raw}`).digest();
+    const given = sig.split(",").map(x => x.trim()).map(x => x.startsWith("v1=") ? x.slice(3) : x);
+    return given.some(g => { const want = /^[0-9a-f]+$/i.test(g) ? mac.toString("hex") : mac.toString("base64"); return g.length === want.length && crypto.timingSafeEqual(Buffer.from(g), Buffer.from(want)); });
+  })();
+  // 2) Senha no corpo (o jeito antigo da Cakto) ou na URL
+  const candidates = [p.secret, (event.queryStringParameters || {}).token, h["x-webhook-token"]].filter(v => typeof v === "string").map(v => v.trim());
+  if (!sigOk && !candidates.includes(secret)) {
+    console.warn("Cakto 401", { esperado: secret.length, body_secret: typeof p.secret === "string" ? p.secret.trim().length : typeof p.secret, assinatura: !!h["x-cakto-signature"], formato: String(h["x-cakto-signature"] || "").slice(0, 3), ts: h["x-cakto-timestamp"], event: p.event });
     return { statusCode: 401, body: "Unauthorized" };
   }
 
