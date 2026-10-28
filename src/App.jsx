@@ -626,7 +626,7 @@ function SellerPicker({ data, setData, value, onChange, dark, className, isNew }
 const ORDERS_PER_PAGE = 10;
 function OrdersTab({ data, setData, dark, user }) {
   const canWrite = canEdit(user, "orders");
-  const [view, setView] = useState("list"); const [inputMode, setInputMode] = useState("text");
+  const [view, setView] = useState("list"); const [inputMode, setInputMode] = useState("pdf");
   const [text, setText] = useState(""); const [pdfData, setPdfData] = useState(null); const
     [pdfName, setPdfName] = useState(""); const [loading, setLoading] = useState(false);
   const [extracted, setExtracted] = useState(null); const [extHeader, setExtHeader] = useState({}); const
@@ -687,16 +687,21 @@ function OrdersTab({ data, setData, dark, user }) {
   };
 
   const handlePdf = (e) => {
-    const f = e.target.files[0]; if (!f) return; setPdfName(f.name); const r = new
-      FileReader(); r.onload = () => setPdfData(r.result.split(",")[1]); r.readAsDataURL(f);
-  };
+    const f = e.target.files?.[0]; e.target.value = ""; // deixa escolher o mesmo arquivo de novo
+    if (!f) return;
+    setPdfName(f.name);
+    const r = new FileReader();
+    r.onload = () => { const b64 = r.result.split(",")[1]; setPdfData(b64); callAI({ pdf: b64 }); }; // já extrai sozinho
+    r.readAsDataURL(f);
+  };;
   const setExtImagesUpload = (idx, e) => {
     const f = e.target.files[0]; if (!f) return; const r = new FileReader();
     r.onload = () => setExtImages(p => ({ ...p, [idx]: r.result })); r.readAsDataURL(f);
   };
 
-  const callAI = async () => {
-    if (!text.trim() && !pdfData) return;
+  const callAI = async (opts = {}) => {
+    const pdfData_ = opts.pdf || (inputMode === "pdf" ? pdfData : null);
+    if (!pdfData_ && !text.trim()) return;
     setLoading(true); setExtracted(null);
     const sys = `Você extrai dados de pedidos de brinquedos infláveis. Retorne APENAS JSON válido, sem markdown, neste formato:
 {
@@ -711,8 +716,8 @@ function OrdersTab({ data, setData, dark, user }) {
 }
 Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "readyStock"=true SOMENTE para o item que o pedido diz ser "pronta entrega" / "a pronta entrega" / "do estoque" / "já pronto" (esse item não vai para a fabricação); os demais itens ficam false. "quantity" é a QUANTIDADE daquele item no pedido (se o pedido tem 2 motores, quantity=2). "price" é o valor UNITÁRIO. Coloque todas as observações de fabricação no item do brinquedo correspondente. Não invente dados.`;
     try {
-      const content = pdfData
-        ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData } }, { type: "text", text: "Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores) e ao número do pedido exatamente como está escrito." }]
+      const content = pdfData_
+        ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfData_ } }, { type: "text", text: "Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores) e ao número do pedido exatamente como está escrito." }]
         : `Extraia os dados deste pedido. Atenção às QUANTIDADES de cada item (principalmente motores):\n\n${text}`;
       const res = await fetch("/.netlify/functions/anthropic", {
         method: "POST",
@@ -1013,24 +1018,24 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
       {view === "ai" && canWrite && (
         <div className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
           <h3 className={`font-bold mb-1 ${dark ? "text-white" : "text-gray-900"}`}>Extração com IA</h3>
-          <p className={`text-xs mb-4 ${dark ? "text-gray-400" : "text-gray-500"}`}>A IA busca o campo
+          <p className={`text-xs mb-4 ${dark ? "text-gray-400" : "text-gray-500"}`}>A IA busca o campo{" "}
             <strong>REPRESENTANTE</strong> para o vendedor, e o campo <strong>PRAZO</strong> nas
             observações para o prazo de fabricação.
           </p>
           <div className="flex gap-2 mb-4">
-            {[["text", "✏️ Texto"], ["pdf", "📄 PDF"]].map(([m, l]) => (<button key={m}
+            {[["pdf", "📄 PDF"], ["text", "✏️ Texto"]].map(([m, l]) => (<button key={m}
               onClick={() => setInputMode(m)} className={`px-4 py-2 rounded-xl text-sm font-bold
                                 ${inputMode === m ? "text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}
               style={inputMode === m ? { background: "linear-gradient(135deg,#f97316,#eab308)" } : {}}>{l}</button>))}
           </div>
           {inputMode === "text" ? (<textarea value={text} onChange={e => setText(e.target.value)} rows={5} placeholder="Cole o texto do pedido..." className={`w-full px-4 py-3 rounded-xl border text-sm outline-none resize-none ${dark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-gray-50 border-gray-200 text-gray-900"}`} />) : (
             <label className={`flex items-center gap-3 cursor-pointer px-4 py-4 rounded-xl border-2 border-dashed ${dark ? "border-gray-600 text-gray-400 hover:border-orange-500/60" : "border-gray-300 text-gray-500 hover:border-orange-400"}`}>
-              <FileText size={20} /><div><div className="font-semibold text-sm">{pdfName || "Selecionar PDF"}</div><div className="text-xs">{pdfData ? "✅ PDF carregado" : "Formatos: .pdf"}</div></div><input type="file" accept=".pdf" className="hidden" onChange={handlePdf} />
+              {loading ? <div className="w-5 h-5 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin" /> : <FileText size={20} />}<div><div className="font-semibold text-sm">{loading ? `Lendo ${pdfName || "o PDF"}…` : pdfName ? "Escolher outro PDF" : "Selecionar PDF do pedido"}</div><div className="text-xs">{loading ? "A IA está extraindo os dados do pedido" : pdfName ? `Último: ${pdfName}` : "Ao escolher, a IA já extrai sozinha"}</div></div><input type="file" accept=".pdf,application/pdf" className="hidden" disabled={loading} onChange={handlePdf} />
             </label>
           )}
-          <button onClick={callAI} disabled={loading || (!text.trim() && !pdfData)} className="mt-3 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>
+          {inputMode === "text" && <button onClick={() => callAI()} disabled={loading || !text.trim()} className="mt-3 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>
             {loading ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Analisando...</> : <><Zap size={16} />Extrair com IA</>}
-          </button>
+          </button>}
           {extracted && !extracted.error && (
             <div className={`mt-5 p-4 rounded-xl border ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
               <h4 className={`font-bold mb-3 ${dark ? "text-white" : "text-gray-900"}`}>Dados Extraídos — <span className="text-orange-400">editável</span></h4>
