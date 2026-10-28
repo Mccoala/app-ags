@@ -1976,7 +1976,7 @@ function TeamTab({ data, setData, dark, user }) {
   const TAB_LABELS = { 'orders': 'Pedidos', 'production': 'Produção', 'finalization': 'Finalização', 'photos': 'Fotos', 'dashboard': 'Dashboard', 'routes': 'MAPA', 'clients': 'Clientes', 'team': 'Equipe' };
 
   const addMember = () => { if (!form.name) return; const nd = { ...data }; nd.team.push({ id: Date.now(), ...form }); setData(nd); saveData(nd); setForm({ name: '', role: 'Corte', status: 'ativo' }); setShowForm(false); };
-  const persistTeam = (nd) => { const fixed = ensureSellers(nd); setData(fixed); saveData(fixed); };
+  const persistTeam = (nd) => { const lim = PLAN?.limits?.users; const fixed = ensureSellers(nd, { logins: hasFeature("sellers"), room: lim == null || lim === Infinity ? null : lim - (nd.users || []).length - 1 }); setData(fixed); saveData(fixed); };
   const addSellerT = () => { if (!sellerForm.name.trim()) return; const { data: nd } = addSeller(data, sellerForm.name, sellerForm.color || undefined); persistTeam(nd); setSellerForm({ name: '', color: '' }); setShowSellerForm(false); };
   const removeSeller = (sv) => {
     const n = (data.orders || []).filter(o => sameSeller(data.sellers, o.seller, sv.name)).length;
@@ -2349,7 +2349,8 @@ function MainApp() {
   // Todo vendedor que aparece em pedido fica cadastrado automaticamente (com cor própria)
   useEffect(() => {
     if (!user || loadingServer) return;
-    const fixed = ensureSellers(data, { logins: hasFeature("sellers") });
+    const lim = PLAN?.limits?.users, used = (data.users || []).length + 1;
+    const fixed = ensureSellers(data, { logins: hasFeature("sellers"), room: lim == null || lim === Infinity ? null : lim - used });
     if (fixed !== data) { setData(fixed); saveData(fixed, { system: true }); }
   }, [data, user, loadingServer]); // eslint-disable-line
   const [showPlans, setShowPlans] = useState(false);

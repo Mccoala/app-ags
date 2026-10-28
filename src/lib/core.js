@@ -127,10 +127,13 @@ export function ensureSellers(data, opts = {}) {
     return o;
   });
   const users = [...(data.users || [])].map((u, i) => u.id ? u : (changed = true, { ...u, id: Date.now() + 1000 + i }));
+  let room = opts.room == null ? Infinity : Math.max(0, opts.room); // vagas de usuário que o plano ainda tem
   sellers.forEach(s => {
     if (s.loginCreated || opts.logins === false) return; // login automático do vendedor só nos planos com área de vendedores
     const has = users.find(u => u.sellerName && norm(u.sellerName) === norm(s.name));
     if (!has) {
+      if (room <= 0) return; // sem vaga: não cria agora (cria quando sobrar vaga ou subir de plano)
+      room--;
       const parts = slug(s.name);
       let login = parts[0] || "vendedor";
       if (users.some(u => (u.email || "").toLowerCase() === login)) login = parts.slice(0, 2).join(".");

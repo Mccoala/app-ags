@@ -20,8 +20,8 @@ export function UsageBar({ label, used, limit, icon: Icon, dark }) {
 
 // O que cada plano acrescenta ao anterior
 const PLAN_COPY = {
-  essencial: { icon: Sprout, tag: "Para organizar a produção", base: "Inclui:", items: ["300 pedidos no total", "Até 5 usuários (vendedor não conta)", "Extrator de pedidos com IA", "Produção por etapas e finalização"] },
-  pro: { icon: Factory, tag: "Para fábricas com vendedores", base: "Tudo do Essencial, mais:", items: ["1.000 pedidos no total", "Até 10 usuários", "Finalização com foto (3.000 fotos)", "Área de clientes", "Login do vendedor com aviso e foto do brinquedo pronto", "Pastas de fotos por pedido"] },
+  essencial: { icon: Sprout, tag: "Para organizar a produção", base: "Inclui:", items: ["300 pedidos no total", "Até 5 usuários, contando os vendedores", "Extrator de pedidos com IA", "Produção por etapas e finalização"] },
+  pro: { icon: Factory, tag: "Para fábricas com vendedores", base: "Tudo do Essencial, mais:", items: ["1.000 pedidos no total", "Até 10 usuários, contando os vendedores", "Finalização com foto (3.000 fotos)", "Área de clientes", "Login do vendedor com aviso e foto do brinquedo pronto", "Pastas de fotos por pedido"] },
   ultra: { icon: Rocket, tag: "Para crescer sem limite", base: "Tudo do PRO, mais:", items: ["Pedidos, usuários e fotos ilimitados", "CRM + IA de vendas para os vendedores", "Dashboard com o Cérebro 24h", "Mapa de clientes e rotas de entrega", "Quadro de pronta entrega"] },
 };
 const PAID = ["essencial", "pro", "ultra"];

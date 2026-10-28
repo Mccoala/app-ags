@@ -1,7 +1,7 @@
 // ── Planos do Inflatudo ───────────────────────────────────────────────────────
 // Usado pelo app (telas, travas) e pelo servidor (conferência dos limites).
 // Pedidos: total cadastrado desde o início (não renova). Fotos: total guardado.
-// Usuários: dono + logins da equipe (vendedor não conta).
+// Usuários: dono + todos os logins da equipe (vendedores contam, em qualquer plano).
 
 const ALL = { photos: true, clients: true, sellers: true, crm: true, dashboard: true, brain: true, map: true, ready: true };
 const NONE = { photos: false, clients: false, sellers: false, crm: false, dashboard: false, brain: false, map: false, ready: false };
@@ -79,7 +79,7 @@ export function planState(company) {
 
 // Uso atual da empresa
 export function usageOf(appData, usage) {
-  const users = (appData?.users || []).filter(u => !u.sellerName).length + 1; // + o dono
+  const users = (appData?.users || []).length + 1; // todos os logins (vendedores também) + o dono
   return {
     orders: Math.max(Number(usage?.orders_created) || 0, (appData?.orders || []).length),
     photos: (appData?.photos || []).length + (appData?.readyStock || []).reduce((a, r) => a + (r.photos || []).length, 0),
