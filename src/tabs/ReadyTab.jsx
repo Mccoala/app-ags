@@ -164,7 +164,7 @@ function Editor({ initial, onClose, onSave, dark, companyId, knownNames = [] }) 
     setErr(""); setBusy(true);
     try {
       for (const f of Array.from(files || [])) {
-        const { blob } = await compressPhoto(f, 1280, 0.75, name || "Pronta entrega");
+        const { blob } = await compressPhoto(f, 2560, 0.88, name || "Pronta entrega");
         const up = await uploadPhoto(companyId, "pronta-entrega", blob);
         setPhotos(p => [...p, { id: up.id, url: up.url, path: up.path || null }]);
       }

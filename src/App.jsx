@@ -2413,7 +2413,9 @@ function MainApp() {
           if (fresh()) return d;
           const patch = {};
           ['notifications', 'photos', 'readyStock', ...(viewOnly ? ['production', 'finalization', 'orders'] : [])].forEach(k => {
-            if (r[k] && JSON.stringify(r[k]) !== JSON.stringify(d[k] || [])) patch[k] = r[k];
+            // links das fotos mudam de "senha" a cada consulta: compara sem ela para não recarregar as imagens à toa
+            const same = (a, b) => JSON.stringify(a).replace(/\?token=[^"]*/g, "") === JSON.stringify(b).replace(/\?token=[^"]*/g, "");
+            if (r[k] && !same(r[k], d[k] || [])) patch[k] = r[k];
           });
           return Object.keys(patch).length ? { ...d, ...patch } : d;
         });

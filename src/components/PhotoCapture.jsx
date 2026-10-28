@@ -21,7 +21,7 @@ export default function PhotoCapture({ row, companyId, dark, mode = "finalizar",
     setErr(""); setBusy("Preparando foto…");
     try {
       const out = [];
-      for (const f of list) out.push(await compressPhoto(f, 1280, 0.72, `Pedido ${pedido}`));
+      for (const f of list) out.push(await compressPhoto(f, 2560, 0.88, `Pedido ${pedido}`));
       setShots(s => [...s, ...out]);
     } catch (e) { setErr(e.message || "Não consegui ler a foto."); }
     setBusy("");

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { db, SECURE, signToken, verifyToken, tokenFromEvent, hashPassword, checkPassword, httpError, json, fail, loadCompany, isCreatorCo, isLegacy, effective, NO_PLAN } from "../lib/server.js";
 import { planState, usageOf, normPlan, PLANS } from "../../src/lib/plans.js";
+import { externalize, signForClient, hasInlineImages, hasPublicLinks, signOne } from "../lib/media.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API do Inflatudo. Todo acesso aos dados passa por aqui:
@@ -68,6 +69,16 @@ const actions = {
 
   async load(_, s) {
     const c = await loadCompany(s.cid);
+    // fotos antigas guardadas dentro dos dados: passam para a pasta fechada (uma vez só)
+    if (c.app_data && (hasInlineImages(c.app_data) || hasPublicLinks(c.app_data))) {
+      try {
+        const moved = await externalize(c.app_data, c.id);
+        if (moved !== c.app_data) {
+          const { error } = await db().from("companies").update({ app_data: moved }).eq("id", c.id);
+          if (!error) c.app_data = moved;
+        }
+      } catch (e) { console.warn("migração de fotos adiada", e.message); }
+    }
     const st = stateOf(c);
     let user = null, app_data = c.app_data || {};
     if (s.role === "employee") {
@@ -76,12 +87,14 @@ const actions = {
       user = { permissions: emp.permissions || [], sellerName: emp.sellerName || "", name: emp.name };
       app_data = scrubForEmployee(app_data);
     }
+    app_data = await signForClient(app_data);
     return { app_data, company: meta(c), plan: publicState(st), user };
   },
 
   async save({ app_data, allowShrink }, s) {
     if (!app_data || typeof app_data !== "object") throw httpError(400, "Dados inválidos.");
     const c = await loadCompany(s.cid);
+    app_data = await externalize(app_data, s.cid); // fotos novas vão para a pasta fechada, com qualidade original
     // Proteção: nunca deixa uma tela vazia (que não carregou) gravar por cima da empresa
     {
       const cur0 = c.app_data || {};
@@ -133,7 +146,7 @@ const actions = {
     const a = c.app_data || {};
     const out = { notifications: a.notifications || [], photos: a.photos || [], readyStock: a.readyStock || [], plan: publicState(st) };
     if (full) Object.assign(out, { production: a.production || [], finalization: a.finalization || [], orders: a.orders || [] });
-    return out;
+    return await signForClient(out);
   },
 
   async uploadPhoto({ pedido, data }, s) {
@@ -147,10 +160,9 @@ const actions = {
     const id = `${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
     const path = `${s.cid}/${String(pedido || "geral").replace(/[^\w-]/g, "")}/${id}.jpg`;
     let up = await db().storage.from("fotos").upload(path, buf, { contentType: "image/jpeg" });
-    if (up.error && /not found|bucket/i.test(up.error.message) && SECURE) { await db().storage.createBucket("fotos", { public: true }); up = await db().storage.from("fotos").upload(path, buf, { contentType: "image/jpeg" }); }
+    if (up.error && /not found|bucket/i.test(up.error.message) && SECURE) { await db().storage.createBucket("fotos", { public: false }); up = await db().storage.from("fotos").upload(path, buf, { contentType: "image/jpeg" }); }
     if (up.error) throw httpError(500, "Não consegui guardar a foto agora.", { code: "storage" });
-    const { data: pub } = db().storage.from("fotos").getPublicUrl(path);
-    return { id, url: pub.publicUrl, path };
+    return { id, url: await signOne("fotos", path), path };
   },
 
   async deletePhoto({ path }, s) {

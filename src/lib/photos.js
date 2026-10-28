@@ -3,7 +3,7 @@ import { orderNumber } from "./core";
 import { importRetry } from "./safeImport";
 
 // ── Fotos dos brinquedos finalizados ─────────────────────────────────────────
-// A foto é reduzida no próprio celular (lado maior 1280px, JPEG ~70%) → normalmente 120–300 KB.
+// A foto sai em alta qualidade (lado maior até 2560px, JPEG 88%) com data e hora carimbadas.
 // Vai para o Supabase Storage (pasta "fotos"); se a pasta ainda não existir, fica guardada
 // numa versão menor dentro dos dados da empresa, para nunca perder a foto.
 
@@ -46,9 +46,14 @@ function stamp(canvas, text) {
 export async function compressPhoto(file, maxSide = 1280, quality = 0.72, label = "") {
   const img = await loadImage(file);
   const takenAt = new Date().toISOString();
-  const canvas = draw(img, maxSide);
+  let canvas = draw(img, maxSide);
   stamp(canvas, `${label ? label + " · " : ""}${fmtDateTime(takenAt)}`);
-  const blob = await toBlob(canvas, quality);
+  let blob = await toBlob(canvas, quality);
+  if (blob.size > 3.4 * 1024 * 1024) { // limite do envio: reduz só o necessário
+    canvas = draw(img, Math.round(maxSide * 0.75));
+    stamp(canvas, `${label ? label + " · " : ""}${fmtDateTime(takenAt)}`);
+    blob = await toBlob(canvas, Math.min(quality, 0.82));
+  }
   return { blob, preview: URL.createObjectURL(blob), size: blob.size, takenAt };
 }
 
