@@ -284,6 +284,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
   const [pw, setPw] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [show, setShow] = useState(false);
+  const [forgot, setForgot] = useState(false); const [forgotEmail, setForgotEmail] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -379,6 +380,28 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
           </div>
         </div>
         
+        {mode !== "admin_register" && (
+          <div className="text-center mt-4">
+            <button onClick={() => { setForgot(Math.floor(1000 + Math.random() * 9000)); setForgotEmail(email); }} className={`text-xs font-bold hover:underline ${dark ? "text-gray-400" : "text-gray-500"}`}>Esqueci minha senha</button>
+          </div>
+        )}
+        {forgot && (() => {
+          const ticket = forgot;
+          const who = mode === "employee" ? `Login: ${forgotEmail || "—"} (funcionário da empresa ${qsCompanyId || "—"})` : `E-mail: ${forgotEmail || "—"}`;
+          const msg = `Olá! Esqueci os dados de login do Inflatudo e preciso de ajuda. ${who} #ticket${ticket}`;
+          return (
+            <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setForgot(false)}>
+              <div className="w-full max-w-sm rounded-2xl p-6 bg-gray-900 border border-gray-800 text-white" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start justify-between gap-3"><h3 className="text-lg font-black">Esqueceu a senha?</h3><button onClick={() => setForgot(false)} className="text-gray-500 hover:text-white"><X size={18} /></button></div>
+                <p className="text-sm text-gray-400 mt-1">Informe seu {mode === "employee" ? "login" : "e-mail"} e abra um atendimento com o suporte pelo WhatsApp.</p>
+                <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder={mode === "employee" ? "seu login" : "seu e-mail"} className="input-dark w-full mt-4" autoFocus />
+                <div className="mt-3 text-[11px] text-gray-500">Seu atendimento: <b className="text-orange-400">#ticket{ticket}</b></div>
+                <a href={forgotEmail.trim() ? `https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(msg)}` : undefined} target="_blank" rel="noreferrer" onClick={e => { if (!forgotEmail.trim()) e.preventDefault(); }} className={`mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl font-black text-white ${forgotEmail.trim() ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600/40 cursor-not-allowed"}`}>Abrir atendimento no WhatsApp</a>
+              </div>
+            </div>
+          );
+        })()}
+
         {mode === "employee" && (
            <div className="text-center mt-6">
              <button onClick={() => window.location.href = '/'} className={`text-xs font-bold underline ${dark ? "text-gray-500" : "text-gray-400"}`}>Sou proprietário / Dono</button>
@@ -1958,6 +1981,9 @@ function PermissionGrid({ value, onChange, dark }) {
 
 function TeamTab({ data, setData, dark, user }) {
   const [activeSubTab, setActiveSubTab] = useState('members'); 
+  const [planToast, setPlanToast] = useState(null);
+  const freeTeam = !TOUR_OPEN && PLAN && (PLAN.limits?.users ?? Infinity) <= 1 && !PLAN.creator; // teste grátis: só o dono
+  const pickSub = (id) => { if (freeTeam && (id === 'logins' || id === 'sellers')) { setPlanToast(`${id === 'logins' ? 'Logins da equipe' : 'Vendedores'}: disponível no plano Essencial`); clearTimeout(window.__planToastT); window.__planToastT = setTimeout(() => setPlanToast(null), 2600); return; } setActiveSubTab(id); };
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
   const EMPTY_USER = { name: '', email: '', password: '', permissions: { production: 'edit' } };
@@ -2023,11 +2049,12 @@ function TeamTab({ data, setData, dark, user }) {
 
       <div className={`grid grid-cols-3 sm:flex gap-1 sm:gap-2 p-1 rounded-xl w-full sm:w-fit ${dark ? 'bg-gray-900 border border-gray-800' : 'bg-black/5'}`}>
         {[{id:'members', label:'Colaboradores', icon:<Users size={14}/>}, {id:'logins', label:'Logins', icon:<Shield size={14}/>}, {id:'sellers', label:'Vendedores', icon:<UserPlus size={14}/>}].map(t => (
-          <button key={t.id} onClick={() => setActiveSubTab(t.id)} className={`flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === t.id ? (dark ? 'bg-gray-800 shadow-sm text-orange-500' : 'bg-white shadow-sm text-orange-600') : 'text-slate-500 hover:text-orange-500'}`}>
-            {t.icon} {t.label}
+          <button key={t.id} onClick={() => pickSub(t.id)} className={`flex items-center justify-center gap-1.5 sm:gap-2 px-1.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${freeTeam && t.id !== 'members' ? 'opacity-60' : ''} ${activeSubTab === t.id ? (dark ? 'bg-gray-800 shadow-sm text-orange-500' : 'bg-white shadow-sm text-orange-600') : 'text-slate-500 hover:text-orange-500'}`}>
+            {t.icon} {t.label}{freeTeam && t.id !== 'members' && <Lock size={11} className='ml-0.5' />}
           </button>
         ))}
       </div>
+      {planToast && <div className='fixed left-1/2 -translate-x-1/2 bottom-8 z-[260] px-4 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold shadow-2xl border border-orange-500/40 flex items-center gap-2 plan-toast'><Lock size={15} className='text-orange-400' />{planToast}</div>}
 
       {activeSubTab === 'members' && (
         <div className='space-y-4'>

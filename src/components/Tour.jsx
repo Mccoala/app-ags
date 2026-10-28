@@ -40,8 +40,7 @@ export default function Tour({ steps, onClose, onGo, dark }) {
 
   // muda de aba (se o passo pedir) e mede o alvo depois que a tela desenhar
   useLayoutEffect(() => {
-    setRect(null);
-    if (step?.tab) onGo(step.tab);
+    if (step?.tab) onGo(step.tab); // o destaque fica onde está e desliza até o próximo item (não volta para o topo)
     const t1 = setTimeout(measure, 120), t2 = setTimeout(measure, 450);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [i]); // eslint-disable-line
@@ -69,9 +68,9 @@ export default function Tour({ steps, onClose, onGo, dark }) {
     <div className="fixed inset-0 z-[400]" role="dialog" aria-label="Tutorial">
       {/* fundo escuro com "buraco" no alvo */}
       {rect ? (
-        <div className="absolute rounded-xl transition-all duration-300 pointer-events-none ring-2 ring-orange-400"
+        <div key="spot" className="absolute rounded-xl transition-all duration-300 pointer-events-none ring-2 ring-orange-400"
           style={{ left: rect.x - PAD, top: rect.y - PAD, width: rect.w + PAD * 2, height: rect.h + PAD * 2, boxShadow: "0 0 0 9999px rgba(0,0,0,.72)" }} />
-      ) : <div className="absolute inset-0 bg-black/72" style={{ background: "rgba(0,0,0,.72)" }} />}
+      ) : <div key="dim" className="absolute inset-0 bg-black/72" style={{ background: "rgba(0,0,0,.72)" }} />}
       <div className="absolute inset-0" onClick={e => e.stopPropagation()} />
 
       <div className={`absolute rounded-2xl p-5 shadow-2xl transition-all duration-300 ${dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white text-gray-900"}`} style={{ width: cardW, left: pos.left, top: pos.top }}>

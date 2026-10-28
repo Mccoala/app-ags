@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Crown, Loader2, RefreshCw, Search, Save, Lock } from "lucide-react";
+import { Crown, Loader2, RefreshCw, Search, Save, Lock, KeyRound, Link2, Check, Eye, EyeOff, DollarSign } from "lucide-react";
 import { api } from "../lib/api";
 import { PLANS } from "../lib/plans";
 import { dBR } from "../components/PlanUI";
@@ -11,7 +11,42 @@ import { dBR } from "../components/PlanUI";
 const PLAN_OPTS = ["free", "essencial", "pro", "ultra"];
 const STATUS_OPTS = [["active", "Ativo"], ["trial", "Teste"], ["overdue", "Atrasado"], ["canceled", "Cancelado"], ["blocked", "Bloqueado"]];
 const lim = (v) => (v == null ? "∞" : Number(v).toLocaleString("pt-BR"));
+const money = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const dateIn = (iso) => { try { return iso ? new Date(iso).toISOString().slice(0, 10) : ""; } catch { return ""; } };
+
+// Acesso do dono da fábrica: e-mail, nova senha e link da equipe
+function Access({ c, dark, onSaved }) {
+  const [email, setEmail] = useState(c.admin_email || "");
+  const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [copied, setCopied] = useState(false);
+  const link = `${window.location.origin}/?empresa=${c.company_id}`;
+  const dirty = email.trim().toLowerCase() !== (c.admin_email || "") || pw.length > 0;
+  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", link); } };
+  const save = async () => {
+    setBusy(true); setMsg("");
+    try {
+      await api("creatorUpdate", { companyId: c.company_id, ...(email.trim().toLowerCase() !== (c.admin_email || "") ? { admin_email: email } : {}), ...(pw ? { password: pw } : {}) });
+      setPw(""); setMsg("Acesso salvo"); onSaved();
+    } catch (e) { setMsg(e.message); }
+    finally { setBusy(false); }
+  };
+  const inp = `rounded-lg px-2 py-1.5 text-sm border outline-none ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300"}`;
+  return (
+    <div className={`rounded-xl p-3 flex flex-wrap items-end gap-3 ${dark ? "bg-gray-950/60" : "bg-gray-50"}`}>
+      <div className="text-xs font-black flex items-center gap-1.5 w-full opacity-80"><KeyRound size={13} />Acesso do dono</div>
+      <label className="text-xs font-bold space-y-1 flex-1 min-w-[200px]"><div className="opacity-70">E-mail de acesso</div><input value={email} onChange={e => setEmail(e.target.value)} className={`${inp} w-full`} /></label>
+      <label className="text-xs font-bold space-y-1 min-w-[180px]"><div className="opacity-70">Nova senha</div>
+        <div className="relative"><input type={show ? "text" : "password"} value={pw} onChange={e => setPw(e.target.value)} placeholder="deixe vazio para manter" autoComplete="new-password" className={`${inp} w-full pr-8`} /><button type="button" onClick={() => setShow(!show)} className="absolute right-2 top-1/2 -translate-y-1/2 opacity-60">{show ? <EyeOff size={14} /> : <Eye size={14} />}</button></div>
+      </label>
+      <button disabled={!dirty || busy} onClick={save} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-500 text-white font-bold text-xs disabled:opacity-40">{busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}Salvar acesso</button>
+      <button onClick={copy} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border font-bold text-xs ${dark ? "border-gray-700" : "border-gray-300"}`}>{copied ? <><Check size={14} className="text-emerald-500" />Link copiado</> : <><Link2 size={14} />Copiar link da equipe</>}</button>
+      {msg && <span className={`text-xs font-bold ${msg === "Acesso salvo" ? "text-emerald-500" : "text-red-500"}`}>{msg}</span>}
+    </div>
+  );
+}
 
 function Row({ c, dark, onSaved }) {
   const isCreator = c.plan_id === "creator";
@@ -27,7 +62,7 @@ function Row({ c, dark, onSaved }) {
         plan_id: isCreator ? undefined : f.plan_id,
         status: f.status,
         trial_ends_at: f.trial ? new Date(`${f.trial}T23:59:59-03:00`).toISOString() : undefined,
-        extras: { orders: Number(f.eo) || 0, photos: Number(f.ep) || 0 },
+        ...(Number(f.eo) !== (c.extras?.orders || 0) || Number(f.ep) !== (c.extras?.photos || 0) ? { extras: { orders: Number(f.eo) || 0, photos: Number(f.ep) || 0 } } : {}),
         ...(f.next !== dateIn(c.billing?.nextChargeAt) ? { nextChargeAt: f.next ? new Date(`${f.next}T23:59:59-03:00`).toISOString() : null } : {}),
       });
       setMsg("Salvo"); onSaved();
@@ -42,6 +77,7 @@ function Row({ c, dark, onSaved }) {
         <div className="min-w-0">
           <div className="font-black flex items-center gap-2">{isCreator && <Crown size={16} className="text-amber-500" />}{c.company_name || "Sem nome"}{c.legacy && <span title="Conta de antes dos planos: tudo liberado até você escolher um plano e salvar" className="text-[11px] font-bold px-2 py-0.5 rounded bg-sky-500/15 text-sky-500">Antiga · sem plano definido</span>}{c.locked && <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-500 flex items-center gap-1"><Lock size={11} />Travada</span>}</div>
           <div className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>{c.admin_email} · criada em {c.created_at ? new Date(c.created_at).toLocaleDateString("pt-BR") : "—"}{c.daysLeft != null && f.plan_id === "free" ? ` · ${c.daysLeft} dia(s) de teste` : ""}</div>
+          <div className="mt-1 text-sm font-black text-emerald-500 flex items-center gap-1"><DollarSign size={14} />Faturou {money(c.revenue)}<span className={`text-xs font-semibold ${dark ? "text-gray-400" : "text-gray-500"}`}> · {c.orders_count || 0} pedido(s) no total</span></div>
         </div>
         <div className="flex flex-col items-end gap-1">
         {c.billing && !isCreator && (
@@ -70,6 +106,7 @@ function Row({ c, dark, onSaved }) {
         <button disabled={!dirty || busy} onClick={save} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 text-white font-bold text-sm disabled:opacity-40">{busy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Salvar</button>
         {msg && <span className={`text-xs font-bold ${msg === "Salvo" ? "text-emerald-500" : "text-red-500"}`}>{msg}</span>}
       </div>
+      <Access c={c} dark={dark} onSaved={onSaved} />
     </div>
   );
 }

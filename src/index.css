@@ -792,3 +792,7 @@ button { cursor: pointer; }
   100% { transform: scale(1) rotate(0); filter: none; }
 }
 @media (prefers-reduced-motion: reduce) { .lock-open-pulse, .lock-snap { animation: none !important; } }
+
+/* aviso rápido "disponível no plano X" */
+.plan-toast { animation: plan-toast 2.6s ease forwards; }
+@keyframes plan-toast { 0% { opacity: 0; transform: translate(-50%, 12px); } 10%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, 8px); } }

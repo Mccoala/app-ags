@@ -68,7 +68,7 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
             const label = isCur ? "Seu plano atual" : curRank >= 0 && idx < curRank ? `Mudar para ${p.label}` : `Assinar ${p.label}`;
             return (
               <div key={id} className={`relative rounded-2xl border flex flex-col ${T.card} ${rec && !isCur ? (dark ? "ring-1 ring-orange-500/60" : "ring-1 ring-orange-500/50") : ""}`}>
-                {rec && <div className="absolute top-5 right-5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-orange-500/15 text-orange-500">Mais escolhido</div>}
+                {rec && <div className="absolute top-5 right-5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-orange-500/15 text-orange-500">Mais recomendado</div>}
                 <div className="p-6 pb-5">
                   <Icon size={46} strokeWidth={1.1} className={dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"} />
                   <div className="mt-4 text-xl font-bold">{p.label}</div>

@@ -146,14 +146,27 @@ const actions = {
     await requireCreator(s);
     const { data, error } = await db().from("companies").select("id, company_name, admin_email, plan_id, status, trial_ends_at, created_at, app_data");
     if (error) throw httpError(500, "Não consegui listar as empresas.");
-    return { companies: data.map(c => { const st = stateOf(c); return { ...meta(c), admin_email: c.admin_email, created_at: c.created_at, plan_id: st.id, legacy: st.legacy, locked: st.locked, billing: st.billing, daysLeft: st.daysLeft, usage: st.usage, limits: publicState(st).limits, extras: c.app_data?._srv?.extras || {} }; }).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))) };
+    return { companies: data.map(c => { const st = stateOf(c); return { ...meta(c), admin_email: c.admin_email, created_at: c.created_at, plan_id: st.id, legacy: st.legacy, locked: st.locked, billing: st.billing, daysLeft: st.daysLeft, usage: st.usage, limits: publicState(st).limits, extras: c.app_data?._srv?.extras || {}, revenue: revenueOf(c.app_data), orders_count: (c.app_data?.orders || []).length }; }).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))) };
   },
-  async creatorUpdate({ companyId, plan_id, status, trial_ends_at, extras, nextChargeAt }, s) {
+  async creatorUpdate({ companyId, plan_id, status, trial_ends_at, extras, nextChargeAt, admin_email, password }, s) {
     await requireCreator(s);
+    // acesso do dono da fábrica (vale também para a própria conta do criador)
+    const access = {};
+    if (admin_email !== undefined) {
+      const em = String(admin_email || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) throw httpError(400, "E-mail inválido.");
+      const { data: other } = await db().from("companies").select("id").eq("admin_email", em).neq("id", companyId).maybeSingle();
+      if (other) throw httpError(409, "Esse e-mail já é usado por outra empresa.");
+      access.admin_email = em;
+    }
+    if (password !== undefined && password !== "") {
+      if (String(password).length < 6) throw httpError(400, "A senha precisa ter pelo menos 6 caracteres.");
+      access.admin_password = hashPassword(password);
+    }
     if (companyId === s.cid && plan_id && plan_id !== "creator") throw httpError(400, "A conta do criador não muda de plano.");
     const c = await loadCompany(companyId, "id, plan_id, app_data");
     if (isCreatorCo(c) && plan_id && plan_id !== "creator") throw httpError(400, "A conta do criador não muda de plano.");
-    const patch = {};
+    const patch = { ...access };
     if (plan_id) { if (!PLANS[plan_id]) throw httpError(400, "Plano inválido."); patch.plan_id = plan_id; }
     const a0 = c.app_data || {};
     if (plan_id && !isCreatorCo(c)) patch.app_data = { ...a0, _srv: { orders_created: (a0.orders || []).length, ...(a0._srv || {}), legacyPlan: undefined } };
@@ -166,6 +179,11 @@ const actions = {
     return { ok: true };
   },
 };
+
+// Quanto a fábrica já vendeu (soma dos pedidos)
+function revenueOf(a) {
+  return (a?.orders || []).reduce((t, o) => t + (Number(o.totalPrice) || (o.items || []).reduce((x, i) => x + (Number(i.price) || 0), 0)), 0);
+}
 
 async function requireCreator(s) {
   if (s.role !== "admin") throw httpError(403, "Só o criador.");
