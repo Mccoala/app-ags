@@ -1,3 +1,4 @@
+import React from "react";
 import { getToken } from "./api";
 
 // ── Voz do Cérebro (fala) ─────────────────────────────────────────────────────
@@ -107,16 +108,27 @@ export async function speakText(text, gender = "f") {
         await new Promise((resolve) => {
           const end = () => { URL.revokeObjectURL(url); if (my === token) mode = "none"; resolve(); };
           el.onended = end; el.onpause = () => { if (my !== token) end(); };
-          el.onerror = () => { URL.revokeObjectURL(url); speakDevice(say, gender, my).then(resolve); };
+          el.onerror = () => { URL.revokeObjectURL(url); if (my === token) mode = "none"; resolve(); };
           el.src = url; mode = "audio"; startedAt = performance.now();
-          el.play().catch(() => { URL.revokeObjectURL(url); speakDevice(say, gender, my).then(resolve); });
+          el.play().catch(() => { URL.revokeObjectURL(url); if (my === token) mode = "none"; resolve(); });
         });
         return;
       }
     } catch { }
   }
-  if (my !== token) return;
-  await speakDevice(say, gender, my);
+  // sem voz natural: fica em silêncio (a voz do aparelho é robótica demais)
+}
+
+// A voz só aparece quando a voz natural está configurada no servidor (sem voz robótica do aparelho)
+let availP = null;
+export function voiceAvailable() {
+  if (!availP) availP = fetch("/.netlify/functions/tts", { method: "GET", cache: "no-store" }).then(r => r.ok ? r.json() : { natural: false }).then(j => !!j.natural).catch(() => false);
+  return availP;
+}
+export function useVoiceAvailable() {
+  const [ok, setOk] = React.useState(false);
+  React.useEffect(() => { let alive = true; voiceAvailable().then(v => alive && setOk(v)); return () => { alive = false; }; }, []);
+  return ok;
 }
 
 export const getVoicePref = () => { try { return localStorage.getItem("inflatudo_voice") || "f"; } catch { return "f"; } };

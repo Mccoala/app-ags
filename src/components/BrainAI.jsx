@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ChatBox from "./ChatBox";
 import { Brain, Send, Sparkles, RefreshCw, Trash2, X, Search, Wand2, Mic } from "lucide-react";
 import VoiceBrain from "./VoiceBrain";
+import { useVoiceAvailable } from "../lib/voice";
 import BrainGraph, { BRAIN_TYPES } from "./BrainGraph";
 import { itemRows } from "../lib/aiTools";
 import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
@@ -55,7 +56,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy]);
   const ask = (q, opts) => { const t = (q ?? input); setInput(""); return agentAsk(t, opts); };
   const [voiceOn, setVoiceOn] = useState(false);
-  const canVoice = true;
+  const canVoice = useVoiceAvailable(); // só aparece com a voz natural ligada
 
   const notes = data.brain?.notes || [];
   const totalItems = itemRows(data).length;

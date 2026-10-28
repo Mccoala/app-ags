@@ -6,11 +6,13 @@ import { planState } from "../../src/lib/plans.js";
 // Funciona com a chave que estiver configurada na Netlify:
 //   ELEVENLABS_API_KEY  (vozes mais naturais; ELEVENLABS_VOICE_F / ELEVENLABS_VOICE_M opcionais)
 //   OPENAI_API_KEY      (bem barato; OPENAI_TTS_VOICE_F / OPENAI_TTS_VOICE_M opcionais)
-// Sem nenhuma chave, responde 501 e a tela usa a voz do próprio aparelho.
+// Sem nenhuma chave, os botões de voz ficam escondidos (sem voz robótica do aparelho).
 
 const J = (code, body) => ({ statusCode: code, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const handler = async (event) => {
+  // GET: só diz se a voz natural está ligada (a tela esconde os botões de voz quando não está)
+  if (event.httpMethod === "GET") return J(200, { natural: !!(process.env.ELEVENLABS_API_KEY || process.env.OPENAI_API_KEY) });
   if (event.httpMethod !== "POST") return J(405, { error: { message: "Method Not Allowed" } });
   let s;
   try { s = verifyToken(tokenFromEvent(event)); } catch (e) { return J(401, { error: { message: e.message } }); }
