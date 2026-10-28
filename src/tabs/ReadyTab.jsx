@@ -149,7 +149,9 @@ function SellDialog({ item, data, dark, onClose, onConfirm }) {
   );
 }
 
-function Editor({ initial, onClose, onSave, dark, companyId }) {
+function Editor({ initial, onClose, onSave, dark, companyId, knownNames = [] }) {
+  const [focus, setFocus] = useState(false);
+  const [askName, setAskName] = useState(false);
   const [name, setName] = useState(initial?.name || "");
   const [price, setPrice] = useState(initial?.price ? String(initial.price).replace(".", ",") : "");
   const [photos, setPhotos] = useState(initial?.photos || []);
@@ -169,8 +171,13 @@ function Editor({ initial, onClose, onSave, dark, companyId }) {
     } catch (e) { setErr(e.message || "Não consegui enviar a foto."); }
     finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
   };
-  const save = () => {
+  // nomes que já existem nos pedidos/no quadro: sugere enquanto digita
+  const nq = norm(name.trim());
+  const sugg = nq ? knownNames.filter(n => norm(n).includes(nq) && norm(n) !== nq).slice(0, 8) : [];
+  const known = !!nq && knownNames.some(n => norm(n) === nq);
+  const save = (force = false) => {
     if (!name.trim()) return setErr("Coloque o nome do brinquedo.");
+    if (!force && !known && !(initial && norm(initial.name) === nq) && knownNames.length) return setAskName(true);
     removed.current.forEach(deleteStoredPhoto);
     onSave({ name: name.trim(), price: parseMoney(price), photos });
   };
@@ -194,18 +201,39 @@ function Editor({ initial, onClose, onSave, dark, companyId }) {
           </div>
           <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => addFiles(e.target.files)} />
         </div>
-        <div><div className="text-xs font-bold mb-1.5 opacity-70">Nome do brinquedo</div><input value={name} onChange={e => setName(e.target.value)} placeholder="Ex.: Tobogã Selva 5m" className={inp} /></div>
+        <div className="relative"><div className="text-xs font-bold mb-1.5 opacity-70">Nome do brinquedo</div>
+          <input value={name} onChange={e => setName(e.target.value)} onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 150)} placeholder="Ex.: Tobogã Selva 5m" className={inp} autoComplete="off" />
+          {known && <div className="mt-1 text-[11px] font-bold text-emerald-500">✓ Mesmo nome usado nos pedidos</div>}
+          {focus && sugg.length > 0 && (
+            <div className={`absolute z-10 left-0 right-0 mt-1 rounded-xl border shadow-xl overflow-hidden ${dark ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"}`}>
+              <div className={`px-3 pt-2 pb-1 text-[10px] font-black uppercase tracking-wider ${dark ? "text-gray-500" : "text-gray-400"}`}>Use o mesmo nome dos pedidos</div>
+              {sugg.map(n => <button key={n} type="button" onMouseDown={e => { e.preventDefault(); setName(n); setFocus(false); }} className={`w-full text-left px-3 py-2 text-sm font-semibold ${dark ? "hover:bg-white/5" : "hover:bg-black/5"}`}>{n}</button>)}
+            </div>
+          )}
+        </div>
         <div><div className="text-xs font-bold mb-1.5 opacity-70">Valor (R$)</div><input value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Ex.: 8.500,00" className={inp} /></div>
         {err && <div className="text-sm text-red-500 font-semibold">{err}</div>}
-        <button disabled={busy} onClick={save} className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-white font-black disabled:opacity-50">{initial ? "Salvar" : "Pendurar no quadro"}</button>
+        <button disabled={busy} onClick={() => save()} className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-400 text-white font-black disabled:opacity-50">{initial ? "Salvar" : "Pendurar no quadro"}</button>
       </div>
+      {askName && (
+        <div className="fixed inset-0 z-[320] bg-black/70 flex items-center justify-center p-4" onClick={e => { e.stopPropagation(); setAskName(false); }}>
+          <div className={`w-full max-w-sm rounded-2xl p-5 ${dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+            <div className="text-lg font-black">Esse nome não aparece nos pedidos</div>
+            <p className={`text-sm mt-2 ${dark ? "text-gray-400" : "text-gray-600"}`}>“{name.trim()}” não foi encontrado em nenhum pedido. Se no pedido o brinquedo tiver um nome diferente, o sistema pode não contar como o mesmo produto.</p>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setAskName(false)} className={`flex-1 py-2.5 rounded-xl font-bold border ${dark ? "border-gray-700" : "border-gray-300"}`}>Voltar e corrigir</button>
+              <button onClick={() => { setAskName(false); save(true); }} className="flex-1 py-2.5 rounded-xl font-black text-white bg-orange-500 hover:bg-orange-400">Confirmar assim</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function ReadyTab({ data, persist, dark, user, canEditReady, canSellReady }) {
   const [q, setQ] = useState("");
-  const [show, setShow] = useState("disponivel");
+  const [show, setShow] = useState("todos");
   const [open, setOpen] = useState(null);
   const [selling, setSelling] = useState(null);
   const [edit, setEdit] = useState(null); // null | "new" | item
@@ -221,6 +249,12 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
       .filter(r => !nq || norm(r.name).includes(nq))
       .sort((a, b) => (a.status !== "disponivel") - (b.status !== "disponivel") || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   }, [list, q, show]);
+  const knownNames = useMemo(() => {
+    const m = new Map();
+    (data.orders || []).forEach(o => (o.items || []).forEach(it => { if (!it.isMotor && it.toy && String(it.toy).trim()) { const k = norm(it.toy); if (!m.has(k)) m.set(k, String(it.toy).trim()); } }));
+    list.forEach(r => { if (r.name) { const k = norm(r.name); if (!m.has(k)) m.set(k, r.name); } });
+    return [...m.values()].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [data.orders, list]);
   const avail = list.filter(r => !r.status || r.status === "disponivel");
   const waitingN = list.filter(r => r.status === "reservado").length;
   const soldN = list.filter(r => r.status === "vendido").length;
@@ -289,7 +323,7 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
 
       {open && <Viewer item={open} dark={dark} canManage={canManage} canSell={canSell} onClose={() => setOpen(null)} onEdit={() => setEdit(open)} onSell={() => setSelling(open)} onUnsell={() => unsell(open)} onDelete={() => remove(open)} />}
       {selling && <SellDialog item={selling} data={data} dark={dark} onClose={() => setSelling(null)} onConfirm={(v) => sell(selling, v)} />}
-      {edit && <Editor initial={edit === "new" ? null : edit} dark={dark} companyId={user?.company_id} onClose={() => setEdit(null)} onSave={save} />}
+      {edit && <Editor initial={edit === "new" ? null : edit} dark={dark} companyId={user?.company_id} knownNames={knownNames} onClose={() => setEdit(null)} onSave={save} />}
     </div>
   );
 }
