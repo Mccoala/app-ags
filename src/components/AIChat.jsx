@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import ChatBox from "./ChatBox";
 import { Sparkles, Send, RefreshCw, Trash2 } from "lucide-react";
 import { askAI } from "../lib/core";
 
@@ -74,9 +75,9 @@ export default function AIChat({ aiKind = "sales", title = "Assistente IA", subt
         {loading && <div className="flex items-center gap-2 text-sm text-slate-500"><RefreshCw size={14} className="animate-spin" style={{ color: accent }} />Analisando seus dados…</div>}
         <div ref={endRef} />
       </div>
-      <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex gap-2 ${dark ? "border-gray-800" : "border-gray-100"}`}>
-        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Escreva sua pergunta…" className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200"}`} />
-        <button disabled={loading || !input.trim()} className="px-4 rounded-xl text-white font-black disabled:opacity-40 flex items-center gap-1" style={{ background: accent }}><Send size={15} /></button>
+      <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex items-end gap-2 ${dark ? "border-gray-800" : "border-gray-100"}`}>
+        <ChatBox value={input} onChange={setInput} onSend={() => send()} placeholder="Escreva sua pergunta…" className={`px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-gray-50 border-gray-200"}`} />
+        <button disabled={loading || !input.trim()} className="px-4 h-[42px] rounded-xl text-white font-black disabled:opacity-40 flex items-center gap-1" style={{ background: accent }}><Send size={15} /></button>
       </form>
     </div>
   );

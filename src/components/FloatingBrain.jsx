@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import ChatBox from "./ChatBox";
 import { Brain, Send, X, RefreshCw, Trash2, Bell, Camera, ChevronRight } from "lucide-react";
 import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
 import { sameSeller } from "../lib/core";
@@ -156,9 +157,9 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
             {busy && <div className="flex items-center gap-2 text-sm text-fuchsia-300"><RefreshCw size={14} className="animate-spin" />{busy}</div>}
             <div ref={endRef} />
           </div>
-          <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex gap-2 ${dark ? "border-white/5" : "border-fuchsia-100"}`}>
-            <input autoFocus value={input} onChange={e => setInput(e.target.value)} placeholder="Pergunte ao cérebro…" className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-white/5 border-white/10 text-white placeholder-slate-500" : "bg-white border-fuchsia-100"} focus:border-fuchsia-500`} />
-            <button disabled={!!busy || !input.trim()} className="px-4 rounded-xl text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Send size={15} /></button>
+          <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex items-end gap-2 ${dark ? "border-white/5" : "border-fuchsia-100"}`}>
+            <ChatBox autoFocus value={input} onChange={setInput} onSend={() => send()} placeholder="Pergunte ao cérebro…" className={`px-3 py-2.5 rounded-xl text-sm border outline-none ${dark ? "bg-white/5 border-white/10 text-white placeholder-slate-500" : "bg-white border-fuchsia-100"} focus:border-fuchsia-500`} />
+            <button disabled={!!busy || !input.trim()} className="px-4 h-[42px] rounded-xl text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Send size={15} /></button>
           </form>
           </>)}
         </div>
