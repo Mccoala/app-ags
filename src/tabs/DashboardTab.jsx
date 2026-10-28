@@ -3,6 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { DollarSign, Package, TrendingUp, AlertTriangle, Factory, CheckCircle, Users, Trophy, Clock, MapPin, Scissors, Layers, ChevronRight, Flame } from "lucide-react";
 import BrainAI from "../components/BrainAI";
 import PeriodBar from "../components/PeriodBar";
+import FilterMenu from "../components/FilterMenu";
 import { finalizersOf, sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, todayStr, daysBetween, periodRange, periodBuckets, inRange } from "../lib/core";
 import { clientUF, UF_NAMES } from "../lib/geo";
 
@@ -307,9 +308,7 @@ function TeamPerformance({ data, dark, goTo, range }) {
           <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{range.label}{range.prevFrom ? " · comparado com o período anterior" : ""} · itens feitos</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-          <div className={`flex p-0.5 rounded-lg overflow-x-auto hide-scrollbar w-full sm:w-auto ${dark ? "bg-gray-800" : "bg-gray-100"}`}>
-            {SECTORS.map(([k, l]) => <button key={k} onClick={() => { setSector(k); setPicked(null); }} className={`flex-1 sm:flex-none px-2.5 py-1 rounded-md text-[11px] font-black whitespace-nowrap ${sector === k ? "bg-orange-500 text-white" : "text-slate-500"}`}>{l}</button>)}
-          </div>
+          <FilterMenu value={sector} onChange={(k) => { setSector(k); setPicked(null); }} label="Setor" dark={dark} options={SECTORS} />
           <button onClick={() => goTo && goTo("team")} className="text-[11px] font-black text-orange-500 hover:underline">Gerenciar equipe</button>
         </div>
       </div>

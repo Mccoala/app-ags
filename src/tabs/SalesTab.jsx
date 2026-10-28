@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Cartes
 import { Users, Package, DollarSign, Phone, Search, Calendar, MessageCircle, TrendingUp, Layers, Star, X, Edit3, Check, Clock } from "lucide-react";
 import AIChat from "../components/AIChat";
 import PeriodBar from "../components/PeriodBar";
+import FilterMenu from "../components/FilterMenu";
 import { periodRange, periodBuckets, inRange, sameSeller, moneyBR, dateBR, norm, orderNumber, sellerColorOf, aiSnapshot, todayStr, daysBetween, whatsappLink, matchQuery, orderHaystack } from "../lib/core";
 import { clientUF } from "../lib/geo";
 
@@ -122,9 +123,8 @@ export default function SalesTab({ data, setData, persist, dark, user, plan, onP
         {locked ? (
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl font-black" style={{ background: `${color}22`, color }}>● {seller}</div>
         ) : (
-          <div className="flex gap-1.5 flex-wrap chip-row">
-            {sellerList.map(n => { const c = sellerColorOf(data, n); const on = n === seller; return <button key={n} onClick={() => setChosen(n)} className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all ${on ? "text-white" : ""}`} style={on ? { background: c, borderColor: c, boxShadow: `0 6px 16px ${c}55` } : { borderColor: `${c}55`, color: c }}>{n}</button>; })}
-          </div>
+          <FilterMenu value={seller} onChange={setChosen} label="Vendedor" dark={dark} accent={color} align="right"
+            options={sellerList.map(n => [n, n, sellerColorOf(data, n)])} />
         )}
       </div>
 
@@ -191,9 +191,8 @@ export default function SalesTab({ data, setData, persist, dark, user, plan, onP
 
           {tab === "crm" && crmOn && (
             <>
-              <div className="flex gap-1.5 flex-wrap chip-row">
-                {[["todos", `Todos (${clients.length})`], ["contatar", `Chamar hoje (${toContact.length})`], ["esfriando", "Esfriando / inativos"], ["abertos", "Com pedido em aberto"]].map(([k, l]) => <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${filter === k ? "bg-orange-500 text-white" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-600"}`}>{l}</button>)}
-              </div>
+              <div><FilterMenu value={filter} onChange={setFilter} label="Mostrar" dark={dark}
+                options={[["todos", `Todos (${clients.length})`], ["contatar", `Chamar hoje (${toContact.length})`], ["esfriando", "Esfriando / inativos"], ["abertos", "Com pedido em aberto"]]} /></div>
               <div className="space-y-3">
                 {filtered.map(c => {
                   const wa = whatsappLink(c.info.phone, `Oi ${c.name}! 👋 Aqui é ${seller}, tudo bem? 🎈 Passando pra saber como estão os brinquedos e se posso te ajudar com algo novo! 😊`);

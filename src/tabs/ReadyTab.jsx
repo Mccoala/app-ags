@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, X, Camera, Loader2, Search, Pencil, Trash2, CheckCircle2, RotateCcw, ChevronLeft, ChevronRight, PackageCheck } from "lucide-react";
+import { Plus, X, Camera, Loader2, Search, Pencil, Trash2, CheckCircle2, RotateCcw, ChevronLeft, ChevronRight, PackageCheck, Filter, Link2, User } from "lucide-react";
 import { compressPhoto, uploadPhoto, deleteStoredPhoto } from "../lib/photos";
 import { norm } from "../lib/core";
+import FilterMenu from "../components/FilterMenu";
 
 // ── Pronta entrega ────────────────────────────────────────────────────────────
 // Um quadro de cortiça "infinito": cada brinquedo pronto fica preso por um alfinete.
@@ -9,7 +10,12 @@ import { norm } from "../lib/core";
 // Marcar como vendido: só quem lança pedidos na extratora (permissão de editar Pedidos).
 
 const money = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const parseMoney = (s) => { const t = String(s || "").replace(/[^\d,.-]/g, ""); const n = t.includes(",") ? Number(t.replace(/\./g, "").replace(",", ".")) : Number(t); return isFinite(n) ? n : 0; };
+const parseMoney = (s) => {
+  let t = String(s || "").replace(/[^\d,.]/g, "");
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", "."); // 8.500,50
+  else if (!/^\d+\.\d{1,2}$/.test(t)) t = t.replace(/\./g, ""); // 4.900 = quatro mil e novecentos
+  const n = Number(t); return isFinite(n) ? n : 0;
+};
 const newId = () => `pe-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const PIN_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#10b981", "#a855f7", "#ec4899"];
 const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); };
@@ -38,7 +44,8 @@ function Pin({ color }) {
 function Card({ item, onOpen }) {
   const h = hash(item.id);
   const rot = ((h % 7) - 3) * 0.9; // -2.7° a 2.7°
-  const sold = item.status === "vendido";
+  const sold = item.status === "vendido" || item.status === "reservado";
+  const waiting = item.status === "reservado";
   const cover = item.photos?.[0]?.url;
   return (
     <button onClick={() => onOpen(item)} className="relative group pt-3 text-left focus:outline-none" style={{ transform: `rotate(${rot}deg)` }}>
@@ -48,11 +55,12 @@ function Card({ item, onOpen }) {
           {cover ? <img src={cover} alt={item.name} loading="lazy" className={`w-full h-full object-cover ${sold ? "grayscale opacity-70" : ""}`} />
             : <div className="w-full h-full flex items-center justify-center text-gray-400"><Camera size={28} /></div>}
           {item.photos?.length > 1 && <span className="absolute bottom-1 right-1 text-[10px] font-bold bg-black/60 text-white rounded px-1.5 py-0.5">{item.photos.length} fotos</span>}
-          {sold && <div className="absolute inset-0 flex items-center justify-center"><span className="border-4 border-red-600 text-red-600 font-black text-xl tracking-widest px-3 py-1 rounded -rotate-12 bg-white/70">VENDIDO</span></div>}
+          {sold && <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"><span className="border-4 border-red-600 text-red-600 font-black text-xl tracking-widest px-3 py-1 rounded -rotate-12 bg-white/70">VENDIDO</span>{waiting && <span className="text-[10px] font-black uppercase bg-amber-400 text-amber-950 px-2 py-0.5 rounded -rotate-6">falta o pedido</span>}</div>}
         </div>
         <div className="mt-2 px-0.5">
           <div className="text-[13px] font-bold text-gray-800 leading-tight line-clamp-2" style={{ fontFamily: "'Segoe Print','Bradley Hand','Comic Sans MS',cursive" }}>{item.name || "Sem nome"}</div>
           <div className={`text-sm font-black mt-0.5 ${sold ? "text-gray-400 line-through" : "text-emerald-700"}`}>{money(item.price)}</div>
+          {sold && item.seller && <div className="text-[11px] font-bold text-gray-500 truncate">por {item.seller}{item.orderId ? ` · ped. ${item.orderId}` : ""}</div>}
         </div>
       </div>
     </button>
@@ -62,7 +70,8 @@ function Card({ item, onOpen }) {
 function Viewer({ item, onClose, canManage, canSell, onEdit, onSell, onUnsell, onDelete, dark }) {
   const [i, setI] = useState(0);
   const ph = item.photos || [];
-  const sold = item.status === "vendido";
+  const sold = item.status === "vendido" || item.status === "reservado";
+  const waiting = item.status === "reservado";
   useEffect(() => { const k = (e) => e.key === "Escape" && onClose(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
   return (
     <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-3" onClick={onClose}>
@@ -77,16 +86,64 @@ function Viewer({ item, onClose, canManage, canSell, onEdit, onSell, onUnsell, o
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div><div className="text-lg font-black">{item.name}</div><div className="text-emerald-500 font-black text-xl">{money(item.price)}</div></div>
-            <span className={`text-xs font-bold px-2 py-1 rounded-lg ${sold ? "bg-red-500/15 text-red-500" : "bg-emerald-500/15 text-emerald-500"}`}>{sold ? "Vendido" : "Disponível"}</span>
+            <span className={`text-xs font-bold px-2 py-1 rounded-lg ${waiting ? "bg-amber-500/15 text-amber-500" : sold ? "bg-red-500/15 text-red-500" : "bg-emerald-500/15 text-emerald-500"}`}>{waiting ? "Vendido · falta o pedido" : sold ? "Vendido" : "Disponível"}</span>
           </div>
           {sold && <div className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>Vendido{item.soldAt ? ` em ${new Date(item.soldAt).toLocaleDateString("pt-BR")}` : ""}{item.soldTo ? ` para ${item.soldTo}` : ""}{item.seller ? ` · vendedor ${item.seller}` : ""}{item.orderId ? ` · pedido ${item.orderId}` : ""}{item.soldBy ? ` · marcado por ${item.soldBy}` : ""}</div>}
           <div className="flex flex-wrap gap-2">
             {canSell && !sold && <button onClick={onSell} className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold"><CheckCircle2 size={18} />Marcar como vendido</button>}
+            {canSell && waiting && <button onClick={onSell} className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold"><Link2 size={18} />Vincular o pedido</button>}
             {canSell && sold && <button onClick={onUnsell} className={`flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold border ${dark ? "border-gray-700" : "border-gray-300"}`}><RotateCcw size={16} />Voltar para disponível</button>}
             {canManage && <button onClick={onEdit} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold border ${dark ? "border-gray-700" : "border-gray-300"}`}><Pencil size={16} />Editar</button>}
             {canManage && <button onClick={onDelete} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-red-500 border border-red-500/40"><Trash2 size={16} />Tirar do quadro</button>}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Venda: escolhe o vendedor e o pedido. Sem pedido fica "vendido · falta o pedido" até vincular.
+function SellDialog({ item, data, dark, onClose, onConfirm }) {
+  const sellers = (data.sellers || []).map(x => x.name).filter(Boolean);
+  const [seller, setSeller] = useState(item.seller || "");
+  const [orderId, setOrderId] = useState(item.orderId || "");
+  const [q, setQ] = useState("");
+  const orders = useMemo(() => {
+    const nq = norm(q);
+    return [...(data.orders || [])]
+      .filter(o => !seller || !o.seller || norm(o.seller) === norm(seller) || String(o.id) === String(orderId))
+      .filter(o => !nq || norm(`${o.id} ${o.clientName} ${o.seller} ${(o.items || []).map(i => i.toy).join(" ")}`).includes(nq))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || Number(b.id) - Number(a.id))
+      .slice(0, 40);
+  }, [data.orders, q, seller, orderId]);
+  const inp = `w-full rounded-xl px-3 py-2.5 border outline-none focus:border-orange-500 ${dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300"}`;
+  const chosen = (data.orders || []).find(o => String(o.id) === String(orderId));
+  return (
+    <div className="fixed inset-0 z-[310] bg-black/70 flex items-center justify-center p-3" onClick={onClose}>
+      <div className={`w-full max-w-md rounded-2xl p-5 space-y-4 max-h-[92vh] overflow-y-auto ${dark ? "bg-gray-900 text-white" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between"><h3 className="text-lg font-black">Vender “{item.name}”</h3><button onClick={onClose} className="p-1"><X /></button></div>
+        <div>
+          <div className="text-xs font-bold mb-1.5 opacity-70 flex items-center gap-1"><User size={13} />Vendedor que vendeu</div>
+          <select value={seller} onChange={e => setSeller(e.target.value)} className={inp}>
+            <option value="">Escolha o vendedor</option>
+            {sellers.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="text-xs font-bold mb-1.5 opacity-70 flex items-center gap-1"><Link2 size={13} />Pedido dessa venda</div>
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border mb-2 ${dark ? "bg-gray-950 border-gray-700" : "bg-white border-gray-300"}`}><Search size={15} className="opacity-50" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Nº do pedido ou cliente" className="bg-transparent outline-none flex-1 text-sm" /></div>
+          <div className={`rounded-xl border max-h-56 overflow-y-auto ${dark ? "border-gray-800" : "border-gray-200"}`}>
+            <button onClick={() => setOrderId("")} className={`w-full text-left px-3 py-2 text-sm font-bold ${!orderId ? "bg-amber-500/15 text-amber-500" : ""}`}>Ainda não tem pedido (vincular depois)</button>
+            {orders.map(o => (
+              <button key={o.id} onClick={() => { setOrderId(o.id); if (!seller && o.seller) setSeller(o.seller); }} className={`w-full text-left px-3 py-2 text-sm border-t ${dark ? "border-gray-800" : "border-gray-100"} ${String(o.id) === String(orderId) ? "bg-emerald-500/15 text-emerald-500 font-bold" : ""}`}>
+                <span className="font-black">#{o.id}</span> · {o.clientName || "—"}{o.seller ? <span className="opacity-60"> · {o.seller}</span> : null}
+              </button>
+            ))}
+            {!orders.length && <div className="px-3 py-3 text-xs opacity-60">Nenhum pedido encontrado.</div>}
+          </div>
+        </div>
+        <div className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}>{chosen ? `Fica 100% vendido, ligado ao pedido #${chosen.id} (${chosen.clientName || "—"}).` : "Fica marcado como vendido, mas com o aviso “falta o pedido” até alguém vincular."}</div>
+        <button disabled={!seller} onClick={() => onConfirm({ seller, order: chosen || null })} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black disabled:opacity-40">{chosen ? "Confirmar venda" : "Marcar vendido (falta o pedido)"}</button>
       </div>
     </div>
   );
@@ -150,6 +207,7 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
   const [q, setQ] = useState("");
   const [show, setShow] = useState("disponivel");
   const [open, setOpen] = useState(null);
+  const [selling, setSelling] = useState(null);
   const [edit, setEdit] = useState(null); // null | "new" | item
   const list = data.readyStock || [];
   const isAdmin = user?.role === "admin";
@@ -159,11 +217,13 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
   const shown = useMemo(() => {
     const nq = norm(q);
     return list
-      .filter(r => show === "todos" || (show === "vendido" ? r.status === "vendido" : r.status !== "vendido"))
+      .filter(r => show === "todos" || (r.status || "disponivel") === show)
       .filter(r => !nq || norm(r.name).includes(nq))
-      .sort((a, b) => (a.status === "vendido") - (b.status === "vendido") || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+      .sort((a, b) => (a.status !== "disponivel") - (b.status !== "disponivel") || String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   }, [list, q, show]);
-  const avail = list.filter(r => r.status !== "vendido");
+  const avail = list.filter(r => !r.status || r.status === "disponivel");
+  const waitingN = list.filter(r => r.status === "reservado").length;
+  const soldN = list.filter(r => r.status === "vendido").length;
   const total = avail.reduce((s, r) => s + Number(r.price || 0), 0);
 
   const save = (patch) => {
@@ -173,9 +233,13 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
     persist({ ...data, readyStock: items });
     setEdit(null); setOpen(null);
   };
-  const setStatus = (item, sold) => {
-    const patch = sold ? { status: "vendido", soldAt: new Date().toISOString(), soldBy: user?.name } : { status: "disponivel", soldAt: null, soldBy: null, soldTo: null, orderId: null, seller: null };
+  const sell = (item, { seller, order }) => {
+    const patch = { status: order ? "vendido" : "reservado", soldAt: item.soldAt || new Date().toISOString(), soldBy: user?.name, seller, orderId: order ? order.id : null, soldTo: order ? (order.clientName || "") : null };
     persist({ ...data, readyStock: list.map(r => r.id === item.id ? { ...r, ...patch } : r) });
+    setSelling(null); setOpen(null);
+  };
+  const unsell = (item) => {
+    persist({ ...data, readyStock: list.map(r => r.id === item.id ? { ...r, status: "disponivel", soldAt: null, soldBy: null, soldTo: null, orderId: null, seller: null } : r) });
     setOpen(null);
   };
   const remove = (item) => {
@@ -185,7 +249,6 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
     setOpen(null);
   };
 
-  const chip = (k, label) => <button key={k} onClick={() => setShow(k)} className={`px-3 py-1.5 rounded-lg text-sm font-bold ${show === k ? "bg-orange-500 text-white" : dark ? "bg-gray-800 text-gray-300" : "bg-white text-gray-600 border border-gray-200"}`}>{label}</button>;
 
   return (
     <div className="space-y-4">
@@ -199,8 +262,15 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
 
       <div className="flex flex-wrap items-center gap-2">
         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border flex-1 min-w-[180px] ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}><Search size={16} className="opacity-50" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Procurar brinquedo" className="bg-transparent outline-none flex-1 text-sm" /></div>
-        {chip("disponivel", "Disponíveis")}{chip("vendido", "Vendidos")}{chip("todos", "Todos")}
+        <FilterMenu value={show} onChange={setShow} icon={Filter} label="Mostrar" dark={dark} align="right"
+          options={[["disponivel", `Disponíveis (${avail.length})`], ["reservado", `Vendidos sem pedido (${waitingN})`, "#f59e0b"], ["vendido", `Vendidos (${soldN})`], ["todos", `Todos (${list.length})`]]} />
       </div>
+
+      {waitingN > 0 && canSell && show !== "reservado" && (
+        <button onClick={() => setShow("reservado")} className="w-full text-left px-4 py-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-500 text-sm font-bold">
+          {waitingN} brinquedo{waitingN === 1 ? "" : "s"} vendido{waitingN === 1 ? "" : "s"} sem pedido ligado. Toque para ver e vincular.
+        </button>
+      )}
 
       <div className="rounded-2xl p-4 sm:p-6 min-h-[60vh] border-[10px]" style={{ ...CORK, borderColor: "#7a4b25" }}>
         {shown.length === 0 ? (
@@ -217,7 +287,8 @@ export default function ReadyTab({ data, persist, dark, user, canEditReady, canS
         )}
       </div>
 
-      {open && <Viewer item={open} dark={dark} canManage={canManage} canSell={canSell} onClose={() => setOpen(null)} onEdit={() => setEdit(open)} onSell={() => setStatus(open, true)} onUnsell={() => setStatus(open, false)} onDelete={() => remove(open)} />}
+      {open && <Viewer item={open} dark={dark} canManage={canManage} canSell={canSell} onClose={() => setOpen(null)} onEdit={() => setEdit(open)} onSell={() => setSelling(open)} onUnsell={() => unsell(open)} onDelete={() => remove(open)} />}
+      {selling && <SellDialog item={selling} data={data} dark={dark} onClose={() => setSelling(null)} onConfirm={(v) => sell(selling, v)} />}
       {edit && <Editor initial={edit === "new" ? null : edit} dark={dark} companyId={user?.company_id} onClose={() => setEdit(null)} onSave={save} />}
     </div>
   );

@@ -138,7 +138,7 @@ const INITIAL_DATA = emptyData();
 
 let CURRENT_COMPANY_ID = null;
 // Gravação pelo servidor seguro, uma de cada vez (a mais recente sempre vence)
-let SAVE_BUSY = false, SAVE_NEXT = null;
+let SAVE_BUSY = false, SAVE_NEXT = null, LAST_LOCAL_SAVE = 0;
 async function saveToSupabase(d) {
   if (!CURRENT_COMPANY_ID) return;
   if (SAVE_BUSY) { SAVE_NEXT = d; return; }
@@ -201,6 +201,7 @@ function saveData(d, opts = {}) {
   if (CURRENT_COMPANY_ID) { try { appendLog(d, opts.system); } catch (e) { console.warn("log", e); } }
   if (!CURRENT_COMPANY_ID) return; // nunca grava sem saber de qual empresa é
   try { localStorage.setItem(`ags_v3_${CURRENT_COMPANY_ID}`, JSON.stringify(d)); } catch { }
+  LAST_LOCAL_SAVE = Date.now();
   saveToSupabase(d);
 }
 
@@ -1189,7 +1190,7 @@ function ReadyToggle({ item, onChange, data, dark }) {
       {item.readyStock && avail.length > 0 && (
         <select value={item.readyId || ""} onChange={e => onChange("readyId", e.target.value)} className={`text-xs rounded-lg px-2 py-1 border outline-none ${dark ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-300"}`}>
           <option value="">Qual do quadro? (opcional)</option>
-          {avail.map(r => <option key={r.id} value={r.id}>{r.name}{r.price ? ` · ${Number(r.price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""}</option>)}
+          {avail.map(r => <option key={r.id} value={r.id}>{r.status === "reservado" ? "⏳ " : ""}{r.name}{r.status === "reservado" && r.seller ? ` (vendido por ${r.seller}, falta pedido)` : ""}{r.price ? ` · ${Number(r.price).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""}</option>)}
         </select>
       )}
     </span>
@@ -1202,7 +1203,7 @@ const needsProduction = (it) => !it.isMotor && !it.readyStock;
 function markStockSold(nd, items, order, by) {
   const ids = items.filter(it => it.readyStock && it.readyId).map(it => String(it.readyId));
   if (!ids.length || !nd.readyStock) return;
-  nd.readyStock = nd.readyStock.map(r => ids.includes(String(r.id)) && r.status !== "vendido" ? { ...r, status: "vendido", soldAt: new Date().toISOString(), soldBy: by || "", orderId: order.id, soldTo: order.clientName || "", seller: order.seller || "" } : r);
+  nd.readyStock = nd.readyStock.map(r => ids.includes(String(r.id)) && r.status !== "vendido" ? { ...r, status: "vendido", soldAt: r.soldAt || new Date().toISOString(), soldBy: by || r.soldBy || "", orderId: order.id, soldTo: order.clientName || "", seller: order.seller || r.seller || "" } : r);
 }
 
 // Recalcula status do pedido a partir da produção e finalização
@@ -2309,10 +2310,15 @@ function MainApp() {
       try {
         // Quem só visualiza a produção (ex.: vendedor) também recebe o andamento atualizado
         const viewOnly = !canEditProd(user) && !canEditFin(user) && permLevel(user, 'production');
+        const asked = Date.now();
         const r = await api("poll", { full: !!viewOnly });
         if (!alive || !r) return;
+        // Não troca o que acabou de ser mexido aqui: a gravação ainda pode estar a caminho do servidor
+        const fresh = () => SAVE_BUSY || SAVE_NEXT || LAST_LOCAL_SAVE >= asked - 20000;
         if (r.plan) { PLAN = r.plan; setPlan(r.plan); }
+        if (fresh()) return;
         setData(d => {
+          if (fresh()) return d;
           const patch = {};
           ['notifications', 'photos', 'readyStock', ...(viewOnly ? ['production', 'finalization', 'orders'] : [])].forEach(k => {
             if (r[k] && JSON.stringify(r[k]) !== JSON.stringify(d[k] || [])) patch[k] = r[k];
