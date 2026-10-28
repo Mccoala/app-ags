@@ -43,7 +43,7 @@ export const handler = async function(event, context) {
     let session;
     try { session = verifyToken(tokenFromEvent(event)); } catch (e) { return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: e.message } }) }; }
     const company = await loadCompany(session.cid, "id, plan_id, status, trial_ends_at, app_data");
-    const ec = effective(company); const st = planState({ ...ec, extras: ec.app_data?._srv?.extras });
+    const ec = effective(company); const st = planState({ ...ec, extras: ec.app_data?._srv?.extras, billing: ec.app_data?._srv?.billing });
     const kind = (event.headers["x-ai-kind"] || event.headers["X-AI-Kind"] || "extract").toLowerCase();
     const deny = (m) => ({ statusCode: 403, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: m } }) });
     if (st.locked) return deny("Seu plano está vencido. Renove para usar a IA.");

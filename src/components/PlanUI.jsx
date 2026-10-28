@@ -3,6 +3,7 @@ import { X, Check, Lock, MessageCircle, Crown, AlertTriangle, Sparkles, Package,
 import { PLANS, PLAN_ORDER, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
 
 const lim = (v) => v === null || v === undefined || v === Infinity ? "ilimitado" : Number(v).toLocaleString("pt-BR");
+export const dBR = (iso) => { try { return iso ? new Date(iso).toLocaleDateString("pt-BR") : "—"; } catch { return "—"; } };
 const pct = (u, l) => (l === null || l === undefined || l === Infinity) ? 0 : Math.min(100, Math.round((u / Math.max(1, l)) * 100));
 export const waLink = (text) => `https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(text)}`;
 
@@ -44,6 +45,15 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-800/50"><X size={22} /></button>
         </div>
+
+        {plan?.billing && !plan?.creator && (
+          <div className={`rounded-2xl border p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm ${plan.billing.pastDue ? "border-red-500/40 bg-red-500/10" : card}`}>
+            <div><div className="text-[11px] font-black uppercase text-gray-500">Ativo desde</div><div className="font-black">{dBR(plan.billing.activeSince)}</div></div>
+            <div><div className="text-[11px] font-black uppercase text-gray-500">Último pagamento</div><div className="font-black">{dBR(plan.billing.paidAt)}</div></div>
+            <div><div className="text-[11px] font-black uppercase text-gray-500">Próxima cobrança</div><div className={`font-black ${plan.billing.pastDue ? "text-red-400" : ""}`}>{dBR(plan.billing.nextChargeAt)}{plan.billing.daysToCharge !== null && !plan.billing.pastDue ? <span className="text-gray-500 font-bold"> · faltam {plan.billing.daysToCharge} dia(s)</span> : null}</div>
+              {plan.billing.pastDue && <div className="text-xs font-bold text-red-400 mt-0.5">{plan.locked ? "Pagamento não confirmado — acesso travado." : `Pagamento pendente: trava em ${plan.billing.graceLeft} dia(s).`}</div>}</div>
+          </div>
+        )}
 
         {plan?.usage && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-6">
@@ -129,6 +139,8 @@ export function PlanBanner({ plan, onPlans, isAdmin }) {
   let text = null, tone = "orange";
   if (plan.locked) { text = plan.trial ? "Seu teste grátis terminou. Escolha um plano para continuar usando — seus dados estão salvos." : "Seu plano está vencido. Renove para voltar a criar e editar."; tone = "red"; }
   else if (plan.trial && plan.daysLeft !== null) text = plan.daysLeft <= 1 ? "Último dia do seu teste grátis." : `Teste grátis: faltam ${plan.daysLeft} dias.`;
+  else if (plan.billing?.pastDue) { text = `Não recebemos o pagamento do plano (venceu em ${dBR(plan.billing.nextChargeAt)}). O acesso trava em ${plan.billing.graceLeft} dia(s).`; tone = "red"; }
+  else if (plan.billing?.daysToCharge !== null && plan.billing?.daysToCharge !== undefined && plan.billing.daysToCharge <= 3) text = plan.billing.daysToCharge <= 0 ? "Seu plano renova hoje." : `Seu plano renova em ${plan.billing.daysToCharge} dia(s) (${dBR(plan.billing.nextChargeAt)}).`;
   else if (warnUse) { const n = { orders: "pedidos", photos: "fotos", users: "usuários" }[warnUse]; text = `Você já usou ${plan.usage[warnUse]} de ${plan.limits[warnUse]} ${n} do seu plano.`; }
   if (!text) return null;
   const c = tone === "red" ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-orange-500/10 border-orange-500/20 text-orange-500";

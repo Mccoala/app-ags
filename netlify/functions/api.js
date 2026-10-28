@@ -9,7 +9,7 @@ import { planState, usageOf, normPlan, PLANS } from "../../src/lib/plans.js";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const meta = (c) => ({ company_id: c.id, company_name: c.company_name, plan: c.plan_id, status: c.status, trial_ends_at: c.trial_ends_at });
-const stateOf = (c0) => { const c = effective(c0); const s = planState({ ...c, extras: c.app_data?._srv?.extras }); return { ...s, legacy: !isCreatorCo(c0) && isLegacy(c0), limits: { ...s.limits }, usage: usageOf(c.app_data, c.app_data?._srv) }; };
+const stateOf = (c0) => { const c = effective(c0); const s = planState({ ...c, extras: c.app_data?._srv?.extras, billing: c.app_data?._srv?.billing }); return { ...s, legacy: !isCreatorCo(c0) && isLegacy(c0), limits: { ...s.limits }, usage: usageOf(c.app_data, c.app_data?._srv) }; };
 const publicState = (st) => ({ ...st, limits: Object.fromEntries(Object.entries(st.limits).map(([k, v]) => [k, v === Infinity ? null : v])) }); // Infinity não existe em JSON
 
 // Funcionário não recebe senhas nem dados do dono
@@ -146,9 +146,9 @@ const actions = {
     await requireCreator(s);
     const { data, error } = await db().from("companies").select("id, company_name, admin_email, plan_id, status, trial_ends_at, created_at, app_data");
     if (error) throw httpError(500, "Não consegui listar as empresas.");
-    return { companies: data.map(c => { const st = stateOf(c); return { ...meta(c), admin_email: c.admin_email, created_at: c.created_at, plan_id: st.id, legacy: st.legacy, locked: st.locked, daysLeft: st.daysLeft, usage: st.usage, limits: publicState(st).limits, extras: c.app_data?._srv?.extras || {} }; }).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))) };
+    return { companies: data.map(c => { const st = stateOf(c); return { ...meta(c), admin_email: c.admin_email, created_at: c.created_at, plan_id: st.id, legacy: st.legacy, locked: st.locked, billing: st.billing, daysLeft: st.daysLeft, usage: st.usage, limits: publicState(st).limits, extras: c.app_data?._srv?.extras || {} }; }).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))) };
   },
-  async creatorUpdate({ companyId, plan_id, status, trial_ends_at, extras }, s) {
+  async creatorUpdate({ companyId, plan_id, status, trial_ends_at, extras, nextChargeAt }, s) {
     await requireCreator(s);
     if (companyId === s.cid && plan_id && plan_id !== "creator") throw httpError(400, "A conta do criador não muda de plano.");
     const c = await loadCompany(companyId, "id, plan_id, app_data");
@@ -160,6 +160,7 @@ const actions = {
     if (status) patch.status = status;
     if (trial_ends_at) patch.trial_ends_at = trial_ends_at;
     if (extras) { const a = patch.app_data || c.app_data || {}; patch.app_data = { ...a, _srv: { ...(a._srv || {}), extras: { orders: Math.max(0, Number(extras.orders) || 0), photos: Math.max(0, Number(extras.photos) || 0) } } }; }
+    if (nextChargeAt !== undefined) { const a = patch.app_data || c.app_data || {}; const srv = { ...(a._srv || {}) }; srv.billing = { ...(srv.billing || {}), nextChargeAt: nextChargeAt || null, ...(nextChargeAt && !srv.billing?.activeSince ? { activeSince: new Date().toISOString() } : {}) }; patch.app_data = { ...a, _srv: srv }; }
     const { error } = await db().from("companies").update(patch).eq("id", companyId);
     if (error) throw httpError(500, "Não consegui atualizar.");
     return { ok: true };

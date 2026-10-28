@@ -44,6 +44,9 @@ export function normPlan(id) {
   return PLANS[id] ? id : "free";
 }
 
+// Dias de tolerância depois do vencimento antes de travar
+export const GRACE_DAYS = 3;
+
 // Situação da empresa: plano, limites (já com extras), se está travada
 export function planState(company) {
   const id = normPlan(company?.plan_id);
@@ -55,6 +58,14 @@ export function planState(company) {
   let locked = false, reason = "";
   if (id === "free" && trialEnd && trialEnd < now) { locked = true; reason = "trial"; }
   if (["expired", "canceled", "cancelled", "overdue", "blocked", "inactive"].includes(String(company?.status || "").toLowerCase()) && id !== "creator") { locked = true; reason = "expired"; }
+  // Cobrança: quando foi pago, quando vence. Passou do vencimento + tolerância sem renovar → trava sozinho.
+  const b = company?.billing || {};
+  const nextMs = b.nextChargeAt ? new Date(b.nextChargeAt).getTime() : null;
+  const daysToCharge = nextMs ? Math.ceil((nextMs - now) / 86400000) : null;
+  const pastDue = !!nextMs && nextMs < now && id !== "creator" && id !== "free";
+  const graceLeft = pastDue ? Math.ceil((nextMs + GRACE_DAYS * 86400000 - now) / 86400000) : null;
+  if (pastDue && graceLeft <= 0) { locked = true; reason = "expired"; }
+  const billing = (b.activeSince || b.paidAt || nextMs) ? { activeSince: b.activeSince || null, paidAt: b.paidAt || null, nextChargeAt: b.nextChargeAt || null, daysToCharge, pastDue, graceLeft } : null;
   return {
     id, plan: p, label: p.label, features: p.features, creator: id === "creator",
     limits: {
@@ -62,7 +73,7 @@ export function planState(company) {
       photos: p.photos === Infinity ? Infinity : p.photos + (Number(extras.photos) || 0),
       users: p.users,
     },
-    trial: id === "free", daysLeft, locked, reason,
+    trial: id === "free", daysLeft, locked, reason, billing,
   };
 }
 

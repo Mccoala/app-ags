@@ -103,9 +103,15 @@ export const handler = async (event) => {
       } else if (bought.plan) {
         patch.plan_id = bought.plan;
         patch.status = "active";
+        const paid = d.paidAt || d?.subscription?.paidAt || new Date().toISOString();
+        if (billing.plan !== bought.plan || !billing.activeSince) billing.activeSince = paid; // trocou de plano ou primeira vez
         billing.plan = bought.plan;
         billing.subscriptionId = d?.subscription?.id || billing.subscriptionId || null;
-        billing.paidAt = d.paidAt || new Date().toISOString();
+        billing.paidAt = paid;
+        // próxima cobrança: a da Cakto, se vier; senão 1 mês depois do pagamento
+        const nextFromCakto = d?.subscription?.next_payment_date || d?.subscription?.nextPaymentDate || d?.subscription?.next_charge_date || null;
+        const nx = new Date(paid); nx.setMonth(nx.getMonth() + 1);
+        billing.nextChargeAt = nextFromCakto ? new Date(nextFromCakto).toISOString() : nx.toISOString();
         msg = `Plano ${bought.plan} ativo`;
       } else {
         return ok("Produto sem plano reconhecido (o nome precisa ter Essencial, PRO, Ultra, pedidos ou fotos)");
