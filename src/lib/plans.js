@@ -20,11 +20,11 @@ export const OWNER_WHATSAPP = "5544984610136";
 // Links de pagamento da Cakto (preencher quando os produtos forem criados).
 // O app junta ?sck=<id da empresa> para o pagamento cair na empresa certa.
 export const CHECKOUT = {
-  essencial: "",
-  pro: "",
-  ultra: "",
-  orders: "", // +50 pedidos
-  photos: "", // +500 fotos
+  essencial: "https://pay.cakto.com.br/i9ntve6_1251964",
+  pro: "https://pay.cakto.com.br/39it8at",
+  ultra: "https://pay.cakto.com.br/7givcs5",
+  orders: "https://pay.cakto.com.br/sttzwu3_1252089", // +50 pedidos
+  photos: "https://pay.cakto.com.br/morx3ps", // +500 fotos
 };
 export function checkoutLink(kind, companyId, email) {
   const base = CHECKOUT[kind];
