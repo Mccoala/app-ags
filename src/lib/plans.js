@@ -7,7 +7,8 @@ const ALL = { photos: true, clients: true, sellers: true, crm: true, dashboard: 
 const NONE = { photos: false, clients: false, sellers: false, crm: false, dashboard: false, brain: false, map: false, ready: false };
 
 export const PLANS = {
-  free: { id: "free", label: "Teste grátis", price: 0, orders: 10, users: 1, photos: 0, trialDays: 7, features: { ...NONE } },
+  // Teste grátis: 7 dias com TUDO do Ultra liberado. No 8º dia trava e leva para os planos.
+  free: { id: "free", label: "Teste grátis (Ultra)", price: 0, orders: Infinity, users: Infinity, photos: Infinity, trialDays: 7, features: { ...ALL } },
   essencial: { id: "essencial", label: "Essencial", price: 147, orders: 300, users: 5, photos: 0, features: { ...NONE } },
   pro: { id: "pro", label: "PRO", price: 297, orders: 1000, users: 10, photos: 3000, features: { ...NONE, photos: true, clients: true, sellers: true } },
   ultra: { id: "ultra", label: "Ultra", price: 497, orders: Infinity, users: Infinity, photos: Infinity, features: { ...ALL } },

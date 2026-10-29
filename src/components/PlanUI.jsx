@@ -48,7 +48,7 @@ export function PromoVideo({ dark }) {
   );
 }
 
-export function PlansModal({ plan, companyName, companyId, email, onClose, dark, isAdmin }) {
+export function PlansModal({ plan, companyName, companyId, email, onClose, dark, isAdmin, forced = false, onLogout }) {
   const buy = (kind, text) => checkoutLink(kind, companyId, email) || waLink(text);
   const cur = plan?.creator ? "creator" : (plan?.id || "free");
   const curRank = PAID.indexOf(cur);
@@ -58,13 +58,15 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
     ? { bg: "bg-[#1b1b1b] text-[#ececec]", card: "bg-[#222222] border-[#333]", soft: "text-[#a3a3a3]", line: "border-[#333]", note: "bg-[#161616]", btn: "bg-[#3a3a3a] hover:bg-[#474747] text-white", btnMain: "bg-[#f2f2f2] hover:bg-white text-[#141414]" }
     : { bg: "bg-[#faf9f7] text-[#1a1a1a]", card: "bg-white border-[#e7e5e0]", soft: "text-[#6b6b6b]", line: "border-[#ebe8e3]", note: "bg-[#f3f1ed]", btn: "bg-[#ecebe7] hover:bg-[#e2e0db] text-[#1a1a1a]", btnMain: "bg-[#1a1a1a] hover:bg-black text-white" };
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md" onClick={onClose}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md" onClick={forced ? undefined : onClose}>
       <div className={`relative w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-3xl shadow-2xl px-5 py-8 sm:px-10 sm:py-12 ${T.bg}`} onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className={`absolute top-4 right-4 p-2 rounded-xl ${T.soft} hover:opacity-80`}><X size={22} /></button>
+        {forced
+          ? (onLogout && <button onClick={onLogout} className={`absolute top-4 right-4 px-3 py-1.5 rounded-xl text-sm font-bold ${T.soft} hover:opacity-80`}>Sair</button>)
+          : <button onClick={onClose} className={`absolute top-4 right-4 p-2 rounded-xl ${T.soft} hover:opacity-80`}><X size={22} /></button>}
 
         <h2 className="text-center text-[26px] leading-tight sm:text-4xl tracking-tight px-8" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>Planos que crescem com a sua fábrica</h2>
         <p className={`text-center text-sm mt-2 ${T.soft}`}>
-          {plan?.creator ? "Conta do criador: acesso total." : cur === "free" ? (plan?.locked ? "Seu teste grátis terminou. Escolha um plano para continuar — seus dados estão salvos." : `Você está no teste grátis${plan?.daysLeft != null ? ` · faltam ${plan.daysLeft} dia(s)` : ""}.`) : <>Seu plano: <b className={dark ? "text-white" : "text-black"}>{PLANS[cur]?.label}</b>{plan?.locked ? " · vencido" : ""}</>}
+          {plan?.creator ? "Conta do criador: acesso total." : cur === "free" ? (plan?.locked ? "Seu teste grátis terminou. Escolha um plano para continuar — seus dados estão salvos." : `Você está testando grátis tudo do Ultra${plan?.daysLeft != null ? ` · faltam ${plan.daysLeft} dia(s)` : ""}. Escolha seu plano para continuar depois do teste.`) : <>Seu plano: <b className={dark ? "text-white" : "text-black"}>{PLANS[cur]?.label}</b>{plan?.locked ? " · vencido" : ""}</>}
         </p>
 
         <PromoVideo dark={dark} />
@@ -200,7 +202,7 @@ export function PlanBanner({ plan, onPlans, isAdmin }) {
   const warnUse = plan.usage && plan.limits && ["orders", "photos", "users"].find(k => plan.limits[k] !== null && plan.limits[k] > 0 && plan.usage[k] / plan.limits[k] >= 0.8);
   let text = null, tone = "orange";
   if (plan.locked) { text = plan.trial ? "Seu teste grátis terminou. Escolha um plano para continuar usando — seus dados estão salvos." : "Seu plano está vencido. Renove para voltar a criar e editar."; tone = "red"; }
-  else if (plan.trial && plan.daysLeft !== null) text = plan.daysLeft <= 1 ? "Último dia do seu teste grátis." : `Teste grátis: faltam ${plan.daysLeft} dias.`;
+  else if (plan.trial && plan.daysLeft !== null) text = plan.daysLeft <= 1 ? "Último dia do seu teste grátis do Ultra." : `Teste grátis do Ultra: faltam ${plan.daysLeft} dias.`;
   else if (plan.billing?.pastDue) { text = `Não recebemos o pagamento do plano (venceu em ${dBR(plan.billing.nextChargeAt)}). O acesso trava em ${plan.billing.graceLeft} dia(s).`; tone = "red"; }
   else if (plan.billing?.daysToCharge !== null && plan.billing?.daysToCharge !== undefined && plan.billing.daysToCharge <= 3) text = plan.billing.daysToCharge <= 0 ? "Seu plano renova hoje." : `Seu plano renova em ${plan.billing.daysToCharge} dia(s) (${dBR(plan.billing.nextChargeAt)}).`;
   else if (warnUse) { const n = { orders: "pedidos", photos: "fotos", users: "usuários" }[warnUse]; text = `Você já usou ${plan.usage[warnUse]} de ${plan.limits[warnUse]} ${n} do seu plano.`; }

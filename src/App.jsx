@@ -2041,7 +2041,7 @@ function PermissionGrid({ value, onChange, dark }) {
 function TeamTab({ data, setData, dark, user }) {
   const [activeSubTab, setActiveSubTab] = useState('members'); 
   const [planToast, setPlanToast] = useState(null);
-  const freeTeam = !TOUR_OPEN && PLAN && (PLAN.limits?.users ?? Infinity) <= 1 && !PLAN.creator; // teste grátis: só o dono
+  const freeTeam = false; // teste grátis libera tudo do Ultra
   const pickSub = (id) => { if (freeTeam && (id === 'logins' || id === 'sellers')) { setPlanToast(`${id === 'logins' ? 'Logins da equipe' : 'Vendedores'}: disponível no plano Essencial`); clearTimeout(window.__planToastT); window.__planToastT = setTimeout(() => setPlanToast(null), 2600); return; } setActiveSubTab(id); };
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
@@ -2587,6 +2587,14 @@ function MainApp() {
   if (!user) return <LoginScreen onLogin={login} dark={dark} />;
   if (suspended && user.role !== "admin") return <SuspendedScreen message={suspended} onLogout={logout} />;
   if (loadingServer) return <div className='flex flex-col items-center justify-center gap-4 h-screen bg-gray-950 text-white'><BrandMark size={76} animate="pulse" /><BrandWord height={22} /></div>;
+  // Teste grátis acabou (ou plano vencido): o app fica travado e mostra só os planos
+  if (user.role === "admin" && plan?.locked && !plan?.creator) return (
+    <div className='h-screen bg-gray-950 text-white flex flex-col items-center justify-start pt-6'>
+      <div className='flex items-center gap-2 opacity-90'><BrandMark size={34} animate="breathe" /><BrandWord height={18} animate={false} /></div>
+      <PlansModal forced plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.email} dark={dark} isAdmin onClose={() => { }} onLogout={logout} />
+      <button onClick={() => window.location.reload()} className='fixed bottom-4 left-4 z-[210] px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white backdrop-blur'>Já paguei — atualizar</button>
+    </div>
+  );
 
   TOUR_OPEN = tour === "run";
   const tabs = allowedTabs(user);
