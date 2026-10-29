@@ -129,7 +129,7 @@ const actions = {
     return { app_data, company: meta(c), plan: publicState(st), user };
   },
 
-  async save({ app_data, allowShrink }, s) {
+  async save({ app_data, deleted }, s) {
     if (!app_data || typeof app_data !== "object") throw httpError(400, "Dados inválidos.");
     const c = await loadCompany(s.cid);
     app_data = await externalize(app_data, s.cid); // fotos novas vão para a pasta fechada, com qualidade original
@@ -138,8 +138,13 @@ const actions = {
       const cur0 = c.app_data || {};
       const n0 = (cur0.orders || []).length, n1 = Array.isArray(app_data.orders) ? app_data.orders.length : 0;
       const filled = (a) => ["orders", "clients", "team", "production", "finalization", "users"].reduce((t, k) => t + ((a?.[k] || []).length || 0), 0);
-      const wipe = filled(cur0) >= 3 && filled(app_data) === 0;
-      const bigDrop = n0 >= 3 && n1 < n0 * 0.5 && !allowShrink;
+      // exclusão pedida de propósito: só libera se TODOS os pedidos que sumiram estão na lista de excluídos
+      const keep = new Set((app_data.orders || []).map(o => String(o.id)));
+      const gone = (cur0.orders || []).filter(o => !keep.has(String(o.id))).map(o => String(o.id));
+      const asked = new Set((Array.isArray(deleted) ? deleted : []).map(String));
+      const intended = gone.length > 0 && gone.every(id => asked.has(id));
+      const wipe = !intended && filled(cur0) >= 3 && filled(app_data) === 0;
+      const bigDrop = !intended && n0 >= 3 && n1 < n0 * 0.5;
       if (wipe || bigDrop) {
         console.warn("save bloqueado (encolheu demais)", { cid: s.cid, antes: n0, depois: n1, wipe });
         throw httpError(409, "Para proteger seus dados, esta gravação foi bloqueada: a tela estava com informações faltando. Atualize a página.", { code: "shrink_blocked" });

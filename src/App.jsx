@@ -145,10 +145,10 @@ let SAVE_BUSY = false, SAVE_NEXT = null, LAST_LOCAL_SAVE = 0;
 let LOAD_OK = false; // só grava depois que os dados da empresa chegaram de verdade
 async function saveToSupabase(d, opts = {}) {
   if (!CURRENT_COMPANY_ID || !LOAD_OK) return;
-  if (SAVE_BUSY) { SAVE_NEXT = { d, opts: { allowShrink: !!(opts.allowShrink || SAVE_NEXT?.opts?.allowShrink) } }; return; }
+  if (SAVE_BUSY) { SAVE_NEXT = { d, opts: { deleted: [...(SAVE_NEXT?.opts?.deleted || []), ...(opts.deleted || [])] } }; return; }
   SAVE_BUSY = true;
   try {
-    const r = await api("save", { app_data: d, ...(opts.allowShrink ? { allowShrink: true } : {}) });
+    const r = await api("save", { app_data: d, ...(opts.deleted?.length ? { deleted: opts.deleted.map(String) } : {}) });
     if (r?.plan) window.dispatchEvent(new CustomEvent("inflatudo-plan", { detail: r.plan }));
   } catch (err) {
     console.error("save error", err);
@@ -760,7 +760,7 @@ function OrdersTab({ data, setData, dark, user }) {
         }
       }
     });
-    setData(nd); saveData(nd, { allowShrink: true }); setSelected(new Set()); setSelectMode(false); setConfirmDelete(false);
+    setData(nd); saveData(nd, { deleted: delIds }); setSelected(new Set()); setSelectMode(false); setConfirmDelete(false);
   };
 
   const handlePdf = (e) => {
@@ -2488,7 +2488,8 @@ function MainApp() {
       const d = e.detail || {};
       if (d.code === "locked" || d.code?.startsWith("limit_")) setLimitHit(d);
       // o servidor recusou: volta para o que está realmente salvo
-      if (d.code === "not_loaded" || d.code === "shrink_blocked") { alert(d.message); return; }
+      if (d.code === "not_loaded") { alert(d.message); return; }
+      if (d.code === "shrink_blocked") alert(d.message); // e logo abaixo a tela volta a mostrar o que está salvo
       if (d.status === 402 || d.status === 403 || d.status === 409) { try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); LOAD_OK = true; PLAN = r.plan; setPlan(r.plan); } catch { } }
     };
     window.addEventListener("inflatudo-plan", onPlan); window.addEventListener("inflatudo-save-error", onErr);
