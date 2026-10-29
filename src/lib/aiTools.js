@@ -79,13 +79,14 @@ export const TOOLS = [
   },
   {
     name: "producao_por_pessoa",
-    description: "Quantos itens cada pessoa da equipe fez em cada etapa (corte, costura, preparação, montagem, finalização), por mês. Use para 'quantos brinquedos fulano costurou este mês x mês passado' e para avaliar rendimento. As datas das etapas só existem para trabalhos registrados depois da atualização de 26/10/2026; os anteriores aparecem como 'sem_data'.",
+    description: "Quantos itens cada pessoa da equipe fez em cada etapa (corte, costura, preparação, montagem, finalização), por mês, E A LISTA EXATA de cada trabalho (pedido, brinquedo, cliente, etapa, data). Use para 'quantos brinquedos fulano costurou este mês x mês passado', 'o que o fulano montou', 'fulano rendeu nos últimos dias' e para avaliar rendimento. Para 'últimos dias' use o campo dias. Cite SEMPRE os brinquedos exatamente como vierem na lista 'trabalhos'. As datas das etapas só existem para trabalhos registrados depois da atualização de 26/10/2026; os anteriores aparecem como 'sem_data'.",
     input_schema: {
       type: "object",
       properties: {
         pessoa: { type: "string", description: "Nome (opcional)" },
         etapa: { type: "string", enum: ["corte", "costura", "preparacao", "montagem", "finalizacao"] },
-        meses: { type: "array", items: { type: "string" }, description: "Lista de meses AAAA-MM para comparar. Se vazio, usa este mês e o anterior." }
+        meses: { type: "array", items: { type: "string" }, description: "Lista de meses AAAA-MM para comparar. Se vazio, usa este mês e o anterior." },
+        dias: { type: "number", description: "Só os trabalhos dos últimos N dias (ex.: 7). Opcional." }
       }
     }
   },
@@ -176,11 +177,18 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
   }
   if (name === "producao_por_pessoa") {
     const meses = a.meses?.length ? a.meses : [mon(today), prevMonth(mon(today))];
-    const res = {};
-    const add = (pessoa, etapa, date) => {
+    const res = {}, trabalhos = {};
+    const desde = a.dias ? (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - Number(a.dias)); return d.toISOString().slice(0, 10); })() : null;
+    const ordersById = new Map((data.orders || []).map(o => [o.id, o]));
+    const itemOf = (orderId, itemId) => (ordersById.get(orderId)?.items || []).find(i => i.itemId === itemId);
+    const add = (pessoa, etapa, date, orderId, itemId) => {
       if (a.pessoa && !norm(pessoa).includes(norm(a.pessoa))) return;
       if (a.etapa && a.etapa !== etapa) return;
-      const m = date ? mon(date) : "sem_data";
+      const dia = date ? (String(date).length > 10 ? brDateTime(date).replace(/^(\d\d)\/(\d\d)\/(\d{4}).*/, "$3-$2-$1") : String(date).slice(0, 10)) : "";
+      if (desde && (!dia || dia < desde)) return;
+      const o = ordersById.get(orderId), it = itemOf(orderId, itemId);
+      (trabalhos[pessoa] = trabalhos[pessoa] || []).push({ etapa, pedido: o ? orderNumber(o.id) : String(orderId || ""), brinquedo: it?.toy || "(item não encontrado)", cliente: o?.clientName || "", data: dia || "sem_data" });
+      const m = date ? mon(dia) : "sem_data";
       res[pessoa] = res[pessoa] || {};
       res[pessoa][etapa] = res[pessoa][etapa] || { total_geral: 0, sem_data: 0 };
       const e = res[pessoa][etapa];
@@ -188,10 +196,11 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
       if (m === "sem_data") e.sem_data++;
       else if (meses.includes(m)) e[m] = (e[m] || 0) + 1;
     };
-    (data.production || []).forEach(p => STAGES.forEach(([k, etapa]) => p[k] && add(p[k], etapa, p[`${k}At`])));
-    (data.finalization || []).forEach(f => finStage(f) === "finalizado" && finalizersOf(f).forEach(n => add(n, "finalizacao", f.finDate)));
+    (data.production || []).forEach(p => STAGES.forEach(([k, etapa]) => p[k] && add(p[k], etapa, p[`${k}At`], p.orderId, p.itemId)));
+    (data.finalization || []).forEach(f => finStage(f) === "finalizado" && finalizersOf(f).forEach(n => add(n, "finalizacao", f.finDate, f.orderId, f.itemId)));
     const team = (data.team || []).map(t => ({ nome: t.name, funcao: t.role, status: t.status }));
-    return { meses_comparados: meses, por_pessoa: res, equipe: team, nota: "Cada número é a quantidade de itens (brinquedos) em que a pessoa foi responsável pela etapa naquele mês." };
+    Object.values(trabalhos).forEach(l => l.sort((x, y) => String(y.data).localeCompare(String(x.data))));
+    return { meses_comparados: meses, ...(desde ? { desde } : {}), por_pessoa: res, trabalhos: Object.fromEntries(Object.entries(trabalhos).map(([k, l]) => [k, l.slice(0, 60)])), total_pedidos_na_empresa: (data.orders || []).length, equipe: team, nota: "Cada número é a quantidade de itens (brinquedos) em que a pessoa foi responsável pela etapa. 'trabalhos' traz exatamente QUAL brinquedo de QUAL pedido — use só esses nomes." };
   }
   if (name === "resumo_pedidos") {
     const clients = data.clients || [];
