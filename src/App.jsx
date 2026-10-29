@@ -81,6 +81,7 @@ import {
 import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 import { scaleLinear } from "d3-scale";
 import logoMark from "./assets/logo-mark.svg";
+import { BrandMark, BrandWord, BrandFull, BRAND_CSS } from "./components/Brand";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 // Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
@@ -268,8 +269,7 @@ const money = (v) => `R$ ${(Number(v) || 0).toLocaleString("pt-BR")}`;
 function AppLogo({ collapsed = false, className = "" }) {
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <img src={logoMark} alt="Inflatudo" className={`flex-shrink-0 transition-all duration-300 ${collapsed ? "h-10 w-10" : "h-12 w-12"}`} />
-      {!collapsed && <span className="font-black tracking-tight leading-none" style={{ fontSize: "1.6rem", letterSpacing: "-0.03em" }}>Infla<span className="text-orange-500">tudo</span></span>}
+      {collapsed ? <BrandMark size={40} /> : <BrandFull width={250} />}
     </div>
   );
 }
@@ -351,9 +351,8 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
 
         <div className="glass-card rounded-2xl p-8" style={{ border:"1px solid rgba(255,255,255,0.09)" }}>
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.2) 0%,transparent 70%)",filter:"blur(12px)" }} /><AppLogo collapsed={false} className={dark === false ? "text-gray-900" : "text-white"} /></div></div>
-            <div className="divider-gradient mx-auto mb-4" style={{ maxWidth:120 }} />
-            <p style={{ fontSize:"0.78rem",letterSpacing:"0.12em",textTransform:"uppercase",color:"#64748b",fontWeight:700 }}>Sistema de Gestão Industrial</p>
+            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.28) 0%,transparent 70%)",filter:"blur(18px)" }} /><AppLogo collapsed={false} className={dark === false ? "text-gray-900" : "text-white"} /></div></div>
+
           </div>
 
           {err && <div className="mb-4 p-3 rounded-xl flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-500 text-sm font-semibold"><AlertTriangle size={15} />{err}</div>}
@@ -2426,8 +2425,8 @@ function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user,
         className={`absolute top-0 bottom-0 left-0 w-[80%] max-w-[300px] flex flex-col shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"} ${dark ? "bg-gray-900 border-r border-gray-800" : "bg-white border-r border-gray-200"}`}
         style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-          <img src={logoMark} alt="Inflatudo" className="w-10 h-10 flex-shrink-0" />
-          <div className="min-w-0 flex-1"><div className="text-xl font-black tracking-tight">Infla<span className="text-orange-500">tudo</span></div><div className="text-[11px] text-gray-500 font-semibold truncate">{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ""}</div></div>
+          <BrandMark size={40} />
+          <div className="min-w-0 flex-1"><BrandWord height={21} /><div className="text-[11px] text-gray-500 font-semibold truncate">{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ""}</div></div>
           <button onClick={() => setOpen(false)} title="Fechar menu" className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}><ChevronLeft size={18} /></button>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
@@ -2586,7 +2585,7 @@ function MainApp() {
 
   if (!user) return <LoginScreen onLogin={login} dark={dark} />;
   if (suspended && user.role !== "admin") return <SuspendedScreen message={suspended} onLogout={logout} />;
-  if (loadingServer) return <div className='flex items-center justify-center h-screen bg-gray-950'><div className='animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500'></div></div>;
+  if (loadingServer) return <div className='flex flex-col items-center justify-center gap-4 h-screen bg-gray-950 text-white'><BrandMark size={76} animate="pulse" /><BrandWord height={22} /></div>;
 
   TOUR_OPEN = tour === "run";
   const tabs = allowedTabs(user);
@@ -2619,8 +2618,8 @@ function MainApp() {
       {/* SIDEBAR */}
       {!isMobile && <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
         <div className={`${sidebarOpen ? 'px-4 pt-5 pb-3' : 'px-2 pt-4 pb-2 flex-col'} flex items-center gap-3 overflow-hidden`}>
-          <img src={logoMark} alt='Inflatudo' className='w-10 h-10 flex-shrink-0 drop-shadow-lg' />
-          {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='text-xl font-black tracking-tight'>Infla<span className='text-orange-500'>tudo</span></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
+          <BrandMark size={40} />
+          {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='leading-none'><BrandWord height={21} /></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
           <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Recolher menu' : 'Abrir menu'} className={`p-2 rounded-xl border flex-shrink-0 ${dark ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600'}`}>
             {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
@@ -2662,8 +2661,8 @@ function MainApp() {
         {isMobile && (
           <header className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(52px + env(safe-area-inset-top, 0px))' }}>
             <button data-drawer-open onClick={() => setDrawer(true)} title='Abrir menu' className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? 'border-gray-700 text-gray-200 bg-gray-900' : 'border-gray-200 text-gray-700 bg-white'}`}><ChevronRight size={20} /></button>
-            <img src={logoMark} alt='Inflatudo' className='w-8 h-8 flex-shrink-0' />
-            <div className='min-w-0 flex-1 text-[16px] font-black leading-tight truncate'>Infla<span className='text-orange-500'>tudo</span><span className={`ml-1.5 text-sm font-bold ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
+            <BrandMark size={32} />
+            <div className='min-w-0 flex-1 flex items-center gap-1.5 truncate'><BrandWord height={16} animate={false} /><span className={`text-sm font-bold truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
           </header>
         )}
         <div data-main-scroll className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}
@@ -2686,6 +2685,7 @@ function MainApp() {
 export default function App() {
   return (
     <ErrorBoundary>
+      <style>{BRAND_CSS}</style>
       <MainApp />
     </ErrorBoundary>
   );

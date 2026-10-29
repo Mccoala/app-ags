@@ -15,7 +15,7 @@ export const PLANS = {
 };
 export const PLAN_ORDER = ["free", "essencial", "pro", "ultra"];
 export const EXTRAS = { orders: { qty: 50, price: 29 }, photos: { qty: 500, price: 19 } };
-export const OWNER_WHATSAPP = "5544984610136";
+export const OWNER_WHATSAPP = "5544997180349"; // (44) 99718-0349
 
 // Links de pagamento da Cakto (preencher quando os produtos forem criados).
 // O app junta ?sck=<id da empresa> para o pagamento cair na empresa certa.

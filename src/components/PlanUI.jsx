@@ -40,7 +40,7 @@ export function PromoVideo({ dark }) {
             <img src="/video/inflatudo-apresentacao.jpg" alt="" className="w-full h-full object-cover" />
             <span className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors" />
             <span className="absolute inset-0 flex items-center justify-center"><span className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-orange-500 text-white flex items-center justify-center shadow-2xl shadow-orange-500/40 group-hover:scale-105 transition-transform"><svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z" /></svg></span></span>
-            <span className="absolute left-3 bottom-3 px-3 py-1.5 rounded-full bg-black/70 text-white text-xs sm:text-sm font-bold">Veja o Inflatudo funcionando · 1:54</span>
+            <span className="absolute left-3 bottom-3 px-3 py-1.5 rounded-full bg-black/70 text-white text-xs sm:text-sm font-bold">Veja o Inflatudo funcionando · 1:32</span>
           </button>
         )}
       </div>
