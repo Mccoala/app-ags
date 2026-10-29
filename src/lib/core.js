@@ -10,7 +10,13 @@ export const dateBR = (ds) => {
   if (!y) return ds;
   return new Date(y, m - 1, d).toLocaleDateString("pt-BR");
 };
-export const todayStr = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; };
+// Tudo no horário de Brasília (mesmo que o aparelho esteja em outro fuso)
+export const BR_TZ = "America/Sao_Paulo";
+const brParts = (d = new Date()) => Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: BR_TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d).map(p => [p.type, p.value]));
+export const todayStr = () => { const p = brParts(); return `${p.year}-${p.month}-${p.day}`; };
+// "2026-10-29T04:08:00Z" → "29/10/2026 01:08" (Brasília)
+export const brDateTime = (iso) => { if (!iso) return ""; const d = new Date(iso); if (isNaN(d)) return String(iso); const p = brParts(d); return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`; };
+export const brNow = () => { const d = new Date(); const wd = new Intl.DateTimeFormat("pt-BR", { timeZone: BR_TZ, weekday: "long" }).format(d); return `${wd}, ${brDateTime(d.toISOString())} (horário de Brasília)`; };
 export const daysBetween = (a, b = todayStr()) => {
   if (!a) return null;
   const p = (s) => { const [y, m, d] = String(s).split("T")[0].split("-").map(Number); return new Date(y, m - 1, d).getTime(); };
@@ -211,6 +217,7 @@ export function aiSnapshot(data, { sellerName } = {}) {
   const orders = (data.orders || []).filter(o => !sellerName || sameSeller(data.sellers, o.seller, sellerName));
   const clientsByName = Object.fromEntries((data.clients || []).map(c => [c.name, c]));
   return {
+    agora: brNow(),
     hoje: todayStr(),
     vendedores: sellerName ? [sellerName] : (data.sellers || []).map(s => s.name),
     equipe_producao: (data.team || []).map(t => ({ nome: t.name, funcao: t.role, status: t.status })),

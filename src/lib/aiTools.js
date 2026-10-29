@@ -1,6 +1,6 @@
 // Ferramentas que a IA usa para consultar os dados do app com números EXATOS.
 // A IA decide qual chamar; o cálculo é feito aqui no navegador (sem estimativa).
-import { finalizersOf, sameSeller, norm, orderNumber, matchQuery, todayStr, daysBetween } from "./core";
+import { finalizersOf, sameSeller, norm, orderNumber, matchQuery, todayStr, daysBetween, brDateTime, brNow } from "./core";
 import { clientUF, UF_NAMES } from "./geo";
 import { loadCities, locateCity, distanceKm } from "./cities";
 
@@ -236,9 +236,10 @@ export async function runTool(name, input, data, { onSaveNote } = {}) {
     if (a.usuario) l = l.filter(e => norm(e.usuario).includes(norm(a.usuario)) || norm(a.usuario).includes(norm(e.usuario).split(" ")[0] || "@@"));
     if (a.pedido) l = l.filter(e => e.pedido && orderNumber(e.pedido) === orderNumber(a.pedido));
     if (a.tipo) l = l.filter(e => e.tipo === a.tipo);
-    if (a.de) l = l.filter(e => (e.em || "").slice(0, 10) >= a.de);
-    if (a.ate) l = l.filter(e => (e.em || "").slice(0, 10) <= a.ate);
-    return { total: l.length, acoes: l.slice(0, Math.min(80, a.limite || 20)), obs: (data.log || []).length ? undefined : "O histórico começou a ser gravado em 26/10/2026; ações anteriores não aparecem." };
+    const dia = (e) => { const t = brDateTime(e.em); return t ? `${t.slice(6, 10)}-${t.slice(3, 5)}-${t.slice(0, 2)}` : ""; };
+    if (a.de) l = l.filter(e => dia(e) >= a.de);
+    if (a.ate) l = l.filter(e => dia(e) <= a.ate);
+    return { total: l.length, fuso: "horário de Brasília", acoes: l.slice(0, Math.min(80, a.limite || 20)).map(e => ({ ...e, em: brDateTime(e.em) })), obs: (data.log || []).length ? undefined : "O histórico começou a ser gravado em 26/10/2026; ações anteriores não aparecem." };
   }
   if (name === "detalhe_pedido") {
     const o = (data.orders || []).find(x => orderNumber(x.id) === orderNumber(a.numero));
@@ -300,6 +301,7 @@ export function brainContext(data) {
   const orders = data.orders || [];
   const months = [...new Set(orders.map(o => mon(o.createdAt)).filter(Boolean))].sort();
   return {
+    agora: brNow(),
     hoje: todayStr(),
     mes_atual: mon(todayStr()),
     meses_com_vendas: months,
@@ -307,7 +309,7 @@ export function brainContext(data) {
     vendedores: (data.sellers || []).map(s => s.name),
     equipe: (data.team || []).map(t => `${t.name} (${t.role}${t.status !== "ativo" ? ", inativo" : ""})`),
     fabrica: data.settings?.factory?.city || "não cadastrada",
-    ultimas_acoes: (data.log || []).slice(-5).map(e => `${(e.em || "").slice(0, 16).replace("T", " ")} ${e.usuario}: ${e.texto}`),
-    memorias_do_cerebro: (data.brain?.notes || []).slice(-40).map(n => `[${(n.criado || "").slice(0, 10)}] ${n.titulo}: ${n.texto}`),
+    ultimas_acoes: (data.log || []).slice(-5).map(e => `${brDateTime(e.em)} ${e.usuario}: ${e.texto}`),
+    memorias_do_cerebro: (data.brain?.notes || []).slice(-40).map(n => `[${brDateTime(n.criado).slice(0, 10)}] ${n.titulo}: ${n.texto}`),
   };
 }

@@ -12,6 +12,7 @@ REGRAS:
 - "Logo", medidas como "10x5", cores → buscar_itens com o campo texto.
 - Rendimento de pessoas → producao_por_pessoa. Se houver muitos "sem_data", avise que as datas só passaram a ser gravadas recentemente.
 - "Meu", "eu", "editei" referem-se ao USUÁRIO ATUAL (veja abaixo). Para "o que eu editei / último pedido que mexi" use historico com usuario = nome do usuário atual.
+- Data e hora: use SEMPRE o campo "agora" do contexto (horário de Brasília, em tempo real). Todos os horários das ferramentas já estão no horário de Brasília. Nunca use outro fuso.
 - Responda em português do Brasil, direto, com números em **negrito** e listas curtas. Termine com 1 linha prática.`;
 
 function rulesFor(user, scope, allowSave) {

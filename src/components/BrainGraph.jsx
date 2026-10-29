@@ -11,6 +11,7 @@ const TYPE = {
   toy: { color: "#a855f7", label: "Brinquedo" },
   state: { color: "#22c55e", label: "Estado" },
   client: { color: "#94a3b8", label: "Cliente" },
+  order: { color: "#fbbf24", label: "Pedido" },
   note: { color: "#e879f9", label: "Memória" },
 };
 
@@ -48,11 +49,22 @@ export function buildGraph(data) {
     const uf = clientUF(cl);
     if (uf) { node(`u:${uf}`, "state", uf, { w: 1, sub: UF_NAMES[uf] }); link("g:states", `u:${uf}`); link(`u:${uf}`, `c:${k}`, 0.5); }
   });
+  // pedidos: cada pedido ligado ao vendedor, ao cliente e aos brinquedos dele (os mais recentes)
+  const sellerNode = (name) => { const s = norm(name || ""); if (!s) return null; return [...nodes.values()].find(n => n.type === "seller" && (n.id === `s:${s}` || norm(n.label).split(" ")[0] === s.split(" ")[0])) || null; };
+  [...orders].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 80).forEach(o => {
+    const id = `o:${o.id}`, num = String(o.id).match(/\d+/)?.[0] || String(o.id);
+    node(id, "order", `#${num}`, { w: 1.2, sub: `${o.clientName || "—"}${o.status === "concluido" ? " · concluído" : o.deadline ? ` · prazo ${String(o.deadline).slice(8, 10)}/${String(o.deadline).slice(5, 7)}` : ""}` });
+    const sv = sellerNode(o.seller); if (sv) link(sv.id, id, 0.9);
+    link(id, `c:${norm(o.clientName)}`, 0.8);
+  });
+  const orderToys = (o) => (o.items || []).filter(i => !i.isMotor && i.toy).map(i => `b:${norm(i.toy).replace(/\s+/g, " ")}`);
+
   // brinquedos: ligados a CADA cliente que comprou (o mesmo brinquedo une clientes diferentes)
   Object.entries(toyCount).sort((a, b) => b[1].n - a[1].n).slice(0, 45).forEach(([k, t]) => {
     node(`b:${k}`, "toy", t.label, { w: 1 + t.n, sub: `${t.n} vendido(s) · ${t.clients.size} cliente(s)` }); link("g:toys", `b:${k}`, 0.5);
     t.clients.forEach(ck => link(`c:${ck}`, `b:${k}`, 0.7));
   });
+  orders.forEach(o => { if (nodes.has(`o:${o.id}`)) orderToys(o).forEach(tk => link(`o:${o.id}`, tk, 0.5)); });
   // quem trabalhou em quê
   (data.production || []).forEach(p => {
     const order = orders.find(o => o.id === p.orderId); const it = order?.items?.find(i => i.itemId === p.itemId);
