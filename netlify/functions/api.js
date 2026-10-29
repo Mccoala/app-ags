@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { db, SECURE, signToken, verifyToken, tokenFromEvent, hashPassword, checkPassword, httpError, json, fail, loadCompany, isCreatorCo, isLegacy, effective, NO_PLAN } from "../lib/server.js";
 import { planState, usageOf, normPlan, PLANS } from "../../src/lib/plans.js";
 import { externalize, signForClient, hasInlineImages, hasPublicLinks, signOne } from "../lib/media.js";
+import { scrubForUser } from "../../src/lib/core.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API do Inflatudo. Todo acesso aos dados passa por aqui:
@@ -32,6 +33,33 @@ function mergeUsers(incoming, old) {
   });
 }
 const hasPlainPasswords = (users) => (users || []).some(u => u.password && !isHashed(u.password));
+
+// Vendedor com "ver só o que é dele": o servidor manda só os pedidos, produção, clientes e avisos dele.
+// Fotos e pronta entrega vêm completos. Ao gravar, junta de volta com o resto da empresa.
+const sellerScoped = (emp) => !!emp?.sellerName && emp.ownOnly !== false;
+function scopeForSeller(a, emp) {
+  const v = scrubForUser(a, { role: "employee", sellerName: emp.sellerName });
+  return { ...v, photos: a.photos || [], readyStock: a.readyStock || [], settings: a.settings };
+}
+const SCOPED_KEYS = { orders: (x) => String(x.id), production: (x) => String(x.itemId), finalization: (x) => String(x.itemId), clients: (x) => String(x.id ?? x.name), notifications: (x) => String(x.id), log: (x) => `${x.em}|${x.usuario}|${x.texto}` };
+function mergeScoped(cur, inc, emp) {
+  const vis = scopeForSeller(cur, emp);
+  const out = { ...cur, ...inc };
+  for (const [k, key] of Object.entries(SCOPED_KEYS)) {
+    const seen = new Set((vis[k] || []).map(key));
+    const incMap = new Map((inc[k] || []).map(x => [key(x), x]));
+    const res = [];
+    for (const x of cur[k] || []) { // mantém a ordem: troca o que ele vê pela versão nova, o resto fica igual
+      const id = key(x);
+      if (!seen.has(id)) res.push(x);
+      else if (incMap.has(id)) { res.push(incMap.get(id)); incMap.delete(id); }
+    }
+    out[k] = [...res, ...incMap.values()];
+  }
+  out.log = (out.log || []).slice(-800);
+  out.brain = cur.brain; out.sellers = cur.sellers; out.users = cur.users; // o que o vendedor não vê fica como está
+  return out;
+}
 
 function scrubForEmployee(appData) {
   const d = { ...appData };
@@ -122,8 +150,8 @@ const actions = {
     if (s.role === "employee") {
       const emp = await currentEmployee(c, s.uid);
       if (st.locked) throw httpError(402, "O acesso desta empresa está suspenso. Fale com o responsável.", { code: "locked" });
-      user = { permissions: emp.permissions || [], sellerName: emp.sellerName || "", name: emp.name };
-      app_data = scrubForEmployee(app_data);
+      user = { permissions: emp.permissions || [], sellerName: emp.sellerName || "", name: emp.name, ownOnly: emp.ownOnly !== false };
+      app_data = scrubForEmployee(sellerScoped(emp) ? scopeForSeller(app_data, emp) : app_data);
     }
     app_data = await signForClient({ ...app_data, users: publicUsers(app_data.users) });
     return { app_data, company: meta(c), plan: publicState(st), user };
@@ -133,6 +161,10 @@ const actions = {
     if (!app_data || typeof app_data !== "object") throw httpError(400, "Dados inválidos.");
     const c = await loadCompany(s.cid);
     app_data = await externalize(app_data, s.cid); // fotos novas vão para a pasta fechada, com qualidade original
+    if (s.role === "employee") { // vendedor que só vê o que é dele: junta as mudanças com o resto da empresa
+      const emp0 = await currentEmployee(c, s.uid);
+      if (sellerScoped(emp0)) app_data = mergeScoped(c.app_data || {}, app_data, emp0);
+    }
     // Proteção: nunca deixa uma tela vazia (que não carregou) gravar por cima da empresa
     {
       const cur0 = c.app_data || {};
@@ -185,8 +217,9 @@ const actions = {
   async poll({ full }, s) {
     const c = await loadCompany(s.cid, "id, plan_id, status, trial_ends_at, app_data");
     const st = stateOf(c);
-    if (s.role === "employee") { await currentEmployee(c, s.uid); if (st.locked) throw httpError(402, "O acesso desta empresa está suspenso.", { code: "locked" }); }
-    const a = c.app_data || {};
+    let emp = null;
+    if (s.role === "employee") { emp = await currentEmployee(c, s.uid); if (st.locked) throw httpError(402, "O acesso desta empresa está suspenso.", { code: "locked" }); }
+    const a = sellerScoped(emp) ? scopeForSeller(c.app_data || {}, emp) : (c.app_data || {});
     const out = { notifications: a.notifications || [], photos: a.photos || [], readyStock: a.readyStock || [], plan: publicState(st) };
     if (full) Object.assign(out, { production: a.production || [], finalization: a.finalization || [], orders: a.orders || [] });
     return await signForClient(out);

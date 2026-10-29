@@ -16,7 +16,7 @@ import Tour, { TourWelcome } from "./components/Tour";
 import { PlansModal, LimitModal, LockedFeature, PlanBanner, SuspendedScreen } from "./components/PlanUI";
 import ReadyTab from "./tabs/ReadyTab";
 import CreatorTab from "./tabs/CreatorTab";
-import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE } from "./lib/core";
+import { finalizersOf, sameSeller, whatsappLink, norm, orderNumber, cleanOrderNumber, orderHaystack, matchQuery, findSeller, addSeller, ensureSellers, sellerColorOf, SELLER_PALETTE, SELLER_PERMS } from "./lib/core";
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -2046,7 +2046,7 @@ function TeamTab({ data, setData, dark, user }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
   const EMPTY_USER = { kind: '', name: '', email: '', password: '', permissions: { production: 'edit' }, sellerName: '', newSeller: '' };
-  const SELLER_PERMS = { sales: 'edit', routes: 'view' }; // vendedor: só a área dele (produção, finalização e fotos ele vê só dos próprios pedidos)
+  // vendedor: já vem com as abas que ele usa marcadas (pode ajustar em Permissões)
   const [share, setShare] = useState(null); // { name, login, password } — mostrado uma vez, para mandar ao funcionário
   const [userForm, setUserForm] = useState(EMPTY_USER);
   const [openUser, setOpenUser] = useState(null);
@@ -2103,7 +2103,7 @@ function TeamTab({ data, setData, dark, user }) {
     if (isSeller && loginOfSeller(sellerName)) { alert(`${sellerName} já tem login. Use "Trocar senha" no login dele.`); return; }
     let nd = isSeller ? addSeller(data, sellerName).data : { ...data };
     const canon = isSeller ? (findSeller(nd.sellers || [], sellerName)?.name || sellerName) : '';
-    nd = { ...nd, users: [...(nd.users || []), { id: Date.now(), name, email: login, password: userForm.password, mustChange: true, role: 'user', permissions: isSeller ? SELLER_PERMS : toPermObj(userForm.permissions), sellerName: canon }] };
+    nd = { ...nd, users: [...(nd.users || []), { id: Date.now(), name, email: login, password: userForm.password, mustChange: true, role: 'user', permissions: isSeller ? { ...SELLER_PERMS } : toPermObj(userForm.permissions), ...(isSeller ? { ownOnly: true, permsV2: true } : {}), sellerName: canon }] };
     persistTeam(nd);
     setShare({ name, login, password: userForm.password });
     setUserForm(EMPTY_USER); setShowUserForm(false);
@@ -2277,7 +2277,15 @@ function TeamTab({ data, setData, dark, user }) {
                   <div className='mt-3 flex items-center gap-2 flex-wrap'><span className='text-[11px] font-bold uppercase tracking-wider text-slate-500'>Vendedor vinculado:</span>
                     <select value={u.sellerName || ''} onChange={e => updateUser(u.id, { sellerName: e.target.value })} className={`${ic} !w-auto`}>
                       <option value=''>Nenhum</option>{(data.sellers || []).map(sv => <option key={sv.id || sv.name} value={sv.name}>{sv.name}</option>)}
-                    </select></div><p className='text-[11px] text-slate-500 mt-2'>As mudanças são salvas na hora e valem na próxima vez que o funcionário abrir o app.</p></div>}
+                    </select></div>
+                  {u.sellerName && (
+                    <label className={`mt-3 flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${u.ownOnly !== false ? 'border-emerald-500/50 bg-emerald-500/10' : dark ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <input type='checkbox' className='mt-0.5 w-4 h-4 accent-emerald-500' checked={u.ownOnly !== false} onChange={e => updateUser(u.id, { ownOnly: e.target.checked })} />
+                      <span><span className='block text-sm font-black'>Visualizar somente conteúdos do próprio vendedor</span>
+                        <span className='block text-[11px] text-slate-500 mt-0.5'>{u.ownOnly !== false ? `Ligado: ${u.sellerName} vê só os pedidos, produção, clientes e valores dele. Fotos e pronta entrega aparecem completas.` : `Desligado: ${u.sellerName} vê os pedidos e valores de toda a empresa, conforme as permissões acima.`}</span></span>
+                    </label>
+                  )}
+                  <p className='text-[11px] text-slate-500 mt-2'>As mudanças são salvas na hora e valem na próxima vez que o funcionário abrir o app.</p></div>}
               </div>
             ))}
           </div>
@@ -2562,8 +2570,8 @@ function MainApp() {
         setData(merged); LOAD_OK = true;
         try { localStorage.setItem(`ags_v3_${user.company_id}`, JSON.stringify(merged)); } catch { }
         if (user.role === "employee" && r.user) {
-          if (JSON.stringify(r.user.permissions) !== JSON.stringify(user.permissions) || (r.user.sellerName || "") !== (user.sellerName || "")) {
-            const u = { ...user, permissions: r.user.permissions, sellerName: r.user.sellerName || "" };
+          if (JSON.stringify(r.user.permissions) !== JSON.stringify(user.permissions) || (r.user.sellerName || "") !== (user.sellerName || "") || r.user.ownOnly !== user.ownOnly) {
+            const u = { ...user, permissions: r.user.permissions, sellerName: r.user.sellerName || "", ownOnly: r.user.ownOnly };
             try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); } catch { }
             setUser(u);
           }
@@ -2615,7 +2623,7 @@ function MainApp() {
   }[currentTab];
   const tabLocked = !tabFeatureOk(currentTab);
   // Vendedor só enxerga, na Produção e na Finalização, os pedidos dele
-  const tabData = (user.sellerName && user.role !== 'admin' && (currentTab === 'production' || currentTab === 'finalization'))
+  const tabData = (user.sellerName && user.role !== 'admin' && user.ownOnly !== false && (currentTab === 'production' || currentTab === 'finalization'))
     ? { ...data, orders: data.orders.filter(o => sameSeller(data.sellers || [], o.seller, user.sellerName)) }
     : data;
 

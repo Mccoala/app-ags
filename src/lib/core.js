@@ -103,6 +103,8 @@ const slug = (s) => norm(s).replace(/[^a-z0-9 ]/g, "").trim().split(" ").filter(
 // 2) o nome do vendedor no pedido é unificado com o cadastro (assim nenhuma venda "some");
 // 3) cada vendedor tem uma cor diferente;
 // 4) cada vendedor ganha um login próprio (senha 1234) uma única vez.
+// O que o vendedor vê ao ganhar login (o gerente pode mudar em Equipe › Logins › Permissões)
+export const SELLER_PERMS = { sales: "edit", routes: "view", orders: "view", production: "view", finalization: "view", photos: "view", ready: "view", clients: "view" };
 export function ensureSellers(data, opts = {}) {
   let changed = false;
   const sellers = (data.sellers || []).map(s => ({ ...s }));
@@ -126,7 +128,9 @@ export function ensureSellers(data, opts = {}) {
     if (s && s.name !== o.seller) { changed = true; return { ...o, seller: s.name }; }
     return o;
   });
-  const users = [...(data.users || [])].map((u, i) => u.id ? u : (changed = true, { ...u, id: Date.now() + 1000 + i }));
+  let users = [...(data.users || [])].map((u, i) => u.id ? u : (changed = true, { ...u, id: Date.now() + 1000 + i }));
+  // logins de vendedor antigos: já vêm com mapa, fotos, produção etc. marcados (uma vez só)
+  users = users.map(u => (u.sellerName && !u.permsV2) ? (changed = true, { ...u, permissions: { ...SELLER_PERMS, ...(u.permissions && !Array.isArray(u.permissions) ? Object.fromEntries(Object.entries(u.permissions).filter(([, v]) => v === "edit")) : {}) }, ownOnly: u.ownOnly !== false, permsV2: true }) : u);
   let room = opts.room == null ? Infinity : Math.max(0, opts.room); // vagas de usuário que o plano ainda tem
   sellers.forEach(s => {
     if (s.loginCreated || opts.logins === false) return; // login automático do vendedor só nos planos com área de vendedores
@@ -139,7 +143,7 @@ export function ensureSellers(data, opts = {}) {
       if (users.some(u => (u.email || "").toLowerCase() === login)) login = parts.slice(0, 2).join(".");
       let k = 2; const base = login;
       while (users.some(u => (u.email || "").toLowerCase() === login)) login = `${base}${k++}`;
-      users.push({ id: Date.now() + users.length + 7, name: s.name, email: login, password: "", mustChange: true, role: "user", permissions: { sales: "edit", routes: "view" }, sellerName: s.name, autoLogin: true }); // sem senha: o gerente define e manda para ele
+      users.push({ id: Date.now() + users.length + 7, name: s.name, email: login, password: "", mustChange: true, role: "user", permissions: { ...SELLER_PERMS }, ownOnly: true, permsV2: true, sellerName: s.name, autoLogin: true }); // sem senha: o gerente define e manda para ele
     }
     s.loginCreated = true; changed = true;
   });
@@ -274,7 +278,7 @@ export function periodBuckets(r) {
 export function moneyScope(user) {
   if (!user) return "none";
   if (user.role === "admin") return "all";
-  if (user.sellerName) return "own";
+  if (user.sellerName) return user.ownOnly === false ? "all" : "own"; // "ver só o que é dele" desligado: vê a empresa toda
   const p = user.permissions;
   if (p && !Array.isArray(p) && p.dashboard) return "all";
   if (Array.isArray(p) && p.includes("dashboard")) return "all";

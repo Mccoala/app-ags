@@ -5,7 +5,7 @@ import SpaceOrb from "./SpaceOrb";
 import { speakText, stopSpeaking, unlockAudio, getLevel, getVoicePref, useVoiceAvailable } from "../lib/voice";
 import VoiceBrain from "./VoiceBrain";
 import { useBrainAgent, TOOL_LABEL } from "../lib/useBrainAgent";
-import { sameSeller } from "../lib/core";
+import { sameSeller, orderNumber } from "../lib/core";
 
 const readSet = (k) => { try { return new Set(JSON.parse(localStorage.getItem(k) || "[]")); } catch { return new Set(); } };
 const writeSet = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set].slice(-500))); } catch { } };
@@ -49,6 +49,24 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
   const unread = mine.filter(n => !read.has(n.id));
   const photoOf = (n) => (data.photos || []).find(p => p.id === n.fotoId) || (data.photos || []).find(p => String(p.pedido) === String(n.pedido));
   const markRead = (ids) => { const s = new Set(read); ids.forEach(i => s.add(i)); setRead(s); writeSet(`${keyBase}-read`, s); };
+  // ── Cérebro avisa o vendedor dos pedidos dele perto do prazo (1ª vez que entra no dia) ──
+  const [due, setDue] = useState(null);
+  useEffect(() => {
+    if (!user?.sellerName || user?.role === "admin") return;
+    const today = new Date(); const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const k = `due-${companyId || "x"}-${user.id}`;
+    try { if (localStorage.getItem(k) === ymd) return; } catch { }
+    const t0 = new Date(ymd + "T00:00:00").getTime();
+    const list = (data.orders || [])
+      .filter(o => sameSeller(sellers, o.seller, user.sellerName) && o.status !== "concluido" && o.deadline)
+      .map(o => ({ o, d: Math.round((new Date(String(o.deadline).slice(0, 10) + "T00:00:00").getTime() - t0) / 86400000) }))
+      .filter(x => x.d <= 3).sort((a, b) => a.d - b.d);
+    if (!(data.orders || []).length) return; // dados ainda não chegaram
+    try { localStorage.setItem(k, ymd); } catch { }
+    if (list.length) { setDue(list); chime(); }
+  }, [user?.id, (data.orders || []).length]); // eslint-disable-line
+  const whenTxt = (d) => d < -1 ? `venceu há ${-d} dias` : d === -1 ? "venceu ontem" : d === 0 ? "vence hoje" : d === 1 ? "vence amanhã" : `vence em ${d} dias`;
+
   const openNotif = (n) => { markRead([n.id]); setToast(null); setOpen(false); openPhotos && openPhotos(n.pedido); };
   useEffect(() => {
     const fresh = unread.find(n => !toasted.has(n.id));
@@ -104,6 +122,28 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
           <Brain size={26} className="relative" />
           {unread.length > 0 && <span data-testid="notif-badge" className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1 rounded-full bg-red-500 text-white text-xs font-black flex items-center justify-center border-2" style={{ borderColor: dark ? "#030712" : "#fff" }}>{unread.length}</span>}
         </button>
+      )}
+      {!open && due && !toast && (
+        <div className={`fab-toast fixed bottom-24 right-5 z-[151] w-[330px] max-w-[calc(100vw-40px)] rounded-2xl border shadow-2xl overflow-hidden animate-slide-up ${dark ? "bg-[#0d0b17] border-fuchsia-500/40 text-white" : "bg-white border-fuchsia-200 text-gray-900"}`}>
+          <div className="px-4 py-3 flex items-start gap-3" style={{ background: "linear-gradient(135deg,#a855f733,#ec489922)" }}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Brain size={18} /></div>
+            <div className="min-w-0 flex-1">
+              <div className="font-black text-sm">Bom dia, {user?.name?.split(" ")[0] || ""}! ⏰</div>
+              <div className="text-xs text-slate-400">{due.length === 1 ? "1 pedido seu está perto do prazo" : `${due.length} pedidos seus estão perto do prazo`}</div>
+            </div>
+            <button onClick={() => setDue(null)} className="p-0.5 text-slate-400 hover:text-red-400"><X size={15} /></button>
+          </div>
+          <div className="p-3 space-y-1.5 max-h-56 overflow-y-auto">
+            {due.slice(0, 6).map(({ o, d }) => (
+              <div key={o.id} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-sm ${dark ? "bg-white/5" : "bg-gray-50"}`}>
+                <span className="min-w-0 truncate"><b className="text-orange-500">#{orderNumber(o.id)}</b> · {o.clientName || "—"}</span>
+                <span className={`flex-shrink-0 text-[11px] font-black px-2 py-0.5 rounded-lg ${d < 0 ? "bg-red-500/20 text-red-400" : d <= 1 ? "bg-amber-500/20 text-amber-500" : "bg-sky-500/15 text-sky-400"}`}>{whenTxt(d)}</span>
+              </div>
+            ))}
+            {due.length > 6 && <div className="text-[11px] text-slate-400 text-center">e mais {due.length - 6}…</div>}
+          </div>
+          <button onClick={() => setDue(null)} className="w-full py-2.5 text-sm font-black text-white" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}>Entendi</button>
+        </div>
       )}
       {!open && toast && (() => {
         const ph = photoOf(toast);
