@@ -165,7 +165,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
         </Panel>
       </div>
 
-      <TeamPerformance data={data} dark={dark} goTo={go} range={range} />
+      <TeamPerformance key={period} data={data} dark={dark} goTo={go} initPeriod={period} earliest={earliest} />
 
       <Panel dark={dark} title="Esteira de produção" subtitle="Onde cada brinquedo em aberto está agora · clique para abrir" icon={Factory}>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -267,8 +267,21 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
 
 // ── Rendimento da equipe: cada pessoa comparada com ela mesma (período anterior) e com o setor ──
 const SECTORS = [["cutter", "Corte"], ["tailor", "Costura"], ["prep", "Preparação"], ["assembler", "Montagem"], ["fin", "Finalização"]];
-function TeamPerformance({ data, dark, goTo, range }) {
+function TeamPerformance({ data, dark, goTo, initPeriod = "mes", earliest }) {
   const [sector, setSector] = useState("tailor");
+  // período próprio do rendimento (o gerente escolhe aqui) e com o que comparar
+  const [period, setPeriod] = useState(initPeriod);
+  const [custom, setCustom] = useState({});
+  const [cmp, setCmp] = useState("prev"); // prev | yoy | custom | none
+  const [cmpCustom, setCmpCustom] = useState({});
+  const range = useMemo(() => {
+    const r = periodRange(period, custom, earliest);
+    const yearBack = (d) => d ? `${Number(d.slice(0, 4)) - 1}${d.slice(4)}` : d;
+    if (cmp === "none") return { ...r, prevFrom: null, prevTo: null, cmpLabel: "" };
+    if (cmp === "yoy") return { ...r, prevFrom: yearBack(r.from), prevTo: yearBack(r.to), cmpLabel: "mesmo período do ano passado" };
+    if (cmp === "custom") return cmpCustom.from && cmpCustom.to ? { ...r, prevFrom: cmpCustom.from <= cmpCustom.to ? cmpCustom.from : cmpCustom.to, prevTo: cmpCustom.from <= cmpCustom.to ? cmpCustom.to : cmpCustom.from, cmpLabel: `${dateBR(cmpCustom.from)} → ${dateBR(cmpCustom.to)}` } : { ...r, prevFrom: null, prevTo: null, cmpLabel: "" };
+    return r.prevFrom ? { ...r, cmpLabel: `período anterior (${dateBR(r.prevFrom)} → ${dateBR(r.prevTo)})` } : { ...r, cmpLabel: "" };
+  }, [period, custom, earliest, cmp, cmpCustom]);
   const [picked, setPicked] = useState(null); // null = todos do setor
   const records = useMemo(() => {
     const out = [];
@@ -305,12 +318,22 @@ function TeamPerformance({ data, dark, goTo, range }) {
       <div className="flex items-center justify-between gap-2 flex-wrap mb-4">
         <div>
           <h3 className="font-black text-base flex items-center gap-2"><Scissors size={17} className="text-orange-500" />Rendimento da equipe</h3>
-          <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{range.label}{range.prevFrom ? " · comparado com o período anterior" : ""} · itens feitos</p>
+          <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{range.label}{range.prevFrom ? ` · comparado com ${range.cmpLabel}` : ""} · itens feitos</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <FilterMenu value={sector} onChange={(k) => { setSector(k); setPicked(null); }} label="Setor" dark={dark} options={SECTORS} />
           <button onClick={() => goTo && goTo("team")} className="text-[11px] font-black text-orange-500 hover:underline">Gerenciar equipe</button>
         </div>
+      </div>
+      <div className={`flex items-center gap-2 flex-wrap mb-4 p-2.5 rounded-xl ${dark ? "bg-white/5" : "bg-gray-50"}`}>
+        <PeriodBar value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} range={periodRange(period, custom, earliest)} dark={dark} />
+        <FilterMenu value={cmp} onChange={setCmp} label="Comparar com" dark={dark} accent="#38bdf8"
+          options={[["prev", "Período anterior"], ["yoy", "Mesmo período do ano passado"], ["custom", "Outro período…"], ["none", "Não comparar"]]} />
+        {cmp === "custom" && <div className="flex items-center gap-2 flex-wrap">
+          <input type="date" value={cmpCustom.from || ""} onChange={e => setCmpCustom({ ...cmpCustom, from: e.target.value })} className={`px-2 py-1.5 rounded-lg text-xs font-bold border outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-200"}`} />
+          <span className="text-xs text-slate-500">até</span>
+          <input type="date" value={cmpCustom.to || ""} onChange={e => setCmpCustom({ ...cmpCustom, to: e.target.value })} className={`px-2 py-1.5 rounded-lg text-xs font-bold border outline-none ${dark ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-200"}`} />
+        </div>}
       </div>
 
       {people.length === 0 ? <p className="text-sm text-slate-500">Ninguém cadastrado em {roleName}. Cadastre na aba Equipe.</p> : (
@@ -329,7 +352,7 @@ function TeamPerformance({ data, dark, goTo, range }) {
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div>
-              <div className="text-xs font-black text-slate-500 mb-2">Período atual (cor cheia){range.prevFrom ? " x anterior (cor clara)" : ""}</div>
+              <div className="text-xs font-black text-slate-500 mb-2">Período escolhido (cor cheia){range.prevFrom ? " x comparação (cor clara)" : ""}</div>
               <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={barData} margin={{ left: -18, right: 6, top: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "#1e293b" : "#f1f5f9"} />
@@ -342,7 +365,7 @@ function TeamPerformance({ data, dark, goTo, range }) {
               </ResponsiveContainer>
               <div className="overflow-x-auto mt-2">
                 <table className="w-full text-xs">
-                  <thead><tr className="text-slate-500 text-left"><th className="py-1.5 pr-2">Pessoa</th><th className="pr-2 text-right">Atual</th>{range.prevFrom && <th className="pr-2 text-right">Anterior</th>}{range.prevFrom && <th className="pr-2 text-right">Variação</th>}<th className="pr-2 text-right">vs média</th><th className="text-right">Total</th></tr></thead>
+                  <thead><tr className="text-slate-500 text-left"><th className="py-1.5 pr-2">Pessoa</th><th className="pr-2 text-right">Atual</th>{range.prevFrom && <th className="pr-2 text-right">Comparação</th>}{range.prevFrom && <th className="pr-2 text-right">Variação</th>}<th className="pr-2 text-right">vs média</th><th className="text-right">Total</th></tr></thead>
                   <tbody>{rows.map(r => {
                     const vsAvg = avg && r.cur ? ((r.cur - avg) / avg) * 100 : null; const c = colorOfP(r.p);
                     return (
