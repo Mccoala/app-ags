@@ -1354,12 +1354,12 @@ function ObsAndPhotos({ row, dark, setLightbox }) {
       </button>
       {open && (
         <div className={`mt-3 p-4 rounded-xl border flex flex-col sm:flex-row gap-4 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
-          {hasObs && <p className={`flex-1 text-sm leading-relaxed whitespace-pre-wrap ${dark ? "text-gray-200" : "text-gray-700"}`}>{row.observations}</p>}
-          {hasImg && <div className="flex flex-wrap gap-2">{row.images.map((u, i) => (
+          {hasImg && <div className="flex flex-wrap gap-2 flex-shrink-0">{row.images.map((u, i) => (
             <div key={i} className="relative group cursor-pointer" onClick={() => setLightbox(u)}>
               <img src={u} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-600" />
               <div className="absolute inset-0 rounded-xl bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><ZoomIn size={22} className="text-white" /></div>
             </div>))}</div>}
+          {hasObs && <p className={`flex-1 text-sm leading-relaxed whitespace-pre-wrap ${dark ? "text-gray-200" : "text-gray-700"}`}>{row.observations}</p>}
         </div>
       )}
     </div>
@@ -1678,10 +1678,12 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
     const next = cur.includes(name) ? cur.filter(x => x !== name) : [...cur, name];
     const patch = { finalizers: next, finalizer: next.join(", ") };
     if (!next.length && row.stage) Object.assign(patch, { stage: "", done: false, finDate: null }); // sem finalizador volta para 0%
+    if (next.length && !row.stage) Object.assign(patch, { stage: "finalizando", done: false, finalizingAt: TODAY_STR }); // escolheu quem finaliza: já anda 50%
     update(row._itemId, patch);
   };
   const setStage = (row, stage) => {
     if (!finalizersOf(row).length) return; // só depois de escolher quem está finalizando
+    if (stage === "finalizando" && row.stage === "finalizando") return; // com finalizador escolhido fica em 50% (para voltar a 0%, desmarque o finalizador)
     const next = row.stage === stage ? "" : stage;
     // 100% só com foto do brinquedo pronto → abre a câmera
     if (next === "finalizado" && hasFeature("photos")) { setCapture({ row, mode: "finalizar" }); return; }
