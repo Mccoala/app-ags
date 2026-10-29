@@ -2146,20 +2146,32 @@ function TeamTab({ data, setData, dark, user }) {
               </div>
             </div>
           )}
-          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-            {data.team.map(m => (
-              <div key={m.id} className='card-surface p-4 flex items-center justify-between'>
-                <div className={`flex items-center gap-3 ${m.status === 'ativo' ? '' : 'opacity-50'}`}>
-                  <div className='w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-600 font-black'>{(m.name || '?')[0]}</div>
-                  <div><p className='font-bold text-sm'>{m.name}</p><p className='text-xs text-slate-500'>{m.role}{m.status !== 'ativo' ? ' · inativo' : ''}</p></div>
+          {/* colunas por setor, compactas */}
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-start'>
+            {[['Corte', '#f97316'], ['Costura', '#ec4899'], ['Preparação', '#eab308'], ['Montagem', '#3b82f6'], ['Finalizador', '#10b981']].map(([role, col]) => {
+              const list = (data.team || []).filter(m => (m.role || 'Corte') === role).sort((a, b) => (a.status !== 'ativo') - (b.status !== 'ativo') || String(a.name).localeCompare(String(b.name)));
+              return (
+                <div key={role} className={`rounded-2xl border overflow-hidden ${dark ? 'bg-gray-900/60 border-gray-800' : 'bg-white border-gray-200'}`}>
+                  <div className='flex items-center justify-between px-3 py-2 border-b' style={{ borderColor: dark ? '#1f2937' : '#f1f5f9', background: `${col}14` }}>
+                    <div className='flex items-center gap-2 text-xs font-black uppercase tracking-wider' style={{ color: col }}><span className='w-2 h-2 rounded-full' style={{ background: col }} />{role === 'Finalizador' ? 'Finalização' : role}<span className='text-slate-500 font-bold normal-case tracking-normal'>· {list.filter(m => m.status === 'ativo').length}</span></div>
+                    <button onClick={() => { setForm({ name: '', role, status: 'ativo' }); setShowForm(true); }} title={`Adicionar em ${role}`} className='p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10'><Plus size={14} /></button>
+                  </div>
+                  <div className='p-1.5'>
+                    {list.length === 0 && <div className='px-2 py-3 text-[11px] text-slate-500 text-center'>Ninguém ainda</div>}
+                    {list.map(m => (
+                      <div key={m.id} className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg ${dark ? 'hover:bg-white/5' : 'hover:bg-gray-50'} ${m.status === 'ativo' ? '' : 'opacity-50'}`}>
+                        <div className='w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white flex-shrink-0 uppercase' style={{ background: col }}>{(m.name || '?')[0]}</div>
+                        <span className='flex-1 min-w-0 truncate text-sm font-bold capitalize'>{m.name}</span>
+                        <button onClick={() => toggleMemberStatus(m.id)} title={m.status === 'ativo' ? 'Ativo — clique para desativar' : 'Inativo — clique para ativar'} className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${m.status === 'ativo' ? 'bg-emerald-500' : dark ? 'bg-gray-600' : 'bg-gray-300'}`} />
+                        <button onClick={() => { const nd = { ...data }; nd.team = nd.team.filter(x => x.id !== m.id); setData(nd); saveData(nd); }} title='Excluir' className='p-1 text-slate-500 opacity-0 group-hover:opacity-100 hover:text-red-500 transition'><Trash2 size={13} /></button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className='flex items-center gap-1'>
-                <button onClick={() => toggleMemberStatus(m.id)} className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${m.status === 'ativo' ? 'border-emerald-500/40 text-emerald-500' : dark ? 'border-gray-700 text-gray-500' : 'border-gray-300 text-gray-500'}`}>{m.status === 'ativo' ? 'Ativo' : 'Inativo'}</button>
-                <button onClick={() => { const nd={...data}; nd.team=nd.team.filter(x=>x.id!==m.id); setData(nd); saveData(nd); }} className='p-2 text-slate-400 hover:text-red-500 transition-colors'><Trash2 size={16}/></button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+          <p className='text-[11px] text-slate-500'>Bolinha verde = ativo (clique para desativar). Inativos ficam apagados e não aparecem para escolher na produção.</p>
         </div>
       )}
 
