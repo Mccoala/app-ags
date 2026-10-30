@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import { db, SECURE, signToken, verifyToken, tokenFromEvent, hashPassword, checkPassword, httpError, json, fail, loadCompany, isCreatorCo, isLegacy, effective, NO_PLAN } from "../lib/server.js";
 import { planState, usageOf, normPlan, PLANS } from "../../src/lib/plans.js";
 import { externalize, signForClient, hasInlineImages, hasPublicLinks, signOne } from "../lib/media.js";
@@ -284,6 +285,26 @@ const actions = {
     const { error } = await db().from("companies").update(patch).eq("id", companyId);
     if (error) throw httpError(500, "Não consegui atualizar.");
     return { ok: true };
+  },
+
+  // Apagar a conta (login) de uma fábrica. Antes guarda uma cópia completa na pasta
+  // fechada "backups/apagadas" — se a cópia falhar, nada é apagado.
+  async creatorDelete({ companyId, confirmName }, s) {
+    await requireCreator(s);
+    if (!companyId || companyId === s.cid) throw httpError(400, "Não dá para apagar a conta do criador.");
+    const { data: c, error: e1 } = await db().from("companies").select("*").eq("id", companyId).maybeSingle();
+    if (e1 || !c) throw httpError(404, "Empresa não encontrada.");
+    if (isCreatorCo(c)) throw httpError(400, "Não dá para apagar a conta do criador.");
+    const norm = (x) => String(x || "").trim().toLowerCase();
+    if (!confirmName || norm(confirmName) !== norm(c.company_name)) throw httpError(400, "Digite o nome da empresa exatamente para confirmar.");
+    const body = zlib.gzipSync(Buffer.from(JSON.stringify({ deletedAt: new Date().toISOString(), deletedBy: s.uid || "criador", company: c })));
+    const path = `apagadas/${new Date().toISOString().slice(0, 10)}-${companyId}.json.gz`;
+    let up = await db().storage.from("backups").upload(path, body, { contentType: "application/gzip", upsert: true });
+    if (up.error && /not found|bucket/i.test(up.error.message)) { await db().storage.createBucket("backups", { public: false }); up = await db().storage.from("backups").upload(path, body, { contentType: "application/gzip", upsert: true }); }
+    if (up.error) throw httpError(500, "Não consegui guardar a cópia de segurança, então não apaguei nada.");
+    const { error } = await db().from("companies").delete().eq("id", companyId);
+    if (error) throw httpError(500, `Não consegui apagar: ${error.message}`);
+    return { ok: true, backup: path };
   },
 };
 

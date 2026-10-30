@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Crown, Loader2, RefreshCw, Search, Save, Lock, KeyRound, Link2, Check, Eye, EyeOff, DollarSign } from "lucide-react";
+import { Crown, Loader2, RefreshCw, Search, Save, Lock, KeyRound, Link2, Check, Eye, EyeOff, DollarSign, Trash2, Wand2, Copy, X } from "lucide-react";
 import { api } from "../lib/api";
 import { PLANS } from "../lib/plans";
 import { dBR } from "../components/PlanUI";
@@ -22,6 +22,14 @@ function Access({ c, dark, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [copied, setCopied] = useState(false);
+  const [tmp, setTmp] = useState("");
+  const [del, setDel] = useState(false);
+  const genPw = async () => {
+    const np = randomPw(); setBusy(true); setMsg("");
+    try { await api("creatorUpdate", { companyId: c.company_id, password: np }); setTmp(np); setMsg("Senha provisória ativada"); }
+    catch (e) { setMsg(e.message); }
+    finally { setBusy(false); }
+  };
   const link = `https://inflatudo.netlify.app/?empresa=${c.company_id}`; // link fixo da equipe
   const dirty = email.trim().toLowerCase() !== (c.admin_email || "") || pw.length > 0;
   const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { window.prompt("Copie o link:", link); } };
@@ -43,7 +51,38 @@ function Access({ c, dark, onSaved }) {
       </label>
       <button disabled={!dirty || busy} onClick={save} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-500 text-white font-bold text-xs disabled:opacity-40">{busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}Salvar acesso</button>
       <button onClick={copy} className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border font-bold text-xs ${dark ? "border-gray-700" : "border-gray-300"}`}>{copied ? <><Check size={14} className="text-emerald-500" />Link copiado</> : <><Link2 size={14} />Copiar link da equipe</>}</button>
-      {msg && <span className={`text-xs font-bold ${msg === "Acesso salvo" ? "text-emerald-500" : "text-red-500"}`}>{msg}</span>}
+      {msg && <span className={`text-xs font-bold ${["Acesso salvo", "Senha provisória ativada", "Mensagem copiada"].includes(msg) ? "text-emerald-500" : "text-red-500"}`}>{msg}</span>}
+      <div className="w-full flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-gray-500/30">
+        <button onClick={genPw} disabled={busy} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs disabled:opacity-40"><Wand2 size={14} />Gerar senha provisória</button>
+        {tmp && <span className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-mono text-sm font-black ${dark ? "bg-blue-500/15 text-blue-300" : "bg-blue-50 text-blue-700"}`}>{tmp}
+          <button onClick={() => { try { navigator.clipboard.writeText(`Seu acesso ao Inflatudo:\nE-mail: ${c.admin_email}\nSenha provisória: ${tmp}\nEntre em https://inflatudo.netlify.app e troque a senha depois.`); setMsg("Mensagem copiada"); } catch { } }} title="Copiar mensagem para enviar" className="opacity-80 hover:opacity-100"><Copy size={14} /></button></span>}
+        {tmp && <span className="text-[11px] opacity-70">Já está valendo. Copie e envie para o dono — ela só aparece agora.</span>}
+        {c.plan_id !== "creator" && <button onClick={() => setDel(true)} className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-500/50 text-red-500 font-bold text-xs hover:bg-red-500/10"><Trash2 size={14} />Apagar conta</button>}
+      </div>
+      {del && <DeleteModal c={c} dark={dark} onClose={() => setDel(false)} onDone={() => { setDel(false); onSaved(); }} />}
+    </div>
+  );
+}
+
+// Senha nova aleatória, fácil de ler (sem 0/O, 1/l)
+const randomPw = () => { const a = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"; const r = crypto.getRandomValues(new Uint32Array(8)); return Array.from(r, x => a[x % a.length]).join(""); };
+
+function DeleteModal({ c, dark, onClose, onDone }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const ok = name.trim().toLowerCase() === String(c.company_name || "").trim().toLowerCase();
+  const go = async () => { setBusy(true); setErr(""); try { await api("creatorDelete", { companyId: c.company_id, confirmName: name }); onDone(); } catch (e) { setErr(e.message); setBusy(false); } };
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !busy && onClose()}>
+      <div onClick={e => e.stopPropagation()} className={`w-full max-w-md rounded-2xl p-6 ${dark ? "bg-gray-900 text-white border border-gray-800" : "bg-white text-gray-900"}`}>
+        <div className="flex items-start justify-between gap-3"><h3 className="text-lg font-black text-red-500 flex items-center gap-2"><Trash2 size={20} />Apagar conta</h3><button onClick={onClose} disabled={busy}><X size={18} /></button></div>
+        <p className={`mt-2 text-sm ${dark ? "text-gray-300" : "text-gray-600"}`}>Isso apaga o login de <b>{c.company_name}</b> ({c.admin_email}) e todos os dados da empresa: pedidos, clientes, equipe e logins dos funcionários. Antes de apagar, o sistema guarda uma <b>cópia de segurança</b> fechada.</p>
+        <label className="block mt-4 text-xs font-bold opacity-80">Para confirmar, digite o nome da empresa: <span className="font-black">{c.company_name}</span></label>
+        <input value={name} onChange={e => setName(e.target.value)} autoFocus className={`mt-1.5 w-full rounded-xl px-3 py-2.5 text-sm border outline-none ${dark ? "bg-gray-950 border-gray-700" : "bg-white border-gray-300"}`} />
+        {err && <p className="mt-2 text-xs font-bold text-red-500">{err}</p>}
+        <button disabled={!ok || busy} onClick={go} className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl font-black text-white bg-red-600 disabled:opacity-40">{busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Apagar para sempre</button>
+      </div>
     </div>
   );
 }
