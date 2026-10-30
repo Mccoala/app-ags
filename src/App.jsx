@@ -85,6 +85,7 @@ import { BrandMark, BrandWord, BrandFull, BRAND_CSS } from "./components/Brand";
 import Copyright from "./components/Copyright";
 import { CompanyMark, CompanyWord, BrandEditor, BrandSetupModal, cacheBrand, cachedBrand, hasBrand } from "./components/CompanyBrand";
 import Mission, { missionState, startMission, clearMission } from "./components/Mission";
+import { InflaCelebrate } from "./components/InflaStatus";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 // Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
@@ -1642,6 +1643,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
   const [filterStatus, setFilterStatus] = useState("todos");
   const canEdit = canEditFin(user);
   const [capture, setCapture] = useState(null); // { row, mode }
+  const [party, setParty] = useState(null); // comemoração do Infla ao finalizar
   const photoCount = (itemId) => (data.photos || []).filter(p => p.itemId === itemId).length;
 
   const finRows = [];
@@ -1711,11 +1713,13 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
       }].slice(-300);
     }
     persist(nd); setCapture(null);
+    if (mode === "finalizar") { const k = Date.now(); setParty({ k, toy: item.toy, seller }); setTimeout(() => setParty(p => (p && p.k === k ? null : p)), 3200); }
   };
 
   return (
     <div className="flex flex-col prod-shell" style={{ height: "100%" }}>
       {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      <InflaCelebrate show={party?.k} text={`${party?.toy || "Brinquedo"} pronto! 🎉`} sub={party?.seller ? `${party.seller} já foi avisado` : "Fotos na pasta do pedido"} />
       {capture && <PhotoCapture row={capture.row} mode={capture.mode} dark={dark} companyId={CURRENT_COMPANY_ID} sellerName={capture.mode === "finalizar" ? (findSeller(data.sellers || [], capture.row.seller)?.name || capture.row.seller) : ""} onCancel={() => setCapture(null)} onDone={(up) => savePhotos(capture.row, capture.mode, up)} />}
       <div className={`flex-shrink-0 pb-3 pt-1 border-b ${dark ? "border-gray-800" : "border-gray-200"}`}>
         <div className="mb-3">

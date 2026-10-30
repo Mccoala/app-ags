@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Minimize2, Maximize2, Sparkles, Camera, Users, Factory, ClipboardList, Brain, Map as MapIcon, Images, Gift, Lock } from "lucide-react";
 import { useBrainAgent } from "../lib/useBrainAgent";
 import { orderNumber } from "../lib/core";
+import InflaStatus from "./InflaStatus";
 import { BrandMark, BrandWord } from "./Brand";
 
 // ── Tutorial na prática ───────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     body = <p>Tudo o que você lançou <b>alimentou o Cérebro</b>. Toque numa pergunta e veja a resposta com os dados do seu pedido:</p>;
     hint = <div className="space-y-1.5">
       {QUESTIONS.map(q => <button key={q} disabled={!!busy} onClick={() => askQ(q)} className={`w-full text-left px-3 py-2 rounded-xl text-sm font-bold border transition ${answer?.q === q ? "border-purple-500 bg-purple-500/15 text-purple-400" : dark ? "border-gray-700 hover:border-purple-500 text-gray-200" : "border-gray-200 hover:border-purple-400 text-gray-700"} disabled:opacity-50`}>🧠 {q}</button>)}
-      {answer && <div className={`mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap max-h-48 overflow-y-auto ${dark ? "bg-purple-500/10 text-purple-100" : "bg-purple-50 text-purple-900"}`}>{answer.a || <span className="flex items-center gap-2"><span className="w-4 h-4 border-2 border-purple-400/40 border-t-purple-400 rounded-full animate-spin" />{busy || "Pensando…"}</span>}</div>}
+      {answer && <div className={`mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap max-h-48 overflow-y-auto ${dark ? "bg-purple-500/10 text-purple-100" : "bg-purple-50 text-purple-900"}`}>{answer.a || <InflaStatus busy={busy || "Pensando…"} />}</div>}
     </div>;
   } else if (step.id === "map") {
     body = <p>No mapa você vê <b>onde vendeu</b>{where ? <>: o pedido de <b>{order?.clientName}</b> foi para <b>{where}</b></> : ""}. Cada ponto mostra os clientes, pedidos e o que foi vendido na região.</p>;
