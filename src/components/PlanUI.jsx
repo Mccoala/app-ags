@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import SupportWizard from "./SupportWizard";
+import Copyright from "./Copyright";
 import { X, Check, Lock, Crown, MessageCircle, AlertTriangle, Sparkles, Package, Camera, Users, Sprout, Factory, Rocket } from "lucide-react";
 import { PLANS, EXTRAS, OWNER_WHATSAPP, checkoutLink } from "../lib/plans";
 
@@ -138,6 +139,7 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
 
         <div className="mt-8 flex justify-center"><button onClick={() => setHelp(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-[#25D366] hover:bg-[#1fbe5b]"><MessageCircle size={17} />Ficou com dúvida? Fale no WhatsApp</button></div>
         <p className={`text-xs text-center mt-4 ${T.soft}`}>Pagamento seguro pela Cakto. Ao trocar de plano, o novo vale na hora e a cobrança passa a ser do plano novo.</p>
+        <Copyright dark={dark} className="mt-6 pb-16" />
       </div>
       <button onClick={e => { e.stopPropagation(); setHelp(true); }} title="Tirar dúvidas no WhatsApp" className="fixed bottom-5 right-5 z-[210] w-14 h-14 rounded-full bg-[#25D366] text-white shadow-2xl shadow-green-500/30 flex items-center justify-center hover:scale-105 transition-transform"><MessageCircle size={26} /></button>
       {help && <div onClick={e => e.stopPropagation()}><SupportWizard dark={dark} onClose={() => setHelp(false)} companyName={companyName} email={email} planLabel={plan?.creator ? "Criador" : PLANS[cur]?.label} /></div>}

@@ -82,6 +82,7 @@ import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps
 import { scaleLinear } from "d3-scale";
 import logoMark from "./assets/logo-mark.svg";
 import { BrandMark, BrandWord, BrandFull, BRAND_CSS } from "./components/Brand";
+import Copyright from "./components/Copyright";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 // Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
@@ -425,6 +426,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
              <button onClick={() => window.location.href = '/'} className={`text-xs font-bold underline ${dark ? "text-gray-500" : "text-gray-400"}`}>Sou proprietário / Dono</button>
            </div>
         )}
+        <Copyright dark={dark} className="mt-8" />
       </div>
     </div>
   );
@@ -2356,6 +2358,7 @@ function TeamTab({ data, setData, dark, user }) {
           </div>
         </div>
       )}
+      <Copyright dark={dark} className="pt-4" />
     </div>
   );
 }
