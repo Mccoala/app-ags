@@ -2752,7 +2752,7 @@ function MainApp() {
         {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
       {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={runTutorial} lockAnim={lockAnim} brand={brand} />}
-      {hasFeature("brain") && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
+      {hasFeature("brain") && !mission && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
     </div>
   );
 }
