@@ -74,9 +74,14 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   useEffect(() => { if (step?.id === "photos" && order) openPhotos?.(orderNumber(order.id)); }, [step?.id]); // eslint-disable-line
 
   // destaque no elemento do passo (sem bloquear a tela)
+  const [nav, setNav] = useState(null);
   useEffect(() => {
-    if (!step?.target || done || mini) { setRect(null); return; }
-    const m = () => { const el = [].concat(step.target).map(q => document.querySelector(q)).find(Boolean); if (!el) return setRect(null); const r = el.getBoundingClientRect(); if (!r.width) return setRect(null); setRect({ x: r.left, y: r.top, w: r.width, h: r.height }); };
+    if (mini) { setRect(null); setNav(null); return; }
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
+    const m = () => {
+      setNav(step?.tab ? box(document.querySelector(`[data-tour="nav-${step.tab}"]`)) : null);
+      setRect(!step?.target || done ? null : box([].concat(step.target).map(q => document.querySelector(q)).find(Boolean)));
+    };
     m(); const t = setInterval(m, 400); return () => clearInterval(t);
   }, [step?.id, done, mini]);
 
@@ -124,7 +129,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   const up = rect && typeof window !== "undefined" && window.innerWidth >= 640 && rect.x + rect.w > window.innerWidth - 420 && rect.y + rect.h > window.innerHeight - 470;
   const card = dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white text-gray-900 border border-gray-200";
   return <>
-    {rect ? <Spotlight r={rect} /> : !mini && <div style={{ position: "fixed", inset: 0, zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)" }} />}
+    {!mini && <Spotlight rects={rect ? [rect] : []} nav={nav} label={`passo ${st.i + 1} de ${steps.length}`} />}
     {mini ? (
       <button onClick={() => setMini(false)} className="fixed z-[45] bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:bottom-24 sm:translate-x-0 flex items-center gap-2 px-4 py-2.5 rounded-full font-black text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30">
         <Sparkles size={16} />Tutorial · {st.i + 1}/{steps.length}<Maximize2 size={14} />
@@ -151,15 +156,23 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
 }
 
 // Tudo fica cinza e escuro; só o lugar onde clicar continua claro (não bloqueia os cliques)
-function Spotlight({ r }) {
-  const P = 8, x = Math.max(0, r.x - P), y = Math.max(0, r.y - P), w = r.w + P * 2, h = r.h + P * 2;
-  const g = { position: "fixed", zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" };
+function Spotlight({ rects = [], nav, label }) {
+  const W = window.innerWidth, H = window.innerHeight, P = 8;
+  const holes = rects.map(r => ({ x: Math.max(0, r.x - P), y: Math.max(0, r.y - P), w: r.w + P * 2, h: r.h + P * 2 }));
+  const navH = nav ? { x: nav.x - 4, y: nav.y - 4, w: nav.w + 8, h: nav.h + 8 } : null;
+  const all = navH ? [...holes, navH] : holes;
+  const path = `M0 0H${W}V${H}H0Z` + all.map(h => `M${h.x} ${h.y}h${h.w}v${h.h}h${-h.w}Z`).join("");
+  const mask = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><path fill='black' fill-rule='evenodd' d='${path}'/></svg>`)}")`;
   return <>
-    <div style={{ ...g, left: 0, top: 0, right: 0, height: y }} />
-    <div style={{ ...g, left: 0, top: y + h, right: 0, bottom: 0 }} />
-    <div style={{ ...g, left: 0, top: y, width: x, height: h }} />
-    <div style={{ ...g, left: x + w, top: y, right: 0, height: h }} />
-    <div className="animate-pulse" style={{ position: "fixed", zIndex: 44, pointerEvents: "none", left: x, top: y, width: w, height: h, borderRadius: 14, border: "3px solid #f97316", boxShadow: "0 0 26px rgba(249,115,22,.7)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" }} />
+    <div style={{ position: "fixed", inset: 0, zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)", WebkitMaskImage: mask, maskImage: mask, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" }} />
+    {holes.map((h, k) => <div key={k} className="animate-pulse" style={{ position: "fixed", zIndex: 44, pointerEvents: "none", left: h.x, top: h.y, width: h.w, height: h.h, borderRadius: 14, border: "3px solid #f97316", boxShadow: "0 0 26px rgba(249,115,22,.7)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" }} />)}
+    {navH && <>
+      <div style={{ position: "fixed", zIndex: 44, pointerEvents: "none", left: navH.x, top: navH.y, width: navH.w, height: navH.h, borderRadius: 14, border: "3px solid #f97316", boxShadow: "0 0 18px rgba(249,115,22,.6)" }} />
+      {label && navH.x + navH.w + 240 < W && <div style={{ position: "fixed", zIndex: 45, pointerEvents: "none", left: navH.x + navH.w + 12, top: navH.y + navH.h / 2, transform: "translateY(-50%)" }} className="flex items-center">
+        <span style={{ width: 0, height: 0, borderTop: "8px solid transparent", borderBottom: "8px solid transparent", borderRight: "10px solid #f97316" }} />
+        <span className="px-3 py-1.5 rounded-xl text-xs font-black text-white whitespace-nowrap shadow-lg" style={{ background: "linear-gradient(90deg,#f97316,#ea580c)" }}>📍 Você está aqui · {label}</span>
+      </div>}
+    </>}
   </>;
 }
 
