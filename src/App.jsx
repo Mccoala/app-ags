@@ -1354,11 +1354,11 @@ function ObsAndPhotos({ row, dark, setLightbox }) {
   if (!hasObs && !hasImg) return null;
   return (
     <div className="mt-2">
-      <button onClick={() => setOpen(!open)} className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${open ? dark ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-orange-100 text-orange-700 border border-orange-300" : dark ? "bg-gray-800 text-gray-300 border border-gray-700" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
+      <button data-tour="obs-btn" onClick={() => setOpen(!open)} className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl ${open ? dark ? "bg-orange-500/20 text-orange-400 border border-orange-500/30" : "bg-orange-100 text-orange-700 border border-orange-300" : dark ? "bg-gray-800 text-gray-300 border border-gray-700" : "bg-gray-100 text-gray-600 border border-gray-200"}`}>
         {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{hasObs && hasImg ? "📋 Obs + Foto" : hasObs ? "📋 Ver Observações" : "🖼️ Ver Foto"}
       </button>
       {open && (
-        <div className={`mt-3 p-4 rounded-xl border flex flex-col sm:flex-row gap-4 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
+        <div data-tour="obs-open" className={`mt-3 p-4 rounded-xl border flex flex-col sm:flex-row gap-4 ${dark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"}`}>
           {hasImg && <div className="flex flex-wrap gap-2 flex-shrink-0">{row.images.map((u, i) => (
             <div key={i} className="relative group cursor-pointer" onClick={() => setLightbox(u)}>
               <img src={u} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-600" />
@@ -1470,7 +1470,7 @@ function ProdCard({ row, data, dark, workers, onAssign, onTogglePriority, canEdi
                   <span className={`text-xs font-black uppercase tracking-widest ${worker ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>{st.label}</span>
                   <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${worker ? "bg-emerald-500 text-white" : dark ? "bg-gray-800 text-gray-500" : "bg-gray-100 text-gray-400"}`}>{worker ? "✓ 25%" : "0%"}</span>
                 </div>
-                <select value={worker || ""} disabled={!canEdit} onChange={e => onAssign(row._itemId, st.key, e.target.value)}
+                <select data-tour={worker ? undefined : "stage-empty"} value={worker || ""} disabled={!canEdit} onChange={e => onAssign(row._itemId, st.key, e.target.value)}
                   className={`w-full px-2 py-2 rounded-lg text-sm font-semibold outline-none border ${worker ? (dark ? "bg-gray-950 border-emerald-500/30 text-emerald-300" : "bg-white border-emerald-300 text-emerald-700") : (dark ? "bg-gray-950 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900")} ${!canEdit ? "opacity-60 cursor-not-allowed" : "cursor-pointer focus:border-orange-500"}`}>
                   <option value="">👤 Escolher responsável…</option>
                   {list.map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
@@ -1765,7 +1765,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
                     {[...finWorkers.map(w => w.name), ...finalizersOf(row).filter(n => !finWorkers.some(w => w.name === n))].map(name => {
                       const on = finalizersOf(row).includes(name);
                       return (
-                        <label key={name} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm font-bold select-none ${canEdit ? "cursor-pointer" : "opacity-60 cursor-not-allowed"} ${on ? "border-emerald-500 bg-emerald-500/15 text-emerald-500" : dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}>
+                        <label key={name} data-tour="fin-worker" data-on={on ? "1" : "0"} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm font-bold select-none ${canEdit ? "cursor-pointer" : "opacity-60 cursor-not-allowed"} ${on ? "border-emerald-500 bg-emerald-500/15 text-emerald-500" : dark ? "border-gray-700 text-gray-300" : "border-gray-300 text-gray-700"}`}>
                           <input type="checkbox" className="accent-emerald-500 w-4 h-4" checked={on} disabled={!canEdit} onChange={() => toggleFinalizer(row, name)} />{name}
                         </label>
                       );

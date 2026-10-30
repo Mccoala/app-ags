@@ -92,6 +92,28 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     m(); const t = setInterval(m, 400); return () => clearInterval(t);
   }, [step?.id, done, mini]);
 
+  // "toque aqui": mãozinha com ondas no próximo clique dentro do passo
+  const [tap, setTap] = useState(null);
+  useEffect(() => {
+    if (mini || done || !["production", "finalization"].includes(step?.id)) { setTap(null); return; }
+    const q = (sel) => document.querySelector(sel);
+    const box = (el, label) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width ? { x: r.left, y: r.top, w: r.width, h: r.height, label } : null; };
+    const m = () => {
+      if (step.id === "production") {
+        const card = q('[data-tour="prod-first"]');
+        if (!q('[data-tour="prod-first"] [data-card-open]')) return setTap(box(card, "Toque no pedido para abrir"));
+        if (q('[data-tour="prod-first"] [data-tour="obs-open"]') && !st.obsSeen) save({ ...st, obsSeen: true });
+        const obs = q('[data-tour="prod-first"] [data-tour="obs-btn"]');
+        if (obs && !st.obsSeen && !q('[data-tour="prod-first"] [data-tour="obs-open"]')) return setTap(box(obs, "Veja a foto que veio com o pedido"));
+        return setTap(box(q('[data-tour="prod-first"] [data-tour="stage-empty"]'), "Escolha quem fez esta etapa"));
+      }
+      if (!q('[data-tour="fin-open"]')) return setTap(box(q('[data-tour="fin-row"]'), "Toque no brinquedo para abrir"));
+      if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) return setTap(box(q('[data-tour="fin-open"] [data-tour="fin-worker"]'), "Marque quem finalizou"));
+      return setTap(box(q('[data-tour="fin-btn"]'), "Toque para finalizar (100%)"));
+    };
+    m(); const t = setInterval(m, 350); return () => clearInterval(t);
+  }, [step?.id, done, mini, st.obsSeen]); // eslint-disable-line
+
   const next = () => {
     if (!done) return;
     if (st.i >= steps.length - 1) { setFinale(true); return; }
@@ -114,10 +136,10 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     body = <p>Cadastre <b>1 pessoa em cada setor</b>. O cadastro já abre sozinho: digite o nome e toque em <b>Salvar</b>, que o próximo setor aparece. Pode ser você mesmo, por enquanto.</p>;
     hint = <Checklist dark={dark} items={sectorOk} />;
   } else if (step.id === "production") {
-    body = <p>Abra o pedido <b>{order?.clientName || ""}</b> e escolha <b>quem fez cada etapa</b>. Cada etapa com responsável sobe <b>25%</b>.</p>;
+    body = <p>Toque no pedido <b>{order?.clientName || ""}</b> para abrir, veja a <b>foto que veio junto</b> e escolha <b>quem fez cada etapa</b>. Cada etapa com responsável sobe <b>25%</b>.</p>;
     hint = prodRows.length ? <Bar pct={prodBest} dark={dark} label="Progresso do brinquedo" /> : <Warn dark={dark}>Esse pedido não tem brinquedo para produzir (só motor?). Lance um pedido com brinquedo.</Warn>;
   } else if (step.id === "finalization") {
-    body = <p>Toque na linha do brinquedo para abrir. Marque <b>quem finalizou</b> e toque em <b>Concluir finalização</b>. Depois <b>tire ou envie a foto</b> do brinquedo pronto. Sem a foto não dá para continuar.</p>;
+    body = <p>Abra o brinquedo, marque <b>quem finalizou</b> e toque no botão verde <b>Concluir finalização</b> (100%). Depois <b>tire ou envie a foto</b> do brinquedo pronto. Sem a foto não dá para continuar.</p>;
     hint = <Checklist dark={dark} items={[["Finalizador marcado", finRows.some(f => (f.finalizers || []).length || f.finalizer)], ["Finalizado", !!finAny], ["Foto do brinquedo pronto", !!finWithPhoto]]} />;
   } else if (step.id === "photos") {
     body = <p>Pronto! O sistema criou a <b>pasta do pedido</b> com as fotos e os dados do cliente{notif?.para ? <> e <b>avisou o vendedor {notif.para}</b> que ficou pronto</> : " e avisou o vendedor"}. Ninguém precisa ficar pedindo foto no WhatsApp.</p>;
@@ -138,6 +160,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   const card = dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white text-gray-900 border border-gray-200";
   return <>
     {!mini && <Spotlight rects={rect ? [rect] : []} nav={nav} label={`passo ${st.i + 1} de ${steps.length}`} />}
+    {tap && <Tap t={tap} />}
     {mini ? (
       <button onClick={() => setMini(false)} className="fixed z-[45] bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:bottom-24 sm:translate-x-0 flex items-center gap-2 px-4 py-2.5 rounded-full font-black text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30">
         <Sparkles size={16} />Tutorial · {st.i + 1}/{steps.length}<Maximize2 size={14} />
@@ -190,6 +213,25 @@ function Spotlight({ rects = [], nav, label }) {
       </div>}
     </>}
   </>;
+}
+
+// Mãozinha tocando + ondas saindo do ponto onde clicar
+function Tap({ t }) {
+  const cx = t.x + Math.min(t.w / 2, 60), cy = t.y + t.h / 2;
+  const below = cy < 140;
+  return <div style={{ position: "fixed", zIndex: 45, left: 0, top: 0, pointerEvents: "none" }}>
+    {[0, 1, 2].map(i => <span key={i} className="infla-ripple" style={{ left: cx, top: cy, animationDelay: `${i * 0.5}s` }} />)}
+    <span className="infla-hand" style={{ left: cx + 6, top: cy + 4 }}>👆</span>
+    <span className="infla-tap-label" style={{ left: cx, top: below ? cy + 62 : cy - 40 }}>{t.label}</span>
+    <style>{`
+.infla-ripple{position:fixed;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:3px solid #fb923c;animation:infla-rip 1.5s ease-out infinite;box-shadow:0 0 18px rgba(251,146,60,.7)}
+@keyframes infla-rip{0%{transform:scale(.4);opacity:1}100%{transform:scale(3.6);opacity:0}}
+.infla-hand{position:fixed;font-size:38px;line-height:1;filter:drop-shadow(0 4px 6px rgba(0,0,0,.6));animation:infla-press 1.5s ease-in-out infinite;transform-origin:30% 0}
+@keyframes infla-press{0%,100%{transform:translate(0,8px) scale(1)}45%{transform:translate(0,0) scale(.88)}60%{transform:translate(0,0) scale(.88)}}
+.infla-tap-label{position:fixed;transform:translateX(-50%);white-space:nowrap;padding:6px 12px;border-radius:12px;font-size:13px;font-weight:900;color:#fff;background:linear-gradient(90deg,#f97316,#ea580c);box-shadow:0 8px 20px rgba(0,0,0,.4);animation:infla-bob 1.5s ease-in-out infinite}
+@keyframes infla-bob{0%,100%{margin-top:0}50%{margin-top:-4px}}
+`}</style>
+  </div>;
 }
 
 const Checklist = ({ items, dark }) => <div className="space-y-1">{items.map(([l, ok]) => <div key={l} className={`flex items-center gap-2 text-sm font-bold ${ok ? "text-emerald-500" : dark ? "text-gray-400" : "text-gray-500"}`}>
