@@ -92,6 +92,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   };
   const askQ = async (q) => { setAnswer({ q, a: null }); const a = await ask(q); setAnswer({ q, a: clean(a) || "Não consegui responder agora. Toque de novo na pergunta." }); };
 
+  if (step?.id === "brain" && !st.brainIntro) return <BrainIntro onDone={() => save({ ...st, brainIntro: true })} />;
   if (finale) return <Finale dark={dark} onClose={() => { clearMission(cid); onFinish?.(); }} />;
   if (!step) return null;
   const Icon = step.icon;
@@ -184,6 +185,34 @@ const Bar = ({ pct, dark, label }) => <div>
   <div className="flex justify-between text-xs font-black mb-1"><span className={dark ? "text-gray-400" : "text-gray-500"}>{label}</span><span className={pct === 100 ? "text-emerald-500" : "text-orange-500"}>{pct}%</span></div>
   <div className={`h-3 rounded-full overflow-hidden ${dark ? "bg-gray-800" : "bg-gray-100"}`}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg,#10b981,#34d399)" : "linear-gradient(90deg,#f97316,#facc15)", transition: "width .7s cubic-bezier(.2,.8,.2,1)" }} /></div>
 </div>;
+
+// ── Animação do Infla colocando o cérebro (abre o passo do Cérebro) ─────────
+function BrainIntro({ onDone }) {
+  const [ended, setEnded] = useState(false);
+  const v = useRef(null);
+  useEffect(() => {
+    const el = v.current; if (!el) return;
+    el.volume = 0.6;
+    el.play().catch(() => { el.muted = true; el.play().catch(() => setEnded(true)); });
+    const t = setTimeout(() => setEnded(true), 11000); // garantia, caso o vídeo não carregue
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="fixed inset-0 z-[460] flex items-center justify-center p-4" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(76,29,149,.85), rgba(5,3,12,.94) 70%)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full max-w-2xl text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
+        <div className="text-[11px] font-black uppercase tracking-[.22em] text-purple-300">Tutorial na prática · o Cérebro</div>
+        <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Seu pedido acabou de alimentar o Cérebro 🧠</h2>
+        <div className="mt-4 rounded-3xl overflow-hidden shadow-2xl ring-4 ring-purple-500/40" style={{ boxShadow: "0 30px 80px rgba(168,85,247,.35)" }}>
+          <video ref={v} src="/video/infla-cerebro.mp4" poster="/video/infla-cerebro.jpg" playsInline preload="auto" onEnded={() => setEnded(true)} className="w-full block bg-[#ecebe9]" />
+        </div>
+        <p className="mt-4 text-sm sm:text-base text-purple-100/85 font-semibold">Tudo o que você lança — pedidos, equipe, produção e fotos — vira conhecimento. Agora é só perguntar.</p>
+        <button onClick={onDone} disabled={!ended} className={`mt-5 w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-white text-lg transition-all ${ended ? "bg-gradient-to-r from-purple-500 to-fuchsia-600 shadow-xl shadow-purple-500/30 hover:scale-[1.02]" : "bg-white/10 text-white/40"}`}>
+          {ended ? "Fazer uma pergunta ao Cérebro" : "Assistindo…"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ── Animação final: marca Inflatudo + frase + presente de 7 dias ─────────────
 function Finale({ onClose }) {
