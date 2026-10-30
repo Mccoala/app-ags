@@ -17,7 +17,7 @@ export default function InflaStatus({ busy, className = "" }) {
   if (!busy && !idea) return null;
   return (
     <div className={`flex items-end gap-3 text-sm text-fuchsia-300 ${className}`}>
-      <img key={busy ? "d" : idea} src={busy ? "/video/infla-duvida.webp" : `/video/infla-ideia.webp?${idea}`} alt="" className="w-[78px] h-auto flex-shrink-0 drop-shadow-[0_6px_14px_rgba(0,0,0,.35)]" />
+      <img key={busy ? "d" : idea} src={busy ? "/video/infla-duvida.webp" : `/video/infla-ideia.webp?${idea}`} alt="" className="w-[150px] sm:w-[170px] h-auto flex-shrink-0 drop-shadow-[0_6px_14px_rgba(0,0,0,.35)]" />
       <span className="flex items-center gap-2 pb-3 font-semibold">{busy ? <><RefreshCw size={14} className="animate-spin" />{typeof busy === "string" ? busy : "Pensando…"}</> : <span className="text-amber-300">💡 Achei!</span>}</span>
     </div>
   );

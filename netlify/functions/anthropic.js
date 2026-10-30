@@ -42,7 +42,7 @@ export const handler = async function(event, context) {
     // Só responde para quem está logado numa empresa com plano ativo
     let session;
     try { session = verifyToken(tokenFromEvent(event)); } catch (e) { return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: e.message } }) }; }
-    const company = await loadCompany(session.cid, "id, plan_id, status, trial_ends_at, app_data");
+    let company; try { company = await loadCompany(session.cid, "id, plan_id, status, trial_ends_at, app_data"); } catch { return { statusCode: 401, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: "Esta conta não existe mais. Entre de novo.", code: "account_deleted" } }) }; }
     const ec = effective(company); const st = planState({ ...ec, extras: ec.app_data?._srv?.extras, billing: ec.app_data?._srv?.billing });
     const kind = (event.headers["x-ai-kind"] || event.headers["X-AI-Kind"] || "extract").toLowerCase();
     const deny = (m) => ({ statusCode: 403, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: { message: m } }) });
