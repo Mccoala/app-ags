@@ -35,6 +35,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   const cid = user?.company_id;
   const [st, setSt] = useState(() => missionState(cid) || { i: 0, base: (data.orders || []).map(o => o.id) });
   const [mini, setMini] = useState(false);
+  const cardRef = useRef(null);
   const [rect, setRect] = useState(null);
   const [answer, setAnswer] = useState(null); // { q, a }
   const [finale, setFinale] = useState(false);
@@ -156,17 +157,30 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   }
 
   // se o destaque estiver no canto de baixo à direita, o cartão sobe para não tampar
-  const up = rect && typeof window !== "undefined" && window.innerWidth >= 640 && rect.x + rect.w > window.innerWidth - 420 && rect.y + rect.h > window.innerHeight - 470;
+  // Posição do cartão: em cima à esquerda (depois do menu). Se for tampar o destaque,
+  // a mãozinha ou o "Você está aqui", vai para o próximo canto livre.
+  const W = typeof window !== "undefined" ? window.innerWidth : 1200, H = typeof window !== "undefined" ? window.innerHeight : 800;
+  const desk = W >= 640, cw = 380, ch = cardRef.current?.offsetHeight || 330;
+  let pos = null;
+  if (desk) {
+    const L = Math.max(16, nav ? nav.x + nav.w + 16 : 16);
+    const obst = [rect, tap && { x: tap.x - 40, y: tap.y - 60, w: Math.max(tap.w, 240) + 80, h: tap.h + 110 }].filter(Boolean);
+    const cand = [{ left: L, top: 16 }, { left: L, top: H - ch - 16 }, { left: W - cw - 16, top: 16 }, { left: W - cw - 16, top: H - ch - 96 }];
+    const hit = (c) => obst.reduce((a, o) => { const ix = Math.max(0, Math.min(c.left + cw, o.x + o.w) - Math.max(c.left, o.x)), iy = Math.max(0, Math.min(c.top + ch, o.y + o.h) - Math.max(c.top, o.y)); return a + ix * iy; }, 0);
+    pos = cand.find(c => hit(c) === 0) || cand.reduce((b, c) => (hit(c) < hit(b) ? c : b));
+  }
+  // a etiqueta "Você está aqui" só aparece se não ficar embaixo do cartão
+  const navLabelOk = !(pos && nav && nav.x + nav.w + 260 > pos.left && nav.y < pos.top + ch && nav.y + nav.h > pos.top);
   const card = dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white text-gray-900 border border-gray-200";
   return <>
-    {!mini && <Spotlight rects={rect ? [rect] : []} nav={nav} label={`passo ${st.i + 1} de ${steps.length}`} />}
+    {!mini && <Spotlight rects={rect ? [rect] : []} nav={nav} label={navLabelOk ? `passo ${st.i + 1} de ${steps.length}` : null} />}
     {tap && <Tap t={tap} />}
     {mini ? (
-      <button onClick={() => setMini(false)} className="fixed z-[45] bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:bottom-24 sm:translate-x-0 flex items-center gap-2 px-4 py-2.5 rounded-full font-black text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30">
+      <button onClick={() => setMini(false)} style={pos ? { left: pos.left, top: pos.top } : undefined} className={`fixed z-[45] ${pos ? "" : "bottom-4 left-1/2 -translate-x-1/2"} flex items-center gap-2 px-4 py-2.5 rounded-full font-black text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30`}>
         <Sparkles size={16} />Tutorial · {st.i + 1}/{steps.length}<Maximize2 size={14} />
       </button>
     ) : (
-      <div className={`fixed z-[45] bottom-3 left-3 right-3 sm:left-auto sm:right-4 ${up ? "sm:bottom-auto sm:top-20" : "sm:bottom-24"} sm:w-[380px] rounded-2xl shadow-2xl p-4 ${card}`} style={{ animation: "bi-inflate .5s cubic-bezier(.34,1.56,.64,1) both" }}>
+      <div ref={cardRef} className={`fixed z-[45] rounded-2xl shadow-2xl p-4 ${pos ? "" : "bottom-3 left-3 right-3"} ${card}`} style={{ ...(pos ? { left: pos.left, top: pos.top, width: cw, transition: "left .45s cubic-bezier(.2,.8,.2,1), top .45s cubic-bezier(.2,.8,.2,1)" } : {}), animation: "bi-inflate .5s cubic-bezier(.34,1.56,.64,1) both" }}>
         <div className="flex items-start gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 text-white" : "bg-orange-500/15 text-orange-500"}`}>{done ? <Check size={20} /> : <Icon size={20} />}</div>
           <div className="flex-1 min-w-0">
