@@ -714,6 +714,9 @@ function OrdersTab({ data, setData, dark, user }) {
   const [extracted, setExtracted] = useState(null); const [extHeader, setExtHeader] = useState({}); const
     [extItems, setExtItems] = useState([]); const [extImages, setExtImages] = useState({});
   const [search, setSearch] = useState(""); const [showForm, setShowForm] = useState(false);
+  // Tutorial: o pedido novo só salva com pelo menos 1 foto (botão fica cinza até lá)
+  const [orderTour, setOrderTour] = useState(() => !!window.__INFLA_ORDER_TOUR);
+  useEffect(() => { const f = () => setOrderTour(!!window.__INFLA_ORDER_TOUR); window.addEventListener('infla-tour', f); return () => window.removeEventListener('infla-tour', f); }, []);
   const
     [manualItems, setManualItems] = useState([{ toy: "", colors: "", price: "", observations: "", images: [], isMotor: false }]);
   const [manualHeader, setManualHeader] = useState({ clientName: "", voltage: "110V", deadline: "", seller: "" });
@@ -1090,8 +1093,8 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
             ))}
           </div>
           <div className="flex gap-3 mt-4">
-            <button onClick={addManual} className="px-4 py-2 rounded-xl text-sm font-bold text-white"
-              style={{ background: "linear-gradient(135deg,#f97316,#eab308)" }}>Salvar Pedido</button>
+            {(() => { const lock = orderTour && !manualItems.some(it => (it.images || []).length); return <button onClick={addManual} disabled={lock} title={lock ? "Coloque pelo menos 1 foto para salvar" : ""} className={`px-4 py-2 rounded-xl text-sm font-bold ${lock ? "bg-gray-600 text-gray-300 cursor-not-allowed opacity-60" : "text-white"}`}
+              style={lock ? undefined : { background: "linear-gradient(135deg,#f97316,#eab308)" }}>{lock ? "📷 Coloque uma foto para salvar" : "Salvar Pedido"}</button>; })()}
             <button onClick={() => setShowForm(false)} className={`px-4 py-2 rounded-xl text-sm font-bold
                                 ${dark ? "bg-gray-800 text-gray-300" : "bg-gray-100 text-gray-700"}`}>
               <X size={14} /> Cancelar
@@ -1173,7 +1176,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
                 ))}
               </div>
               <div className="flex gap-3">
-                <button onClick={saveExt} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}><Check size={14} />Confirmar e Salvar</button>
+                {(() => { const lock = orderTour && !extItems.some(it => (it.images || []).length); return <button onClick={saveExt} disabled={lock} title={lock ? "Coloque pelo menos 1 foto para salvar" : ""} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${lock ? "bg-gray-600 text-gray-300 cursor-not-allowed opacity-60" : "text-white"}`} style={lock ? undefined : { background: "linear-gradient(135deg,#22c55e,#16a34a)" }}>{lock ? "📷 Coloque uma foto para salvar" : <><Check size={14} />Confirmar e Salvar</>}</button>; })()}
                 <button onClick={() => { setExtracted(null); setExtItems([]); setExtHeader({}) }} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold ${dark ? "bg-gray-700 text-gray-300" : "bg-gray-200 text-gray-700"}`}><X size={14} />Cancelar</button>
               </div>
             </div>

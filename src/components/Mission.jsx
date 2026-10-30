@@ -77,7 +77,10 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     if (!!window.__INFLA_TEAM_TOUR !== on) { window.__INFLA_TEAM_TOUR = on; window.dispatchEvent(new Event("infla-tour")); }
   }, [step?.id, done, finale]);
   // passo do pedido: só deixa salvar o pedido novo com pelo menos 1 foto
-  useEffect(() => { window.__INFLA_ORDER_TOUR = step?.id === "order" && !finale; return () => { window.__INFLA_ORDER_TOUR = false; }; }, [step?.id, finale]);
+  useEffect(() => {
+    window.__INFLA_ORDER_TOUR = step?.id === "order" && !finale; window.dispatchEvent(new Event("infla-tour"));
+    return () => { window.__INFLA_ORDER_TOUR = false; window.dispatchEvent(new Event("infla-tour")); };
+  }, [step?.id, finale]);
   useEffect(() => () => { window.__INFLA_TEAM_TOUR = false; window.dispatchEvent(new Event("infla-tour")); }, []);
   // leva para a aba do passo (e não deixa sair dela enquanto não terminar)
   useEffect(() => { if (!finale && step?.tab && tab !== step.tab) setTab(step.tab); }, [step?.id, tab, finale]); // eslint-disable-line
@@ -89,7 +92,8 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     if (mini) { setRect(null); setNav(null); return; }
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
     const m = () => {
-      setNav(step?.tab ? box(document.querySelector(`[data-tour="nav-${step.tab}"]`)) : null);
+      const nb = step?.tab ? box(document.querySelector(`[data-tour="nav-${step.tab}"]`)) : null;
+      setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
       setRect(!step?.target || done ? null : box([].concat(step.target).map(q => document.querySelector(q)).find(Boolean)));
     };
     m(); const t = setInterval(m, 400); return () => clearInterval(t);
@@ -106,7 +110,8 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
         const form = q('[data-tour="order-form"]');
         if (!form) return setTap(null);
         const has = form.querySelector('img');
-        return setTap(has ? null : box(form.querySelector('[data-tour="add-photo"]'), "Coloque uma foto aqui"));
+        const b = has ? null : box(form.querySelector('[data-tour="add-photo"]'), null);
+        return setTap(b ? { ...b, ring: true } : null);
       }
       if (step.id === "production") {
         const card = q('[data-tour="prod-first"]');
@@ -239,6 +244,9 @@ function Spotlight({ rects = [], nav, label }) {
 
 // Mãozinha tocando + ondas saindo do ponto onde clicar
 function Tap({ t }) {
+  if (t.ring) return <div className="infla-ring" style={{ position: "fixed", zIndex: 45, pointerEvents: "none", left: t.x - 7, top: t.y - 7, width: t.w + 14, height: t.h + 14, borderRadius: 14 }}>
+    <style>{`.infla-ring{border:3px solid #fb923c;box-shadow:0 0 0 0 rgba(251,146,60,.7);animation:infla-ring 1.3s ease-out infinite}@keyframes infla-ring{0%{box-shadow:0 0 0 0 rgba(251,146,60,.75)}100%{box-shadow:0 0 0 18px rgba(251,146,60,0)}}`}</style>
+  </div>;
   const cx = t.x + Math.min(t.w / 2, 60), cy = t.y + t.h / 2;
   const below = cy < 140;
   return <div style={{ position: "fixed", zIndex: 45, left: 0, top: 0, pointerEvents: "none" }}>
