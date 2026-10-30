@@ -845,6 +845,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
     const rawNum = cleanOrderNumber(extHeader.orderNumber);
     if (rawNum && data.orders.some(o => orderNumber(o.id) === orderNumber(rawNum))) { alert(`Já existe um pedido nº ${orderNumber(rawNum)}. Altere o número antes de salvar.`); return; }
     if (!extHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
+    if (window.__INFLA_ORDER_TOUR && !extItems.some(it => (it.images || []).length)) { alert("Tutorial: coloque pelo menos 1 foto no pedido (do brinquedo ou da logo do cliente) antes de salvar. Toque em \"Add\" embaixo de um brinquedo."); return; }
     let nd = { ...data, orders: [...data.orders], production: [...data.production] }; const newId = rawNum || nextOrderId(nd.orders);
     if (extHeader.seller?.trim()) nd = addSeller(nd, extHeader.seller).data;
     const items = extItems.map((it, i) => ({
@@ -873,6 +874,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
   const addManual = () => {
     if (!manualHeader.clientName?.trim()) { alert("Informe o cliente."); return; }
     if (!manualItems.some(it => it.toy?.trim())) { alert("Informe ao menos um item."); return; }
+    if (window.__INFLA_ORDER_TOUR && !manualItems.some(it => (it.images || []).length)) { alert("Tutorial: coloque pelo menos 1 foto no pedido (do brinquedo ou da logo do cliente) antes de salvar. Toque em \"Add\" embaixo de um brinquedo."); return; }
     let nd = { ...data }; const newId = nextOrderId(nd.orders);
     if (manualHeader.seller?.trim()) nd = addSeller(nd, manualHeader.seller).data;
     const
@@ -1077,7 +1079,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
                           <button onClick={() => remManImg(idx, imgIdx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"><X size={12} /></button>
                         </div>
                       ))}
-                      <label className={`flex flex-col items-center justify-center w-16 h-16 cursor-pointer rounded-lg border-2 border-dashed ${dark ? "border-gray-600 text-gray-400 hover:border-orange-500" : "border-gray-300 text-gray-500 hover:border-orange-400"}`}>
+                      <label data-tour="add-photo" className={`flex flex-col items-center justify-center w-16 h-16 cursor-pointer rounded-lg border-2 border-dashed ${dark ? "border-gray-600 text-gray-400 hover:border-orange-500" : "border-gray-300 text-gray-500 hover:border-orange-400"}`}>
                         <Plus size={16} /><span className="text-[10px] font-bold mt-1">Add</span>
                         <input type="file" accept="image/*" className="hidden" onChange={e => hManImg(idx, e)} />
                       </label>
@@ -1160,7 +1162,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
                               <button onClick={() => remExtImg(idx, imgIdx)} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"><X size={10} /></button>
                             </div>
                           ))}
-                          <label className={`flex flex-col items-center justify-center w-14 h-14 cursor-pointer rounded-lg border-2 border-dashed ${dark ? "border-gray-600 text-gray-400 hover:border-orange-500" : "border-gray-300 text-gray-500 hover:border-orange-400"}`}>
+                          <label data-tour="add-photo" className={`flex flex-col items-center justify-center w-14 h-14 cursor-pointer rounded-lg border-2 border-dashed ${dark ? "border-gray-600 text-gray-400 hover:border-orange-500" : "border-gray-300 text-gray-500 hover:border-orange-400"}`}>
                             <Plus size={14} /><span className="text-[9px] font-bold mt-1">Add</span>
                             <input type="file" accept="image/*" className="hidden" onChange={e => hExtImg(idx, e)} />
                           </label>

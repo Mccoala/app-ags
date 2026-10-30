@@ -76,6 +76,8 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     const on = step?.id === "team" && !done && !finale;
     if (!!window.__INFLA_TEAM_TOUR !== on) { window.__INFLA_TEAM_TOUR = on; window.dispatchEvent(new Event("infla-tour")); }
   }, [step?.id, done, finale]);
+  // passo do pedido: só deixa salvar o pedido novo com pelo menos 1 foto
+  useEffect(() => { window.__INFLA_ORDER_TOUR = step?.id === "order" && !finale; return () => { window.__INFLA_ORDER_TOUR = false; }; }, [step?.id, finale]);
   useEffect(() => () => { window.__INFLA_TEAM_TOUR = false; window.dispatchEvent(new Event("infla-tour")); }, []);
   // leva para a aba do passo (e não deixa sair dela enquanto não terminar)
   useEffect(() => { if (!finale && step?.tab && tab !== step.tab) setTab(step.tab); }, [step?.id, tab, finale]); // eslint-disable-line
@@ -96,10 +98,16 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   // "toque aqui": mãozinha com ondas no próximo clique dentro do passo
   const [tap, setTap] = useState(null);
   useEffect(() => {
-    if (mini || done || !["production", "finalization"].includes(step?.id)) { setTap(null); return; }
+    if (mini || done || !["order", "production", "finalization"].includes(step?.id)) { setTap(null); return; }
     const q = (sel) => document.querySelector(sel);
     const box = (el, label) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width ? { x: r.left, y: r.top, w: r.width, h: r.height, label } : null; };
     const m = () => {
+      if (step.id === "order") {
+        const form = q('[data-tour="order-form"]');
+        if (!form) return setTap(null);
+        const has = form.querySelector('img');
+        return setTap(has ? null : box(form.querySelector('[data-tour="add-photo"]'), "Coloque uma foto aqui"));
+      }
       if (step.id === "production") {
         const card = q('[data-tour="prod-first"]');
         if (!q('[data-tour="prod-first"] [data-card-open]')) return setTap(box(card, "Toque no pedido para abrir"));
