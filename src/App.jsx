@@ -83,6 +83,8 @@ import { scaleLinear } from "d3-scale";
 import logoMark from "./assets/logo-mark.svg";
 import { BrandMark, BrandWord, BrandFull, BRAND_CSS } from "./components/Brand";
 import Copyright from "./components/Copyright";
+import { CompanyMark, CompanyWord, BrandEditor, BrandSetupModal, cacheBrand, cachedBrand, hasBrand } from "./components/CompanyBrand";
+import Mission, { missionState, startMission, clearMission } from "./components/Mission";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 // Mapa do Brasil salvo dentro do próprio site (antes vinha do GitHub e às vezes não carregava)
@@ -1625,7 +1627,7 @@ function ProductionTab({ data, setData, dark, user }) {
           </div>
         )}
         {filteredRows.map((row, i) => (
-          <ProdCard key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} workers={workers} onAssign={assign} onTogglePriority={togglePriority} canEdit={canEdit} setLightbox={setLightbox} open={openId === row._itemId} onToggle={() => setOpenId(openId === row._itemId ? null : row._itemId)} />
+          <div key={`${row._itemId}-${i}`} data-tour={row._orderId === data.orders[data.orders.length - 1]?.id ? 'prod-first' : undefined}><ProdCard row={row} data={data} dark={dark} workers={workers} onAssign={assign} onTogglePriority={togglePriority} canEdit={canEdit} setLightbox={setLightbox} open={openId === row._itemId} onToggle={() => setOpenId(openId === row._itemId ? null : row._itemId)} /></div>
         ))}
         {filteredRows.length === 0 && <div className={`text-center py-16 ${dark ? "text-gray-500" : "text-gray-400"}`}><Factory size={36} className="mx-auto mb-3 opacity-30" /><p className="text-sm font-medium">{search ? `Nada encontrado para "${search}"` : "Nenhum item nesta categoria"}</p></div>}
       </div>
@@ -1738,9 +1740,9 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
           const toggle = () => setOpenId(isOpen ? null : row._itemId);
           if (!isOpen) {
             const fz = finalizersOf(row), np = photoCount(row._itemId);
-            return <CompactRow key={`${row._itemId}-${i}`} row={row} data={data} dark={dark} pct={pct} color={color} onOpen={toggle}
+            return <div key={`${row._itemId}-${i}`} data-tour={row.stage !== "finalizado" ? "fin-row" : undefined}><CompactRow row={row} data={data} dark={dark} pct={pct} color={color} onOpen={toggle}
               steps={<span className={`text-[11px] font-black px-1.5 py-0.5 rounded-md ${pct === 100 ? "bg-emerald-500/15 text-emerald-500" : pct === 50 ? "bg-yellow-500/15 text-yellow-500" : dark ? "bg-gray-800 text-gray-400" : "bg-gray-100 text-gray-500"}`}>{pct === 100 ? "Finalizado" : pct === 50 ? "Finalizando" : "Pendente"}</span>}
-              extra={<>{fz.length > 0 && <span className={`text-[11px] font-bold truncate max-w-[120px] ${dark ? "text-gray-400" : "text-gray-500"}`}>👤 {fz.join(", ")}</span>}{np > 0 && <span className={`text-[11px] font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>📷 {np}</span>}</>} />;
+              extra={<>{fz.length > 0 && <span className={`text-[11px] font-bold truncate max-w-[120px] ${dark ? "text-gray-400" : "text-gray-500"}`}>👤 {fz.join(", ")}</span>}{np > 0 && <span className={`text-[11px] font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>📷 {np}</span>}</>} /></div>;
           }
           return (
             <div data-card-open key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
@@ -1773,12 +1775,19 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
                     {row.done && canEdit && <button onClick={() => setCapture({ row, mode: "adicionar" })} title="Adicionar mais fotos" className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border border-emerald-500/50 text-emerald-500 hover:bg-emerald-500/10`}><Plus size={14} /><CameraIcon size={15} /></button>}
                   </div>
                 )}
-                <div className={`grid grid-cols-2 lg:flex w-full lg:w-auto rounded-xl p-1 gap-1 ${dark ? "bg-gray-950 border border-gray-800" : "bg-white border border-gray-200"}`}>
-                  {[["finalizando", "Finalizando · 50%", "#eab308"], ["finalizado", "Finalizado · 100%", "#10b981"]].map(([st, label, c]) => {
-                    const on = row.stage === st;
-                    const blocked = !canEdit || !finalizersOf(row).length;
-                    return <button key={st} disabled={blocked} title={!finalizersOf(row).length ? "Marque o finalizador primeiro" : ""} onClick={() => setStage(row, st)} className={`px-2 sm:px-4 py-2.5 lg:py-2 rounded-lg text-[13px] sm:text-sm font-black transition-all whitespace-nowrap ${blocked ? "opacity-40 cursor-not-allowed" : ""}`} style={on ? { background: c, color: "#fff", boxShadow: `0 6px 20px ${c}55` } : { color: dark ? "#9ca3af" : "#6b7280" }}>{on && "✓ "}{label}</button>;
-                  })}
+                <div className="w-full lg:w-auto flex flex-col items-stretch lg:items-end gap-1">
+                  {row.stage === "finalizado" ? (
+                    <div className="flex items-center justify-between lg:justify-end gap-3">
+                      <span className="flex items-center gap-2 px-5 py-3 rounded-xl font-black text-emerald-500 bg-emerald-500/15 border-2 border-emerald-500/40"><DoneIcon size={20} />Finalizado</span>
+                      {canEdit && <button onClick={() => update(row._itemId, { stage: "finalizando", done: false, finDate: null })} className={`text-xs font-bold underline ${dark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-700"}`}>desfazer</button>}
+                    </div>
+                  ) : (() => {
+                    const noFin = !finalizersOf(row).length;
+                    return <button data-tour="fin-btn" disabled={!canEdit || noFin} onClick={() => setStage(row, "finalizado")}
+                      className={`w-full lg:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl font-black text-base transition-all ${!canEdit || noFin ? (dark ? "bg-gray-800 text-gray-500 border-2 border-dashed border-gray-700 cursor-not-allowed" : "bg-gray-100 text-gray-400 border-2 border-dashed border-gray-300 cursor-not-allowed") : "text-white bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg shadow-emerald-500/35 hover:scale-[1.03] hover:shadow-xl active:scale-95 ring-2 ring-emerald-400/40 ring-offset-2 " + (dark ? "ring-offset-gray-900" : "ring-offset-white")}`}>
+                      {noFin ? <>👆 Marque quem está finalizando</> : <><CameraIcon size={21} />Concluir finalização{hasFeature("photos") && <span className="text-xs font-bold opacity-85 bg-white/20 px-2 py-0.5 rounded-full">+ foto</span>}</>}
+                    </button>;
+                  })()}
                 </div>
               </div>
               <div className="h-1.5" style={{ background: dark ? "#1f2937" : "#e5e7eb" }}><div className="h-full" style={{ width: `${pct}%`, background: color, transition: "width .6s cubic-bezier(.2,.8,.2,1)" }} /></div>
@@ -2124,6 +2133,12 @@ function TeamTab({ data, setData, dark, user }) {
           <p className='text-sm text-slate-500 mt-1 font-medium'>Controle de colaboradores, logins e vendedores</p>
         </div>
       </div>
+      {user?.role === "admin" && (
+        <div className={`p-5 rounded-2xl border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+          <div className='mb-4'><h3 className='font-black text-lg'>Marca da sua fábrica</h3><p className='text-sm text-slate-500'>O nome e a logo aparecem no menu e na abertura do app para você e para toda a equipe.</p></div>
+          <BrandEditor compact dark={dark} brand={data.brand} cta="Salvar marca" onSave={(b) => { const nd = { ...data, brand: b }; setData(nd); saveData(nd); cacheBrand(CURRENT_COMPANY_ID, b); }} />
+        </div>
+      )}
 
       <div className={`grid grid-cols-3 sm:flex gap-1 sm:gap-2 p-1 rounded-xl w-full sm:w-fit ${dark ? 'bg-gray-900 border border-gray-800' : 'bg-black/5'}`}>
         {[{id:'members', label:'Colaboradores', icon:<Users size={14}/>}, {id:'logins', label:'Logins', icon:<Shield size={14}/>}, {id:'sellers', label:'Vendedores', icon:<UserPlus size={14}/>}].map(t => (
@@ -2149,7 +2164,7 @@ function TeamTab({ data, setData, dark, user }) {
             </div>
           )}
           {/* colunas por setor, compactas */}
-          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-start'>
+          <div data-tour='team-cols' className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-start'>
             {[['Corte', '#f97316'], ['Costura', '#ec4899'], ['Preparação', '#eab308'], ['Montagem', '#3b82f6'], ['Finalizador', '#10b981']].map(([role, col]) => {
               const list = (data.team || []).filter(m => (m.role || 'Corte') === role).sort((a, b) => (a.status !== 'ativo') - (b.status !== 'ativo') || String(a.name).localeCompare(String(b.name)));
               return (
@@ -2438,7 +2453,7 @@ function tourSteps(tabs, isMobile, plan) {
   return S;
 }
 
-function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout, onTour, lockAnim }) {
+function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user, isAdmin, onPlans, onLogout, onTour, lockAnim, brand }) {
   const touch = useRef(null);
   const go = (k) => { onGo(k); setOpen(false); };
   return (
@@ -2450,8 +2465,8 @@ function MobileDrawer({ open, setOpen, tabs, current, onGo, dark, setDark, user,
         className={`absolute top-0 bottom-0 left-0 w-[80%] max-w-[300px] flex flex-col shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"} ${dark ? "bg-gray-900 border-r border-gray-800" : "bg-white border-r border-gray-200"}`}
         style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-          <BrandMark size={40} />
-          <div className="min-w-0 flex-1"><BrandWord height={21} /><div className="text-[11px] text-gray-500 font-semibold truncate">{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ""}</div></div>
+          <CompanyMark brand={brand} size={40} />
+          <div className="min-w-0 flex-1"><CompanyWord brand={brand} height={21} /><div className="text-[11px] text-gray-500 font-semibold truncate">{brand?.name ? (isAdmin ? "via Inflatudo" : "") : (user.company_name || user.name)}{!isAdmin ? ` · ${user.name}` : ""}</div></div>
           <button onClick={() => setOpen(false)} title="Fechar menu" className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}><ChevronLeft size={18} /></button>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
@@ -2533,10 +2548,15 @@ function MainApp() {
   const tourKey = user?.company_id ? `inflatudo_tour_${user.company_id}` : null;
   useEffect(() => {
     if (!tourKey || loadingServer || user?.role !== "admin") return;
-    try { if (localStorage.getItem(tourKey) === "pending") setTour("welcome"); } catch { }
+    try { if (localStorage.getItem(tourKey) === "pending" && !missionState(user.company_id)) setTour("welcome"); } catch { }
   }, [tourKey, loadingServer]); // eslint-disable-line
   const [lockAnim, setLockAnim] = useState(null);
   const endTour = () => { TOUR_OPEN = false; setTour(null); setLockAnim(Date.now()); try { tourKey && localStorage.setItem(tourKey, "done"); } catch { } };
+  // Tutorial na prática (continua de onde parou se a pessoa recarregar a página)
+  const [mission, setMission] = useState(false);
+  useEffect(() => { if (!loadingServer && user?.role === "admin" && missionState(user.company_id)) setMission(true); }, [loadingServer, user?.company_id]); // eslint-disable-line
+  useEffect(() => { if (!loadingServer && user?.company_id && data.brand) cacheBrand(user.company_id, data.brand); }, [data.brand, loadingServer]); // eslint-disable-line
+  const runTutorial = () => { if (!hasBrand(data.brand)) { setTour("welcome"); return; } startMission(user.company_id, data); setMission(true); };
   const [photoFocus, setPhotoFocus] = useState(null);
   const openPhotos = (pedido) => { setPhotoFocus(String(pedido)); setTab("photos"); };
   // Avisos e fotos chegam de outros aparelhos: confere a cada 15 s (só esses dois campos)
@@ -2611,17 +2631,18 @@ function MainApp() {
 
   if (!user) return <LoginScreen onLogin={login} dark={dark} />;
   if (suspended && user.role !== "admin") return <SuspendedScreen message={suspended} onLogout={logout} />;
-  if (loadingServer) return <div className='flex flex-col items-center justify-center gap-4 h-screen bg-gray-950 text-white'><BrandMark size={76} animate="pulse" /><BrandWord height={22} /></div>;
+  if (loadingServer) { const cb = cachedBrand(user.company_id); return <div className='flex flex-col items-center justify-center gap-4 h-screen bg-gray-950 text-white'><CompanyMark brand={cb} size={76} animate="pulse" /><CompanyWord brand={cb} height={22} /></div>; }
   // Teste grátis acabou (ou plano vencido): o app fica travado e mostra só os planos
   if (user.role === "admin" && plan?.locked && !plan?.creator) return (
     <div className='h-screen bg-gray-950 text-white flex flex-col items-center justify-start pt-6'>
-      <div className='flex items-center gap-2 opacity-90'><BrandMark size={34} animate="breathe" /><BrandWord height={18} animate={false} /></div>
+      <div className='flex items-center gap-2 opacity-90'><CompanyMark brand={data.brand} size={34} animate="breathe" /><CompanyWord brand={data.brand} height={18} animate={false} /></div>
       <PlansModal forced plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.email} dark={dark} isAdmin onClose={() => { }} onLogout={logout} />
       <button onClick={() => window.location.reload()} className='fixed bottom-4 left-4 z-[210] px-4 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white backdrop-blur'>Já paguei — atualizar</button>
     </div>
   );
 
-  TOUR_OPEN = tour === "run";
+  TOUR_OPEN = tour === "run" || mission;
+  const brand = hasBrand(data.brand) ? data.brand : null;
   const tabs = allowedTabs(user);
   const lockedOrder = Object.keys(TAB_META).filter(k => tabs.includes(k) && featureLocked(k));
   const currentTab = tabs.includes(tab) ? tab : (tabs[0] || 'orders');
@@ -2652,8 +2673,8 @@ function MainApp() {
       {/* SIDEBAR */}
       {!isMobile && <aside className={`flex-shrink-0 flex flex-col transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-16 md:w-20'} ${dark ? 'bg-gray-900 border-r border-gray-800' : 'bg-white border-r border-gray-200'}`}>
         <div className={`${sidebarOpen ? 'px-4 pt-5 pb-3' : 'px-2 pt-4 pb-2 flex-col'} flex items-center gap-3 overflow-hidden`}>
-          <BrandMark size={40} />
-          {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='leading-none'><BrandWord height={21} /></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{user.company_name || user.name}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
+          <CompanyMark brand={brand} size={40} />
+          {sidebarOpen && <div className='min-w-0 flex-1'><h1 className='leading-none'><CompanyWord brand={brand} height={21} /></h1><p className='text-[11px] text-gray-500 font-semibold truncate'>{brand ? (isAdmin ? 'via Inflatudo' : '') : (user.company_name || user.name)}{!isAdmin ? ` · ${user.name}` : ''}</p></div>}
           <button onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? 'Recolher menu' : 'Abrir menu'} className={`p-2 rounded-xl border flex-shrink-0 ${dark ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600'}`}>
             {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
@@ -2682,7 +2703,7 @@ function MainApp() {
             <button onClick={() => setDark(!dark)} className={`p-2.5 rounded-xl border transition-all ${dark ? 'border-gray-700 bg-gray-800 text-yellow-400' : 'border-gray-200 bg-gray-100 text-blue-600'}`}>
               {dark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            {isAdmin && <button onClick={() => setTour("run")} title='Ver tutorial' className='p-2.5 text-gray-500 hover:text-orange-500 transition-colors flex items-center gap-2'><TourIcon size={20} />{sidebarOpen && <span className='text-xs font-bold'>Tutorial</span>}</button>}
+            {isAdmin && <button onClick={runTutorial} title='Ver tutorial' className='p-2.5 text-gray-500 hover:text-orange-500 transition-colors flex items-center gap-2'><TourIcon size={20} />{sidebarOpen && <span className='text-xs font-bold'>Tutorial</span>}</button>}
             <button onClick={logout} title='Sair' className='p-2.5 text-gray-500 hover:text-red-500 transition-colors flex items-center gap-2'><LogOut size={20} />{sidebarOpen && <span className='text-xs font-bold'>Sair</span>}</button>
           </div>
         </div>
@@ -2695,8 +2716,8 @@ function MainApp() {
         {isMobile && (
           <header className={`flex-shrink-0 flex items-center gap-2.5 px-3 border-b ${dark ? 'bg-gray-950 border-gray-800' : 'bg-white border-gray-200'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)', height: 'calc(52px + env(safe-area-inset-top, 0px))' }}>
             <button data-drawer-open onClick={() => setDrawer(true)} title='Abrir menu' className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${dark ? 'border-gray-700 text-gray-200 bg-gray-900' : 'border-gray-200 text-gray-700 bg-white'}`}><ChevronRight size={20} /></button>
-            <BrandMark size={32} />
-            <div className='min-w-0 flex-1 flex items-center gap-1.5 truncate'><BrandWord height={16} animate={false} /><span className={`text-sm font-bold truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
+            <CompanyMark brand={brand} size={32} />
+            <div className='min-w-0 flex-1 flex items-center gap-1.5 truncate'><CompanyWord brand={brand} height={16} animate={false} className='max-w-[45%]' /><span className={`text-sm font-bold truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>· {TAB_META[currentTab]?.label}</span></div>
           </header>
         )}
         <div data-main-scroll className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 ${isMobile ? 'mobile-content-pad' : ''}`}
@@ -2706,12 +2727,12 @@ function MainApp() {
             : ActiveTab ? <TabBoundary key={currentTab}><ActiveTab plan={plan} onPlans={() => setShowPlans(true)} data={tabData} setData={setData} persist={persist} dark={dark} user={user} goTo={(t) => tabs.includes(t) && setTab(t)} openPhotos={tabs.includes('photos') ? openPhotos : null} canEditPhotos={permLevel(user, 'photos') === 'edit'} canEditReady={!user.sellerName && canEdit(user, 'ready')} canSellReady={!user.sellerName && canEdit(user, 'orders')} focus={photoFocus} clearFocus={() => setPhotoFocus(null)} /></TabBoundary> : <div className='text-center py-20 text-gray-500'>Seu usuário ainda não tem acesso a nenhuma aba. Peça ao administrador.</div>}
         </div>
 
-        {tour === "welcome" && <TourWelcome dark={dark} name={user.company_name} onStart={() => setTour("run")} onSkip={endTour} />}
-        {tour === "run" && <Tour dark={dark} steps={tourSteps(tabs, isMobile, plan)} onGo={(t) => { if (tabs.includes(t)) setTab(t); }} onClose={endTour} />}
+        {tour === "welcome" && isAdmin && <BrandSetupModal dark={dark} brand={data.brand} companyName={user.company_name} onSave={(b) => { const nd = { ...data, brand: b }; persist(nd); cacheBrand(user.company_id, b); startMission(user.company_id, nd); setTour(null); setMission(true); }} />}
+        {mission && isAdmin && <Mission data={data} dark={dark} tab={currentTab} setTab={(t) => tabs.includes(t) && setTab(t)} user={user} persist={persist} openPhotos={openPhotos} tabs={tabs} onFinish={() => { setMission(false); endTour(); }} />}
         {showPlans && <PlansModal plan={plan} companyName={user.company_name || user.name} companyId={user.company_id} email={user.role === "admin" ? user.email : undefined} dark={dark} isAdmin={isAdmin} onClose={() => setShowPlans(false)} />}
         {limitHit && <LimitModal hit={limitHit} dark={dark} isAdmin={isAdmin} onClose={() => setLimitHit(null)} onPlans={() => setShowPlans(true)} />}
       </main>
-      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={() => setTour("run")} lockAnim={lockAnim} />}
+      {isMobile && <MobileDrawer open={drawer} setOpen={setDrawer} tabs={tabs} current={currentTab} onGo={setTab} dark={dark} setDark={setDark} user={user} isAdmin={isAdmin} onPlans={() => setShowPlans(true)} onLogout={logout} onTour={runTutorial} lockAnim={lockAnim} brand={brand} />}
       {hasFeature("brain") && <FloatingBrain data={data} user={user} persist={persist} dark={dark} companyId={user.company_id} openPhotos={tabs.includes('photos') ? openPhotos : null} />}
     </div>
   );

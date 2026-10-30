@@ -117,7 +117,7 @@ export default function DashboardTab({ data, dark, goTo, persist, setData, user 
         <p className="text-sm text-slate-500 mt-1 font-medium">Vendas, produção e equipe num lugar só</p>
       </div>
 
-      {isDesktop && <div className="hidden md:block"><BrainAI data={data} dark={dark} user={user} persist={persist || ((nd) => setData && setData(nd))} canWrite={user?.role === "admin" || user?.permissions?.dashboard === "edit" || (Array.isArray(user?.permissions) && user.permissions.includes("dashboard"))} /></div>}
+      {isDesktop && <div data-tour="brain" className="hidden md:block"><BrainAI data={data} dark={dark} user={user} persist={persist || ((nd) => setData && setData(nd))} canWrite={user?.role === "admin" || user?.permissions?.dashboard === "edit" || (Array.isArray(user?.permissions) && user.permissions.includes("dashboard"))} /></div>}
 
       <PeriodBar value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} range={range} dark={dark} />
 
