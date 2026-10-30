@@ -1,4 +1,5 @@
 import InflaStatus from "./InflaStatus";
+import { QUESTIONS as TOUR_QUESTIONS } from "./Mission";
 import React, { useEffect, useRef, useState } from "react";
 import ChatBox from "./ChatBox";
 import { Brain, Send, Sparkles, RefreshCw, Trash2, X, Search, Wand2, Mic } from "lucide-react";
@@ -56,6 +57,10 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   });
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy]);
   const ask = (q, opts) => { const t = (q ?? input); setInput(""); return agentAsk(t, opts); };
+  // Tutorial: as 3 perguntas aparecem aqui no chat; a resposta avisa o tutorial
+  const [tour, setTour] = useState(() => !!window.__INFLA_BRAIN_TOUR);
+  useEffect(() => { const f = () => setTour(!!window.__INFLA_BRAIN_TOUR); window.addEventListener("infla-tour", f); return () => window.removeEventListener("infla-tour", f); }, []);
+  const tourAsk = async (q) => { setSide("chat"); const a = await ask(q); window.dispatchEvent(new CustomEvent("infla-brain-answer", { detail: { q, a } })); };
   const [voiceOn, setVoiceOn] = useState(false);
   const canVoice = useVoiceAvailable(); // só aparece com a voz natural ligada
 
@@ -92,7 +97,6 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
             <div key={l} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${dark ? "bg-white/5 text-slate-300" : "bg-white text-slate-600 border border-slate-200"}`}><span className="font-black tabular-nums" style={{ color: c }}>{v}</span> {l}</div>
           ))}
           </div>
-          {canWrite && <button onClick={autoInsights} disabled={!!busy} className="w-full md:w-auto justify-center px-3 py-2 md:py-1.5 rounded-xl text-sm md:text-xs font-black text-white flex items-center gap-1.5 disabled:opacity-50" style={{ background: "linear-gradient(135deg,#a855f7,#ec4899)" }}><Wand2 size={14} />Gerar insights</button>}
           <div className={`hidden md:flex rounded-lg overflow-hidden text-[11px] font-black ${dark ? "bg-white/5 text-slate-300" : "bg-white border border-slate-200 text-slate-600"}`}>
             <button onClick={() => setH(clampH(h - 120))} title="Diminuir" className="px-2 py-1 hover:text-fuchsia-400">−</button>
             <button onClick={() => setH(clampH(h + 120))} title="Aumentar" className="px-2 py-1 hover:text-fuchsia-400">+</button>
@@ -150,7 +154,13 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
           ) : (
           <>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-            {msgs.length === 0 && (
+            {tour && (
+              <div className="space-y-2 p-3 rounded-2xl border-2 border-orange-500/60 bg-orange-500/5">
+                <p className="text-sm font-black text-orange-400">Escolha uma pergunta:</p>
+                {TOUR_QUESTIONS.map(q => <button key={q} disabled={!!busy} onClick={() => tourAsk(q)} className={`w-full text-left text-sm font-bold px-3 py-2.5 rounded-xl border transition-all disabled:opacity-50 ${dark ? "border-white/15 text-white hover:bg-white/10" : "border-orange-200 text-gray-800 hover:bg-orange-50"}`}>🧠 {q}</button>)}
+              </div>
+            )}
+            {msgs.length === 0 && !tour && (
               <div className="space-y-2">
                 <p className="text-sm text-slate-400">Exemplos do que você pode perguntar:</p>
                 {suggestions.map(sg => <button key={sg} onClick={() => ask(sg)} className={`w-full text-left text-sm font-semibold px-3 py-2 rounded-xl border transition-all ${dark ? "border-white/10 text-fuchsia-300 hover:bg-white/5" : "border-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-50"}`}>{sg}</button>)}

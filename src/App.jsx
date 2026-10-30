@@ -2547,7 +2547,12 @@ function MainApp() {
       const d = e.detail || {};
       if (d.code === "locked" || d.code?.startsWith("limit_")) setLimitHit(d);
       // o servidor recusou: volta para o que está realmente salvo
-      if (d.code === "not_loaded") { alert(d.message); return; }
+      if (d.code === "not_loaded") {
+        // ainda não conectou: tenta carregar de novo na hora, em vez de travar a tela
+        try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); LOAD_OK = true; PLAN = r.plan; setPlan(r.plan); alert("Reconectei com o servidor. Faça essa alteração de novo, por favor."); }
+        catch (e) { if (e.status !== 401) alert("Sem conexão com o servidor agora. Confira a internet e tente de novo em alguns segundos."); }
+        return;
+      }
       if (d.code === "shrink_blocked") alert(d.message); // e logo abaixo a tela volta a mostrar o que está salvo
       if (d.status === 402 || d.status === 403 || d.status === 409) { try { const r = await api("load"); const merged = { ...emptyData(), ...r.app_data }; LAST_SNAP = snapOf(merged); setData(merged); LOAD_OK = true; PLAN = r.plan; setPlan(r.plan); } catch { } }
     };
@@ -2617,6 +2622,7 @@ function MainApp() {
        return;
     }
     CURRENT_COMPANY_ID = user.company_id; CURRENT_USER = user; LAST_SNAP = null; LOAD_OK = false;
+    let tries = 0;
     async function fetchState() {
       try {
         const r = await api("load");
@@ -2640,8 +2646,9 @@ function MainApp() {
         console.error(err);
         if (err.code === "locked") { setSuspended(err.message); return; }
         if (err.status === 401) return; // sessão perdida: volta para o login
-        // Sem internet / falha no servidor: usa a última cópia salva neste aparelho
+        // Sem internet / falha no servidor: usa a última cópia salva neste aparelho e tenta de novo sozinho
         try { const c = localStorage.getItem(`ags_v3_${user.company_id}`); if (c) setData({ ...emptyData(), ...JSON.parse(c) }); } catch { }
+        if (tries < 8) { tries++; setTimeout(fetchState, Math.min(15000, 2000 * tries)); }
       }
       finally { setLoadingServer(false); }
     }

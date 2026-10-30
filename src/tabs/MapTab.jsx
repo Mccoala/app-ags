@@ -227,7 +227,7 @@ export default function MapTab({ data, setData, persist, dark, user }) {
           <RealMap data={data} save={save} dark={dark} orders={filteredOrders} canEdit={canEdit} />
         </Suspense>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-5">
+        <div data-tour="map-area" className="flex flex-col lg:flex-row gap-5">
           {/* MAPA POR ESTADO */}
           <div className={`lg:w-[62%] rounded-2xl border p-3 relative overflow-hidden ${card}`}>
             <div className={`absolute top-3 left-3 z-10 p-3 rounded-xl border backdrop-blur-md ${dark ? "bg-gray-900/80 border-gray-700" : "bg-white/85 border-gray-200"}`}>

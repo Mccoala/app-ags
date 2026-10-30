@@ -22,7 +22,7 @@ export function buildGraph(data) {
   const link = (a, b, s = 1) => { if (a !== b && nodes.has(a) && nodes.has(b)) links.push({ source: a, target: b, s }); };
   const orders = data.orders || [];
   node("hub", "hub", "Inflatudo", { w: 10 });
-  [["g:sellers", "Vendedores"], ["g:team", "Equipe"], ["g:toys", "Brinquedos"], ["g:states", "Estados"], ["g:notes", "Memórias"]].forEach(([id, l]) => { node(id, "group", l, { w: 4 }); link("hub", id, 2); });
+  [["g:sellers", "Vendedores"], ["g:clients", "Clientes"], ["g:team", "Equipe"], ["g:toys", "Brinquedos"], ["g:states", "Estados"], ["g:notes", "Memórias"]].forEach(([id, l]) => { node(id, "group", l, { w: 4 }); link("hub", id, 2); });
 
   (data.sellers || []).forEach(s => { node(`s:${norm(s.name)}`, "seller", s.name, { color: s.color, w: 2 }); link("g:sellers", `s:${norm(s.name)}`); });
   (data.team || []).forEach(t => { node(`t:${norm(t.name)}`, "team", t.name, { sub: t.role, w: 2 }); link("g:team", `t:${norm(t.name)}`); });
@@ -42,6 +42,7 @@ export function buildGraph(data) {
   Object.entries(clientRev).sort((a, b) => b[1].v - a[1].v).slice(0, 90).forEach(([k, c]) => {
     const cl = (data.clients || []).find(x => norm(x.name) === k) || {};
     node(`c:${k}`, "client", c.label, { w: 1 + Math.log10(1 + c.v / 1000), sub: cl.city || "" });
+    link("g:clients", `c:${k}`, 0.5);
     c.sellers.forEach(s => {
       const sv = [...nodes.values()].find(n => n.type === "seller" && (n.id === `s:${s}` || norm(n.label).split(" ")[0] === s.split(" ")[0]));
       if (sv) link(sv.id, `c:${k}`, 0.6);
@@ -134,7 +135,11 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
       .force("center", forceCenter(0, 0))
       .force("x", forceX(0).strength(0.03)).force("y", forceY(0).strength(0.05))
       .force("collide", forceCollide(d => radius(d) + 3))
-      .alpha(prev.size ? 0.5 : 1).alphaDecay(0.025);
+      .force("drift", () => {
+        const t = performance.now() / 1000;
+        nodes.forEach((n, i) => { if (n.type === "hub" || n.fx != null) return; n.vx += Math.sin(t * 0.35 + i * 1.7) * 0.025; n.vy += Math.cos(t * 0.28 + i * 2.3) * 0.025; });
+      })
+      .alpha(prev.size ? 0.5 : 1).alphaDecay(0.025).alphaTarget(0.035);
     let raf = 0;
     sim.on("tick", () => {
       nodes.forEach(n => posRef.current.set(n.id, n));
@@ -145,6 +150,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
     let fitted = false;
     sim.on("end", () => { if (!fitted && !userMoved.current) { fitted = true; fitRef.current && fitRef.current(); } });
     setTimeout(() => { if (!userMoved.current) fitRef.current && fitRef.current(); }, 900);
+    setTimeout(() => { if (!userMoved.current) fitRef.current && fitRef.current(); }, 2600);
     simRef.current = sim;
     return () => { sim.stop(); cancelAnimationFrame(raf); };
   }, [graph]);
@@ -179,7 +185,7 @@ export default function BrainGraph({ data, height = 460, dark = true, onSelect, 
   };
   const up = () => {
     const d = drag.current; drag.current = null; window.removeEventListener("pointermove", move);
-    if (d?.n) { d.n.fx = null; d.n.fy = null; sim?.alphaTarget(0); if (!d.moved) onSelect && onSelect(d.n); }
+    if (d?.n) { d.n.fx = null; d.n.fy = null; sim?.alphaTarget(0.035); if (!d.moved) onSelect && onSelect(d.n); }
   };
 
   const now = Date.now();

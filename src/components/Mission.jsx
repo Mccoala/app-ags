@@ -99,14 +99,14 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     const g = () => {
       const nb = step?.tab ? box(q(`[data-tour="nav-${step.tab}"]`)) : null;
       setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
-      if (done) { setRect(null); setTap(null); setSay(step?.id === "map" || step?.id === "photos" ? "" : "Feito! Toque em Próximo passo."); setFocusKey("done"); return; }
+      if (done) { setRect(step?.id === "brain" ? box(q('[data-tour="brain"]')) : step?.id === "map" ? box(q('[data-tour="map-area"]')) : null); setTap(null); setSay(step?.id === "map" || step?.id === "photos" ? "" : "Feito! Toque em Próximo passo."); setFocusKey("done"); return; }
       let el = null, t = null, ring = false, text = "", key = "";
       if (step.id === "order") {
         const form = q('[data-tour="order-form"]');
         if (!form) { el = q('[data-tour="extract"]'); t = el; text = "Toque em Extrair com IA."; key = "o1"; }
         else if (!q('[data-tour="add-photo"]', form)) { el = form; text = "Escolha o PDF do pedido."; key = "o2"; }
         else if (!q('img', form)) { el = q('[data-tour="add-photo"]', form); ring = true; text = "Coloque uma foto no brinquedo."; key = "o3"; }
-        else { el = q('[data-tour="order-save"]', form); t = el; text = "Toque em Salvar."; key = "o4"; }
+        else { el = form; t = q('[data-tour="order-save"]', form); text = "Confira os dados e toque em Salvar."; key = "o4"; }
       } else if (step.id === "team") {
         const miss = SECTORS.find(r => !team.some(m => m.role === r));
         el = q('[data-tour="team-form"]') || q('[data-tour="team-area"]');
@@ -115,15 +115,15 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
         const card = q('[data-tour="prod-first"]');
         if (card && q('[data-tour="obs-open"]', card) && !st.obsSeen) save({ ...st, obsSeen: true });
         if (!q('[data-card-open]', card || document)) { el = card; t = card; text = "Toque no pedido para abrir."; key = "p1"; }
-        else if (!st.obsSeen && q('[data-tour="obs-btn"]', card)) { el = q('[data-tour="obs-btn"]', card); t = el; text = "Toque em Ver Foto."; key = "p2"; }
-        else { const s0 = q('[data-tour="stage-empty"]', card); el = s0 || card; t = s0; text = "Escolha quem fez esta etapa."; key = "p3" + (s0 ? s0.closest("[class]")?.textContent?.slice(0, 12) : ""); }
+        else if (!st.obsSeen && q('[data-tour="obs-btn"]', card)) { el = card; t = q('[data-tour="obs-btn"]', card); text = "Toque em Ver Foto."; key = "p2"; }
+        else { const s0 = q('[data-tour="stage-empty"]', card); el = card; t = s0; text = "Escolha quem fez esta etapa."; key = "p3" + (s0 ? s0.closest("[class]")?.textContent?.slice(0, 12) : ""); }
       } else if (step.id === "finalization") {
         if (!q('[data-tour="fin-open"]')) { el = q('[data-tour="fin-row"]'); t = el; text = "Toque no brinquedo para abrir."; key = "f1"; }
-        else if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) { el = q('[data-tour="fin-open"] [data-tour="fin-worker"]'); t = el; text = "Marque quem finalizou."; key = "f2"; }
-        else { el = q('[data-tour="fin-btn"]'); t = el; text = "Toque em Concluir e tire a foto."; key = "f3"; }
-      } else if (step.id === "brain") { el = q('[data-tour="brain"]'); text = "Toque numa pergunta."; key = "b"; }
+        else if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) { el = q('[data-tour="fin-open"]'); t = q('[data-tour="fin-open"] [data-tour="fin-worker"]'); text = "Marque quem finalizou."; key = "f2"; }
+        else { el = q('[data-tour="fin-open"]'); t = q('[data-tour="fin-btn"]'); text = "Toque em Concluir e tire a foto."; key = "f3"; }
+      } else if (step.id === "brain") { el = q('[data-tour="brain"]'); text = el ? "Toque numa pergunta no Cérebro." : "Toque numa pergunta."; key = "b"; }
       else if (step.id === "photos") { text = ""; key = "ph"; }
-      else if (step.id === "map") { text = ""; key = "m"; }
+      else if (step.id === "map") { el = q('[data-tour="map-area"]'); text = ""; key = "m"; }
       setRect(box(el));
       const tb = box(t || (ring ? el : null));
       setTap(tb ? { ...tb, ring, label: null } : null);
@@ -131,6 +131,15 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     };
     g(); const iv = setInterval(g, 350); return () => clearInterval(iv);
   }, [step?.id, done, mini, st.obsSeen, team.length]); // eslint-disable-line
+  // passo do Cérebro: as 3 perguntas ficam no chat do Cérebro; a resposta volta por aqui
+  useEffect(() => {
+    const on = step?.id === "brain" && !!st.brainIntro && !finale;
+    window.__INFLA_BRAIN_TOUR = on; window.dispatchEvent(new Event("infla-tour"));
+    const f = (e) => { if (e.detail?.a) setAnswer({ q: e.detail.q, a: clean(e.detail.a) }); };
+    window.addEventListener("infla-brain-answer", f);
+    return () => { window.removeEventListener("infla-brain-answer", f); window.__INFLA_BRAIN_TOUR = false; window.dispatchEvent(new Event("infla-tour")); };
+  }, [step?.id, st.brainIntro, finale]);
+  const brainInChat = step?.id === "brain" && typeof document !== "undefined" && !!document.querySelector('[data-tour="brain"]');
   // quando muda o que fazer, rola a tela até o lugar certo
   useEffect(() => {
     if (!focusKey || focusKey === "done") return;
@@ -158,7 +167,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   body = say ? <p className="text-base font-bold">{say}</p> : null;
   if (step.id === "production" && prodRows.length) hint = <Bar pct={prodBest} dark={dark} label="Progresso" />;
   else if (step.id === "photos") { body = <p className="text-base font-bold">Esta é a pasta do pedido, com as fotos e os dados.{notif?.para ? ` ${notif.para} já foi avisado.` : " O vendedor já foi avisado."}</p>; hint = !st.seenPhotos && <Btn onClick={() => save({ ...st, seenPhotos: true })}>Entendi</Btn>; }
-  else if (step.id === "brain") {
+  else if (step.id === "brain" && !brainInChat) {
     hint = <div className="space-y-1.5">
       {QUESTIONS.map(q => <button key={q} disabled={!!busy} onClick={() => askQ(q)} className={`w-full text-left px-3 py-2 rounded-xl text-sm font-bold border transition ${answer?.q === q ? "border-purple-500 bg-purple-500/15 text-purple-400" : dark ? "border-gray-700 hover:border-purple-500 text-gray-200" : "border-gray-200 hover:border-purple-400 text-gray-700"} disabled:opacity-50`}>🧠 {q}</button>)}
       {answer && <div className={`mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap max-h-48 overflow-y-auto ${dark ? "bg-purple-500/10 text-purple-100" : "bg-purple-50 text-purple-900"}`}>{answer.a || <InflaStatus busy={busy || "Pensando…"} />}</div>}
@@ -172,7 +181,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   let pos = null;
   if (desk) {
     const L = Math.max(16, nav ? nav.x + nav.w + 16 : 16);
-    const obst = [rect, tap && { x: tap.x - 40, y: tap.y - 60, w: Math.max(tap.w, 240) + 80, h: tap.h + 110 }].filter(Boolean);
+    const obst = [step?.id === "brain" ? null : rect, tap && { x: tap.x - 40, y: tap.y - 60, w: Math.max(tap.w, 240) + 80, h: tap.h + 110 }].filter(Boolean);
     const cand = [{ left: L, top: 16 }, { left: L, top: H - ch - 16 }, { left: W - cw - 16, top: 16 }, { left: W - cw - 16, top: H - ch - 96 }];
     const hit = (c) => obst.reduce((a, o) => { const ix = Math.max(0, Math.min(c.left + cw, o.x + o.w) - Math.max(c.left, o.x)), iy = Math.max(0, Math.min(c.top + ch, o.y + o.h) - Math.max(c.top, o.y)); return a + ix * iy; }, 0);
     pos = cand.find(c => hit(c) === 0) || cand.reduce((b, c) => (hit(c) < hit(b) ? c : b));
@@ -282,22 +291,22 @@ function BrainIntro({ onDone }) {
     return () => { cancelAnimationFrame(r); clearTimeout(guard); };
   }, []);
   const ended = t > 10.2;
-  const glow = t > 4.8 && t < 7.8 ? Math.min(1, (t - 4.8) * 3, (7.8 - t) * 3) : 0;
-  const conf = useRef([...Array(60)].map((_, i) => ({ x: 8 + Math.random() * 84, d: 1.6 + Math.random() * 1.6, s: 7 + Math.random() * 7, c: ["#fc6502", "#facc15", "#38bdf8", "#22c55e", "#f472b6", "#a78bfa"][i % 6], delay: 7.9 + Math.random() * 1.2, r: Math.random() * 360, dx: (Math.random() - .5) * 30 }))).current;
+  const glow = t > 3.4 && t < 6.6 ? Math.min(1, (t - 3.4) * 3, (6.6 - t) * 3) : 0;
+  const conf = useRef([...Array(60)].map((_, i) => ({ x: 8 + Math.random() * 84, d: 1.6 + Math.random() * 1.6, s: 7 + Math.random() * 7, c: ["#fc6502", "#facc15", "#38bdf8", "#22c55e", "#f472b6", "#a78bfa"][i % 6], delay: 7.8 + Math.random() * 1.2, r: Math.random() * 360, dx: (Math.random() - .5) * 30 }))).current;
   return (
     <div className="fixed inset-0 z-[460] flex items-center justify-center p-4 overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 45%, rgba(76,29,149,.88), rgba(5,3,12,.95) 70%)", backdropFilter: "blur(4px)" }}>
       {conf.map((c, i) => t > c.delay && <span key={i} className="absolute rounded-sm" style={{ left: `calc(${c.x}% + ${(t - c.delay) * c.dx}px)`, top: `${Math.min(105, 30 + ((t - c.delay) / c.d) * 75)}%`, width: c.s, height: c.s * 0.5, background: c.c, transform: `rotate(${c.r + t * 260}deg)` }} />)}
       <div className="relative w-full max-w-xl text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
         <div className="text-[11px] font-black uppercase tracking-[.22em] text-purple-300">Tutorial na prática · o Cérebro</div>
         <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Seu pedido acabou de alimentar o Cérebro 🧠</h2>
-        <div className="relative mx-auto mt-2" style={{ width: "min(80vw, 340px)", aspectRatio: "8 / 9" }}>
+        <div className="relative mx-auto mt-2" style={{ width: "min(70vw, 300px)", aspectRatio: "540 / 670" }}>
           <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none" style={{ width: 300, height: 300, background: "radial-gradient(circle, rgba(236,72,153,.75), rgba(168,85,247,.35) 45%, transparent 70%)", opacity: glow, filter: "blur(6px)", transform: `translate(-50%,-50%) scale(${1 + glow * 0.15 + Math.sin(t * 9) * 0.04 * glow})` }} />
           {safari ? <img src="/video/infla-cerebro.webp" alt="" className="relative w-full h-full object-contain" />
             : <video ref={v} src="/video/infla-cerebro.webm" muted playsInline autoPlay className="relative w-full h-full object-contain" />}
         </div>
         <p className="mt-2 text-sm sm:text-base text-purple-100/85 font-semibold">Tudo o que você lança — pedidos, equipe, produção e fotos — vira conhecimento. Agora é só perguntar.</p>
         <button onClick={onDone} disabled={!ended} className={`mt-5 w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-white text-lg transition-all ${ended ? "bg-gradient-to-r from-purple-500 to-fuchsia-600 shadow-xl shadow-purple-500/30 hover:scale-[1.02]" : "bg-white/10 text-white/40"}`}>
-          {ended ? "Fazer uma pergunta ao Cérebro" : "Assistindo…"}
+          {ended ? "Conhecer meu Dashboard" : "Assistindo…"}
         </button>
       </div>
     </div>

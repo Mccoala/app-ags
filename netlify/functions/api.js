@@ -328,6 +328,11 @@ export const handler = async (event) => {
     const fn = actions[body.action];
     if (!fn) throw httpError(400, "Ação desconhecida.");
     const session = PUBLIC.has(body.action) ? null : verifyToken(tokenFromEvent(event));
+    // conta apagada: qualquer sessão aberta dela cai na hora (volta para o login)
+    if (session) {
+      const { data: alive, error } = await db().from("companies").select("id").eq("id", session.cid).maybeSingle();
+      if (!error && !alive) throw httpError(401, "Esta conta não existe mais.", { code: "account_deleted" });
+    }
     return json(200, await fn(body, session));
   } catch (e) { return fail(e); }
 };
