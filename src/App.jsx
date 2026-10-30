@@ -955,7 +955,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
           <h2 style={{ fontSize:"1.6rem",fontWeight:800,letterSpacing:"-0.03em",lineHeight:1.2,color:dark?"#f8fafc":"#0f172a",fontFamily:"'Inter',system-ui,sans-serif" }}>Pedidos</h2>
           <p style={{ fontSize:"0.8rem",color:"#64748b",marginTop:2,fontWeight:500 }}>Gerencie todos os pedidos da empresa</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div data-tour="order-actions" className="flex gap-2 flex-wrap">
           {!canWrite ? <span className={`text-xs font-bold px-3 py-2 rounded-xl border ${dark ? "border-gray-800 text-gray-500" : "border-gray-200 text-gray-500"}`}>👁️ Somente visualização</span> : !selectMode ? (<>
             <button onClick={() => { setSelectMode(true); setView("list") }} className={`flex
                                     items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border
@@ -2062,6 +2062,15 @@ function TeamTab({ data, setData, dark, user }) {
   const pickSub = (id) => { if (freeTeam && (id === 'logins' || id === 'sellers')) { setPlanToast(`${id === 'logins' ? 'Logins da equipe' : 'Vendedores'}: disponível no plano Essencial`); clearTimeout(window.__planToastT); window.__planToastT = setTimeout(() => setPlanToast(null), 2600); return; } setActiveSubTab(id); };
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', role: 'Corte', status: 'ativo' });
+  // Tutorial: abre o cadastro sozinho, um setor de cada vez (Corte → Costura → … → Finalizador)
+  const [tourTeam, setTourTeam] = useState(() => !!window.__INFLA_TEAM_TOUR);
+  useEffect(() => { const f = () => setTourTeam(!!window.__INFLA_TEAM_TOUR); window.addEventListener('infla-tour', f); return () => window.removeEventListener('infla-tour', f); }, []);
+  const missingRole = ['Corte', 'Costura', 'Preparação', 'Montagem', 'Finalizador'].find(r => !(data.team || []).some(m => m.role === r && m.status === 'ativo'));
+  useEffect(() => {
+    if (!tourTeam || !missingRole) return;
+    setActiveSubTab('members');
+    if (!showForm || form.role !== missingRole) { setForm(f => ({ name: f.role === missingRole ? f.name : '', role: missingRole, status: 'ativo' })); setShowForm(true); }
+  }, [tourTeam, missingRole, showForm]); // eslint-disable-line
   const EMPTY_USER = { kind: '', name: '', email: '', password: '', permissions: { production: 'edit' }, sellerName: '', newSeller: '' };
   // vendedor: já vem com as abas que ele usa marcadas (pode ajustar em Permissões)
   const [share, setShare] = useState(null); // { name, login, password } — mostrado uma vez, para mandar ao funcionário
@@ -2154,12 +2163,13 @@ function TeamTab({ data, setData, dark, user }) {
       {planToast && <div className='fixed left-1/2 -translate-x-1/2 bottom-8 z-[260] px-4 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold shadow-2xl border border-orange-500/40 flex items-center gap-2 plan-toast'><Lock size={15} className='text-orange-400' />{planToast}</div>}
 
       {activeSubTab === 'members' && (
-        <div className='space-y-4'>
+        <div data-tour='team-area' className='space-y-4'>
           <div className='flex justify-end'><button onClick={() => setShowForm(true)} className='btn-brand text-xs'><Plus size={14}/> Novo Colaborador</button></div>
           {showForm && (
             <div data-tour='team-form' className='card-surface p-4 border-orange-500/30 animate-slide-up'>
+              {tourTeam && missingRole && <div className='mb-3 text-sm font-black text-orange-500'>Cadastre alguém do setor <span className='underline'>{form.role}</span> e toque em Salvar</div>}
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-4'>
-                <input placeholder='Nome' value={form.name} onChange={e => setForm({...form, name:e.target.value})} className={ic} />
+                <input key={form.role} autoFocus placeholder='Nome' onKeyDown={e => e.key === 'Enter' && addMember()} value={form.name} onChange={e => setForm({...form, name:e.target.value})} className={ic} />
                 <select value={form.role} onChange={e => setForm({...form, role:e.target.value})} className={ic}>
                   {['Corte', 'Costura', 'Preparação', 'Montagem', 'Finalizador'].map(r => <option key={r}>{r}</option>)}
                 </select>

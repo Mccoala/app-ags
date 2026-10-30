@@ -22,8 +22,8 @@ const finDone = (f) => f && (f.stage === "finalizado" || f.done);
 const clean = (t) => String(t || "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/^#+\s*/gm, "").trim();
 
 const STEPS = [
-  { id: "order", tab: "orders", icon: ClipboardList, title: "Lance seu primeiro pedido", target: ['[data-tour="order-form"]', '[data-tour="extract"]'] },
-  { id: "team", tab: "team", icon: Users, title: "Cadastre sua equipe", target: ['[data-tour="team-form"]', '[data-tour="team-cols"]'] },
+  { id: "order", tab: "orders", icon: ClipboardList, title: "Lance seu primeiro pedido", target: ['[data-tour="order-form"]', '[data-tour="order-actions"]'] },
+  { id: "team", tab: "team", icon: Users, title: "Cadastre sua equipe", target: ['[data-tour="team-area"]'] },
   { id: "production", tab: "production", icon: Factory, title: "Toque a produção", target: '[data-tour="prod-first"]' },
   { id: "finalization", tab: "finalization", icon: Camera, title: "Finalize com foto", target: ['[data-tour="fin-open"]', '[data-tour="fin-row"]'] },
   { id: "photos", tab: "photos", icon: Images, title: "A pasta do pedido", target: null },
@@ -70,6 +70,12 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     map: !!st.seenMap,
   }[step?.id];
 
+  // passo da equipe: a tela de Equipe abre o cadastro sozinha, setor por setor
+  useEffect(() => {
+    const on = step?.id === "team" && !done && !finale;
+    if (!!window.__INFLA_TEAM_TOUR !== on) { window.__INFLA_TEAM_TOUR = on; window.dispatchEvent(new Event("infla-tour")); }
+  }, [step?.id, done, finale]);
+  useEffect(() => () => { window.__INFLA_TEAM_TOUR = false; window.dispatchEvent(new Event("infla-tour")); }, []);
   // leva para a aba do passo (e não deixa sair dela enquanto não terminar)
   useEffect(() => { if (!finale && step?.tab && tab !== step.tab) setTab(step.tab); }, [step?.id, tab, finale]); // eslint-disable-line
   useEffect(() => { if (step?.id === "photos" && order) openPhotos?.(orderNumber(order.id)); }, [step?.id]); // eslint-disable-line
@@ -105,7 +111,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     hint = <Checklist dark={dark} items={[["Pedido lançado", !!order], ["Pelo menos 1 foto no pedido", hasPhoto]]} />;
     if (order && !hasPhoto) hint = <>{hint}<Warn dark={dark}>Falta a foto! Abra o pedido <b>{order.clientName || ""}</b> (ícone de lápis) e adicione uma imagem em um brinquedo.</Warn></>;
   } else if (step.id === "team") {
-    body = <p>Cadastre <b>pelo menos 1 pessoa em cada setor</b>. Use o <b>+</b> em cima de cada coluna. Pode ser você mesmo, por enquanto.</p>;
+    body = <p>Cadastre <b>1 pessoa em cada setor</b>. O cadastro já abre sozinho: digite o nome e toque em <b>Salvar</b>, que o próximo setor aparece. Pode ser você mesmo, por enquanto.</p>;
     hint = <Checklist dark={dark} items={sectorOk} />;
   } else if (step.id === "production") {
     body = <p>Abra o pedido <b>{order?.clientName || ""}</b> e escolha <b>quem fez cada etapa</b>. Cada etapa com responsável sobe <b>25%</b>.</p>;
@@ -165,7 +171,15 @@ function Spotlight({ rects = [], nav, label }) {
   const all = navH ? [...holes, navH] : holes;
   const path = `M0 0H${W}V${H}H0Z` + all.map(h => `M${h.x} ${h.y}h${h.w}v${h.h}h${-h.w}Z`).join("");
   const mask = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${W}' height='${H}' viewBox='0 0 ${W} ${H}'><path fill='black' fill-rule='evenodd' d='${path}'/></svg>`)}")`;
+  const B = { position: "fixed", zIndex: 44, background: "transparent", cursor: "not-allowed" };
+  const h0 = holes[0];
   return <>
+    {h0 ? <>
+      <div style={{ ...B, left: 0, top: 0, right: 0, height: h0.y }} />
+      <div style={{ ...B, left: 0, top: h0.y + h0.h, right: 0, bottom: 0 }} />
+      <div style={{ ...B, left: 0, top: h0.y, width: h0.x, height: h0.h }} />
+      <div style={{ ...B, left: h0.x + h0.w, top: h0.y, right: 0, height: h0.h }} />
+    </> : <div style={{ ...B, inset: 0 }} />}
     <div style={{ position: "fixed", inset: 0, zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)", WebkitMaskImage: mask, maskImage: mask, WebkitMaskSize: "100% 100%", maskSize: "100% 100%" }} />
     {holes.map((h, k) => <div key={k} className="animate-pulse" style={{ position: "fixed", zIndex: 44, pointerEvents: "none", left: h.x, top: h.y, width: h.w, height: h.h, borderRadius: 14, border: "3px solid #f97316", boxShadow: "0 0 26px rgba(249,115,22,.7)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" }} />)}
     {navH && <>
