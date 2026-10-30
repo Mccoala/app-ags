@@ -101,7 +101,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
       setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
       if (done) {
         // terminou: mostra o resultado colorido e destaca a marcação de concluído
-        const doneEl = { brain: '[data-tour="brain"]', map: '[data-tour="map-area"]', photos: '[data-tour="photo-folder"]', production: '[data-tour="prod-first"]', finalization: '[data-fin-card="1"]' }[step?.id];
+        const doneEl = { team:'[data-tour="team-cols"]', brain: '[data-tour="brain"]', map: '[data-tour="map-area"]', photos: '[data-tour="photo-folder"]', production: '[data-tour="prod-first"]', finalization: '[data-fin-card="1"]' }[step?.id];
         const area = doneEl ? q(doneEl) : null;
         setRect(box(area));
         let badge = null;
