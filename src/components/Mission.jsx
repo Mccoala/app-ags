@@ -144,8 +144,8 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   useEffect(() => {
     if (!focusKey || focusKey === "done") return;
     const t = setTimeout(() => {
-      const sel = { o3: '[data-tour="order-form"] [data-tour="add-photo"]', o4: '[data-tour="order-save"]', p2: '[data-tour="prod-first"] [data-tour="obs-btn"]', p3: '[data-tour="prod-first"] [data-tour="stage-empty"]', f2: '[data-tour="fin-open"] [data-tour="fin-worker"]', f3: '[data-tour="fin-btn"]' }[focusKey.slice(0, 2)];
-      const el = sel && document.querySelector(sel); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const sel = { o3: '[data-tour="order-form"] [data-tour="add-photo"]', o4: '[data-tour="order-form"]', p2: '[data-tour="prod-first"] [data-tour="obs-btn"]', p3: '[data-tour="prod-first"] [data-tour="stage-empty"]', f2: '[data-tour="fin-open"] [data-tour="fin-worker"]', f3: '[data-tour="fin-btn"]' }[focusKey.slice(0, 2)];
+      const el = sel && document.querySelector(sel); if (el) el.scrollIntoView({ block: focusKey === "o4" ? "start" : "center", behavior: "smooth" });
     }, 250);
     return () => clearTimeout(t);
   }, [focusKey]);
