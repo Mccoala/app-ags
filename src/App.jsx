@@ -1006,7 +1006,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
         ))}
       </div>
       {showForm && canWrite && (
-        <div className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+        <div data-tour="order-form" className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className={`font-bold ${dark ? "text-white" : "text-gray-900"}`}>Novo Pedido Manual</h3>
             <button onClick={() => setShowForm(false)} className={`p-1.5 rounded-lg
@@ -1097,7 +1097,7 @@ Regras: motores/sopradores/bombas têm isMotor=true e observations vazio. "ready
         </div>
       )}
       {view === "ai" && canWrite && (
-        <div className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
+        <div data-tour="order-form" className={`rounded-xl p-5 border ${dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"}`}>
           <h3 className={`font-bold mb-1 ${dark ? "text-white" : "text-gray-900"}`}>Extração com IA</h3>
           <p className={`text-xs mb-4 ${dark ? "text-gray-400" : "text-gray-500"}`}>A IA busca o campo{" "}
             <strong>REPRESENTANTE</strong> para o vendedor, e o campo <strong>PRAZO</strong> nas
@@ -1745,7 +1745,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
               extra={<>{fz.length > 0 && <span className={`text-[11px] font-bold truncate max-w-[120px] ${dark ? "text-gray-400" : "text-gray-500"}`}>👤 {fz.join(", ")}</span>}{np > 0 && <span className={`text-[11px] font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>📷 {np}</span>}</>} /></div>;
           }
           return (
-            <div data-card-open key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+            <div data-card-open data-tour={row.stage !== "finalizado" ? "fin-open" : undefined} key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
               <button onClick={toggle} className={`w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border-b ${dark ? "border-gray-800 text-gray-400 hover:text-white" : "border-gray-100 text-gray-500"}`}><ChevronUp size={16} />Fechar</button>
               <div className="flex items-start justify-between p-4 gap-3">
                 <div className="min-w-0 flex-1">
@@ -2153,7 +2153,7 @@ function TeamTab({ data, setData, dark, user }) {
         <div className='space-y-4'>
           <div className='flex justify-end'><button onClick={() => setShowForm(true)} className='btn-brand text-xs'><Plus size={14}/> Novo Colaborador</button></div>
           {showForm && (
-            <div className='card-surface p-4 border-orange-500/30 animate-slide-up'>
+            <div data-tour='team-form' className='card-surface p-4 border-orange-500/30 animate-slide-up'>
               <div className='grid grid-cols-1 md:grid-cols-3 gap-4 mb-4'>
                 <input placeholder='Nome' value={form.name} onChange={e => setForm({...form, name:e.target.value})} className={ic} />
                 <select value={form.role} onChange={e => setForm({...form, role:e.target.value})} className={ic}>

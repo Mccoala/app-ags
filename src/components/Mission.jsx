@@ -21,10 +21,10 @@ const finDone = (f) => f && (f.stage === "finalizado" || f.done);
 const clean = (t) => String(t || "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/^#+\s*/gm, "").trim();
 
 const STEPS = [
-  { id: "order", tab: "orders", icon: ClipboardList, title: "Lance seu primeiro pedido", target: '[data-tour="extract"]' },
-  { id: "team", tab: "team", icon: Users, title: "Cadastre sua equipe", target: '[data-tour="team-cols"]' },
+  { id: "order", tab: "orders", icon: ClipboardList, title: "Lance seu primeiro pedido", target: ['[data-tour="order-form"]', '[data-tour="extract"]'] },
+  { id: "team", tab: "team", icon: Users, title: "Cadastre sua equipe", target: ['[data-tour="team-form"]', '[data-tour="team-cols"]'] },
   { id: "production", tab: "production", icon: Factory, title: "Toque a produção", target: '[data-tour="prod-first"]' },
-  { id: "finalization", tab: "finalization", icon: Camera, title: "Finalize com foto", target: ['[data-tour="fin-btn"]', '[data-tour="fin-row"]'] },
+  { id: "finalization", tab: "finalization", icon: Camera, title: "Finalize com foto", target: ['[data-tour="fin-open"]', '[data-tour="fin-row"]'] },
   { id: "photos", tab: "photos", icon: Images, title: "A pasta do pedido", target: null },
   { id: "brain", tab: "dashboard", icon: Brain, title: "Pergunte ao Cérebro", target: '[data-tour="brain"]' },
   { id: "map", tab: "routes", icon: MapIcon, title: "Onde você vendeu", target: null },
@@ -124,7 +124,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   const up = rect && typeof window !== "undefined" && window.innerWidth >= 640 && rect.x + rect.w > window.innerWidth - 420 && rect.y + rect.h > window.innerHeight - 470;
   const card = dark ? "bg-gray-900 text-white border border-gray-700" : "bg-white text-gray-900 border border-gray-200";
   return <>
-    {rect && <div className="fixed z-[44] pointer-events-none rounded-xl ring-4 ring-orange-500 animate-pulse" style={{ left: rect.x - 6, top: rect.y - 6, width: rect.w + 12, height: rect.h + 12, boxShadow: "0 0 0 4px rgba(249,115,22,.25), 0 0 30px rgba(249,115,22,.6)" }} />}
+    {rect ? <Spotlight r={rect} /> : !mini && <div style={{ position: "fixed", inset: 0, zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)" }} />}
     {mini ? (
       <button onClick={() => setMini(false)} className="fixed z-[45] bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-4 sm:bottom-24 sm:translate-x-0 flex items-center gap-2 px-4 py-2.5 rounded-full font-black text-sm text-white bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30">
         <Sparkles size={16} />Tutorial · {st.i + 1}/{steps.length}<Maximize2 size={14} />
@@ -147,6 +147,19 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
         </button>
       </div>
     )}
+  </>;
+}
+
+// Tudo fica cinza e escuro; só o lugar onde clicar continua claro (não bloqueia os cliques)
+function Spotlight({ r }) {
+  const P = 8, x = Math.max(0, r.x - P), y = Math.max(0, r.y - P), w = r.w + P * 2, h = r.h + P * 2;
+  const g = { position: "fixed", zIndex: 44, pointerEvents: "none", background: "rgba(10,10,12,.62)", backdropFilter: "grayscale(1)", WebkitBackdropFilter: "grayscale(1)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" };
+  return <>
+    <div style={{ ...g, left: 0, top: 0, right: 0, height: y }} />
+    <div style={{ ...g, left: 0, top: y + h, right: 0, bottom: 0 }} />
+    <div style={{ ...g, left: 0, top: y, width: x, height: h }} />
+    <div style={{ ...g, left: x + w, top: y, right: 0, height: h }} />
+    <div className="animate-pulse" style={{ position: "fixed", zIndex: 44, pointerEvents: "none", left: x, top: y, width: w, height: h, borderRadius: 14, border: "3px solid #f97316", boxShadow: "0 0 26px rgba(249,115,22,.7)", transition: "all .3s cubic-bezier(.2,.8,.2,1)" }} />
   </>;
 }
 
