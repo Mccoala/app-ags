@@ -224,7 +224,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
                 </div>
               </div>
             ))}
-            {busy && <div className="flex items-center gap-2 text-sm text-fuchsia-300"><RefreshCw size={14} className="animate-spin" />{busy}</div>}
+            {busy && <div className="flex items-end gap-3 text-sm text-fuchsia-300"><img src="/video/infla-pensando.webp" alt="" className="w-[72px] h-auto flex-shrink-0 drop-shadow-[0_6px_14px_rgba(232,121,249,.45)]" /><span className="flex items-center gap-2 pb-2"><RefreshCw size={14} className="animate-spin" />{busy}</span></div>}
             <div ref={endRef} />
           </div>
           <form onSubmit={e => { e.preventDefault(); send(); }} className={`p-3 border-t flex items-end gap-2 ${dark ? "border-white/5" : "border-fuchsia-100"}`}>

@@ -188,24 +188,32 @@ const Bar = ({ pct, dark, label }) => <div>
 
 // ── Animação do Infla colocando o cérebro (abre o passo do Cérebro) ─────────
 function BrainIntro({ onDone }) {
-  const [ended, setEnded] = useState(false);
+  // Safari não toca vídeo transparente (webm); lá usa a versão em imagem animada
+  const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  const [t, setT] = useState(0);
   const v = useRef(null);
   useEffect(() => {
-    const el = v.current; if (!el) return;
-    el.volume = 0.6;
-    el.play().catch(() => { el.muted = true; el.play().catch(() => setEnded(true)); });
-    const t = setTimeout(() => setEnded(true), 11000); // garantia, caso o vídeo não carregue
-    return () => clearTimeout(t);
+    const s0 = performance.now(); let r;
+    const f = (n) => { const el = v.current; setT(el && el.currentTime > 0 ? (el.ended ? 10.5 : el.currentTime) : (n - s0) / 1000 * (el ? 0 : 1)); r = requestAnimationFrame(f); }; r = requestAnimationFrame(f);
+    const el = v.current; if (el) el.play().catch(() => { });
+    const guard = setTimeout(() => setT(x => Math.max(x, 10.5)), 14000); // se o vídeo travar, libera o botão
+    return () => { cancelAnimationFrame(r); clearTimeout(guard); };
   }, []);
+  const ended = t > 10.2;
+  const glow = t > 4.8 && t < 7.8 ? Math.min(1, (t - 4.8) * 3, (7.8 - t) * 3) : 0;
+  const conf = useRef([...Array(60)].map((_, i) => ({ x: 8 + Math.random() * 84, d: 1.6 + Math.random() * 1.6, s: 7 + Math.random() * 7, c: ["#fc6502", "#facc15", "#38bdf8", "#22c55e", "#f472b6", "#a78bfa"][i % 6], delay: 7.9 + Math.random() * 1.2, r: Math.random() * 360, dx: (Math.random() - .5) * 30 }))).current;
   return (
-    <div className="fixed inset-0 z-[460] flex items-center justify-center p-4" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(76,29,149,.85), rgba(5,3,12,.94) 70%)", backdropFilter: "blur(4px)" }}>
-      <div className="w-full max-w-2xl text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
+    <div className="fixed inset-0 z-[460] flex items-center justify-center p-4 overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 45%, rgba(76,29,149,.88), rgba(5,3,12,.95) 70%)", backdropFilter: "blur(4px)" }}>
+      {conf.map((c, i) => t > c.delay && <span key={i} className="absolute rounded-sm" style={{ left: `calc(${c.x}% + ${(t - c.delay) * c.dx}px)`, top: `${Math.min(105, 30 + ((t - c.delay) / c.d) * 75)}%`, width: c.s, height: c.s * 0.5, background: c.c, transform: `rotate(${c.r + t * 260}deg)` }} />)}
+      <div className="relative w-full max-w-xl text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
         <div className="text-[11px] font-black uppercase tracking-[.22em] text-purple-300">Tutorial na prática · o Cérebro</div>
         <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Seu pedido acabou de alimentar o Cérebro 🧠</h2>
-        <div className="mt-4 rounded-3xl overflow-hidden shadow-2xl ring-4 ring-purple-500/40" style={{ boxShadow: "0 30px 80px rgba(168,85,247,.35)" }}>
-          <video ref={v} src="/video/infla-cerebro.mp4" poster="/video/infla-cerebro.jpg" playsInline preload="auto" onEnded={() => setEnded(true)} className="w-full block bg-[#ecebe9]" />
+        <div className="relative mx-auto mt-2" style={{ width: "min(80vw, 340px)", aspectRatio: "8 / 9" }}>
+          <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none" style={{ width: 300, height: 300, background: "radial-gradient(circle, rgba(236,72,153,.75), rgba(168,85,247,.35) 45%, transparent 70%)", opacity: glow, filter: "blur(6px)", transform: `translate(-50%,-50%) scale(${1 + glow * 0.15 + Math.sin(t * 9) * 0.04 * glow})` }} />
+          {safari ? <img src="/video/infla-cerebro.webp" alt="" className="relative w-full h-full object-contain" />
+            : <video ref={v} src="/video/infla-cerebro.webm" muted playsInline autoPlay className="relative w-full h-full object-contain" />}
         </div>
-        <p className="mt-4 text-sm sm:text-base text-purple-100/85 font-semibold">Tudo o que você lança — pedidos, equipe, produção e fotos — vira conhecimento. Agora é só perguntar.</p>
+        <p className="mt-2 text-sm sm:text-base text-purple-100/85 font-semibold">Tudo o que você lança — pedidos, equipe, produção e fotos — vira conhecimento. Agora é só perguntar.</p>
         <button onClick={onDone} disabled={!ended} className={`mt-5 w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-white text-lg transition-all ${ended ? "bg-gradient-to-r from-purple-500 to-fuchsia-600 shadow-xl shadow-purple-500/30 hover:scale-[1.02]" : "bg-white/10 text-white/40"}`}>
           {ended ? "Fazer uma pergunta ao Cérebro" : "Assistindo…"}
         </button>
