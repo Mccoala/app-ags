@@ -47,7 +47,8 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   // ── o pedido do tutorial: o mais novo lançado depois que o tutorial começou ──
   const order = useMemo(() => {
     const novos = (data.orders || []).filter(o => !(st.base || []).includes(o.id));
-    return novos[novos.length - 1] || null;
+    const comFoto = novos.filter(o => (o.items || []).some(it => (it.images || []).length));
+    return comFoto[comFoto.length - 1] || novos[novos.length - 1] || null;
   }, [data.orders, st.base]);
   const hasPhoto = !!order?.items?.some(it => (it.images || []).length);
   const prodRows = order ? (data.production || []).filter(p => p.orderId === order.id) : [];
@@ -86,47 +87,59 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   useEffect(() => { if (!finale && step?.tab && tab !== step.tab) setTab(step.tab); }, [step?.id, tab, finale]); // eslint-disable-line
   useEffect(() => { if (step?.id === "photos" && order) openPhotos?.(orderNumber(order.id)); }, [step?.id]); // eslint-disable-line
 
-  // destaque no elemento do passo (sem bloquear a tela)
+  // ── guia: a cada momento, UMA coisa para fazer (destaque + frase curta) ──
   const [nav, setNav] = useState(null);
-  useEffect(() => {
-    if (mini) { setRect(null); setNav(null); return; }
-    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
-    const m = () => {
-      const nb = step?.tab ? box(document.querySelector(`[data-tour="nav-${step.tab}"]`)) : null;
-      setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
-      setRect(!step?.target || done ? null : box([].concat(step.target).map(q => document.querySelector(q)).find(Boolean)));
-    };
-    m(); const t = setInterval(m, 400); return () => clearInterval(t);
-  }, [step?.id, done, mini]);
-
-  // "toque aqui": mãozinha com ondas no próximo clique dentro do passo
   const [tap, setTap] = useState(null);
+  const [say, setSay] = useState("");
+  const [focusKey, setFocusKey] = useState("");
   useEffect(() => {
-    if (mini || done || !["order", "production", "finalization"].includes(step?.id)) { setTap(null); return; }
-    const q = (sel) => document.querySelector(sel);
-    const box = (el, label) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width ? { x: r.left, y: r.top, w: r.width, h: r.height, label } : null; };
-    const m = () => {
+    if (mini) { setRect(null); setNav(null); setTap(null); return; }
+    const q = (sel, root = document) => root.querySelector(sel);
+    const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
+    const g = () => {
+      const nb = step?.tab ? box(q(`[data-tour="nav-${step.tab}"]`)) : null;
+      setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
+      if (done) { setRect(null); setTap(null); setSay(step?.id === "map" || step?.id === "photos" ? "" : "Feito! Toque em Próximo passo."); setFocusKey("done"); return; }
+      let el = null, t = null, ring = false, text = "", key = "";
       if (step.id === "order") {
         const form = q('[data-tour="order-form"]');
-        if (!form) return setTap(null);
-        const has = form.querySelector('img');
-        const b = has ? null : box(form.querySelector('[data-tour="add-photo"]'), null);
-        return setTap(b ? { ...b, ring: true } : null);
-      }
-      if (step.id === "production") {
+        if (!form) { el = q('[data-tour="extract"]'); t = el; text = "Toque em Extrair com IA."; key = "o1"; }
+        else if (!q('[data-tour="add-photo"]', form)) { el = form; text = "Escolha o PDF do pedido."; key = "o2"; }
+        else if (!q('img', form)) { el = q('[data-tour="add-photo"]', form); ring = true; text = "Coloque uma foto no brinquedo."; key = "o3"; }
+        else { el = q('[data-tour="order-save"]', form); t = el; text = "Toque em Salvar."; key = "o4"; }
+      } else if (step.id === "team") {
+        const miss = SECTORS.find(r => !team.some(m => m.role === r));
+        el = q('[data-tour="team-form"]') || q('[data-tour="team-area"]');
+        text = miss ? `Digite o nome de quem faz ${miss === "Finalizador" ? "a finalização" : miss.toLowerCase() === "preparação" ? "a preparação" : miss.toLowerCase() === "montagem" ? "a montagem" : miss.toLowerCase() === "costura" ? "a costura" : "o corte"} e toque em Salvar.` : ""; key = "t" + miss;
+      } else if (step.id === "production") {
         const card = q('[data-tour="prod-first"]');
-        if (!q('[data-tour="prod-first"] [data-card-open]')) return setTap(box(card, "Toque no pedido para abrir"));
-        if (q('[data-tour="prod-first"] [data-tour="obs-open"]') && !st.obsSeen) save({ ...st, obsSeen: true });
-        const obs = q('[data-tour="prod-first"] [data-tour="obs-btn"]');
-        if (obs && !st.obsSeen && !q('[data-tour="prod-first"] [data-tour="obs-open"]')) return setTap(box(obs, "Veja a foto que veio com o pedido"));
-        return setTap(box(q('[data-tour="prod-first"] [data-tour="stage-empty"]'), "Escolha quem fez esta etapa"));
-      }
-      if (!q('[data-tour="fin-open"]')) return setTap(box(q('[data-tour="fin-row"]'), "Toque no brinquedo para abrir"));
-      if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) return setTap(box(q('[data-tour="fin-open"] [data-tour="fin-worker"]'), "Marque quem finalizou"));
-      return setTap(box(q('[data-tour="fin-btn"]'), "Toque para finalizar (100%)"));
+        if (card && q('[data-tour="obs-open"]', card) && !st.obsSeen) save({ ...st, obsSeen: true });
+        if (!q('[data-card-open]', card || document)) { el = card; t = card; text = "Toque no pedido para abrir."; key = "p1"; }
+        else if (!st.obsSeen && q('[data-tour="obs-btn"]', card)) { el = q('[data-tour="obs-btn"]', card); t = el; text = "Toque em Ver Foto."; key = "p2"; }
+        else { const s0 = q('[data-tour="stage-empty"]', card); el = s0 || card; t = s0; text = "Escolha quem fez esta etapa."; key = "p3" + (s0 ? s0.closest("[class]")?.textContent?.slice(0, 12) : ""); }
+      } else if (step.id === "finalization") {
+        if (!q('[data-tour="fin-open"]')) { el = q('[data-tour="fin-row"]'); t = el; text = "Toque no brinquedo para abrir."; key = "f1"; }
+        else if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) { el = q('[data-tour="fin-open"] [data-tour="fin-worker"]'); t = el; text = "Marque quem finalizou."; key = "f2"; }
+        else { el = q('[data-tour="fin-btn"]'); t = el; text = "Toque em Concluir e tire a foto."; key = "f3"; }
+      } else if (step.id === "brain") { el = q('[data-tour="brain"]'); text = "Toque numa pergunta."; key = "b"; }
+      else if (step.id === "photos") { text = ""; key = "ph"; }
+      else if (step.id === "map") { text = ""; key = "m"; }
+      setRect(box(el));
+      const tb = box(t || (ring ? el : null));
+      setTap(tb ? { ...tb, ring, label: null } : null);
+      setSay(text); setFocusKey(key);
     };
-    m(); const t = setInterval(m, 350); return () => clearInterval(t);
-  }, [step?.id, done, mini, st.obsSeen]); // eslint-disable-line
+    g(); const iv = setInterval(g, 350); return () => clearInterval(iv);
+  }, [step?.id, done, mini, st.obsSeen, team.length]); // eslint-disable-line
+  // quando muda o que fazer, rola a tela até o lugar certo
+  useEffect(() => {
+    if (!focusKey || focusKey === "done") return;
+    const t = setTimeout(() => {
+      const sel = { o3: '[data-tour="order-form"] [data-tour="add-photo"]', o4: '[data-tour="order-save"]', p2: '[data-tour="prod-first"] [data-tour="obs-btn"]', p3: '[data-tour="prod-first"] [data-tour="stage-empty"]', f2: '[data-tour="fin-open"] [data-tour="fin-worker"]', f3: '[data-tour="fin-btn"]' }[focusKey.slice(0, 2)];
+      const el = sel && document.querySelector(sel); if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [focusKey]);
 
   const next = () => {
     if (!done) return;
@@ -142,34 +155,16 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
 
   // ── texto e checklist de cada passo ──
   let body = null, hint = null;
-  if (step.id === "order") {
-    body = <p>Clique em <b>Extrair com IA</b> e escolha o <b>PDF de um pedido</b> (ou lance na mão). Antes de salvar, <b>coloque pelo menos 1 foto</b>: do brinquedo ou da logo do cliente.</p>;
-    hint = <Checklist dark={dark} items={[["Pedido lançado", !!order], ["Pelo menos 1 foto no pedido", hasPhoto]]} />;
-    if (order && !hasPhoto) hint = <>{hint}<Warn dark={dark}>Falta a foto! Abra o pedido <b>{order.clientName || ""}</b> (ícone de lápis) e adicione uma imagem em um brinquedo.</Warn></>;
-  } else if (step.id === "team") {
-    body = <p>Cadastre <b>1 pessoa em cada setor</b>. O cadastro já abre sozinho: digite o nome e toque em <b>Salvar</b>, que o próximo setor aparece. Pode ser você mesmo, por enquanto.</p>;
-    hint = <Checklist dark={dark} items={sectorOk} />;
-  } else if (step.id === "production") {
-    body = <p>Toque no pedido <b>{order?.clientName || ""}</b> para abrir, veja a <b>foto que veio junto</b> e escolha <b>quem fez cada etapa</b>. Cada etapa com responsável sobe <b>25%</b>.</p>;
-    hint = prodRows.length ? <Bar pct={prodBest} dark={dark} label="Progresso do brinquedo" /> : <Warn dark={dark}>Esse pedido não tem brinquedo para produzir (só motor?). Lance um pedido com brinquedo.</Warn>;
-  } else if (step.id === "finalization") {
-    body = <p>Abra o brinquedo, marque <b>quem finalizou</b> e toque no botão verde <b>Concluir finalização</b> (100%). Depois <b>tire ou envie a foto</b> do brinquedo pronto. Sem a foto não dá para continuar.</p>;
-    hint = <Checklist dark={dark} items={[["Finalizador marcado", finRows.some(f => (f.finalizers || []).length || f.finalizer)], ["Finalizado", !!finAny], ["Foto do brinquedo pronto", !!finWithPhoto]]} />;
-  } else if (step.id === "photos") {
-    body = <p>Pronto! O sistema criou a <b>pasta do pedido</b> com as fotos e os dados do cliente{notif?.para ? <> e <b>avisou o vendedor {notif.para}</b> que ficou pronto</> : " e avisou o vendedor"}. Ninguém precisa ficar pedindo foto no WhatsApp.</p>;
-    hint = !st.seenPhotos && <Btn onClick={() => save({ ...st, seenPhotos: true })}>Entendi, ver o Cérebro</Btn>;
-  } else if (step.id === "brain") {
-    body = <p>Tudo o que você lançou <b>alimentou o Cérebro</b>. Toque numa pergunta e veja a resposta com os dados do seu pedido:</p>;
+  body = say ? <p className="text-base font-bold">{say}</p> : null;
+  if (step.id === "production" && prodRows.length) hint = <Bar pct={prodBest} dark={dark} label="Progresso" />;
+  else if (step.id === "photos") { body = <p className="text-base font-bold">Esta é a pasta do pedido, com as fotos e os dados.{notif?.para ? ` ${notif.para} já foi avisado.` : " O vendedor já foi avisado."}</p>; hint = !st.seenPhotos && <Btn onClick={() => save({ ...st, seenPhotos: true })}>Entendi</Btn>; }
+  else if (step.id === "brain") {
     hint = <div className="space-y-1.5">
       {QUESTIONS.map(q => <button key={q} disabled={!!busy} onClick={() => askQ(q)} className={`w-full text-left px-3 py-2 rounded-xl text-sm font-bold border transition ${answer?.q === q ? "border-purple-500 bg-purple-500/15 text-purple-400" : dark ? "border-gray-700 hover:border-purple-500 text-gray-200" : "border-gray-200 hover:border-purple-400 text-gray-700"} disabled:opacity-50`}>🧠 {q}</button>)}
       {answer && <div className={`mt-2 p-3 rounded-xl text-sm whitespace-pre-wrap max-h-48 overflow-y-auto ${dark ? "bg-purple-500/10 text-purple-100" : "bg-purple-50 text-purple-900"}`}>{answer.a || <InflaStatus busy={busy || "Pensando…"} />}</div>}
     </div>;
-  } else if (step.id === "map") {
-    body = <p>No mapa você vê <b>onde vendeu</b>{where ? <>: o pedido de <b>{order?.clientName}</b> foi para <b>{where}</b></> : ""}. Cada ponto mostra os clientes, pedidos e o que foi vendido na região.</p>;
-    hint = !st.seenMap && <Btn onClick={() => save({ ...st, seenMap: true })}>Entendi</Btn>;
-  }
+  } else if (step.id === "map") { body = <p className="text-base font-bold">Aqui você vê onde vendeu{where ? ` — ${where}` : ""}.</p>; hint = !st.seenMap && <Btn onClick={() => save({ ...st, seenMap: true })}>Entendi</Btn>; }
 
-  // se o destaque estiver no canto de baixo à direita, o cartão sobe para não tampar
   // Posição do cartão: em cima à esquerda (depois do menu). Se for tampar o destaque,
   // a mãozinha ou o "Você está aqui", vai para o próximo canto livre.
   const W = typeof window !== "undefined" ? window.innerWidth : 1200, H = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -252,7 +247,7 @@ function Tap({ t }) {
   return <div style={{ position: "fixed", zIndex: 45, left: 0, top: 0, pointerEvents: "none" }}>
     {[0, 1, 2].map(i => <span key={i} className="infla-ripple" style={{ left: cx, top: cy, animationDelay: `${i * 0.5}s` }} />)}
     <span className="infla-hand" style={{ left: cx + 6, top: cy + 4 }}>👆</span>
-    <span className="infla-tap-label" style={{ left: cx, top: below ? cy + 62 : cy - 40 }}>{t.label}</span>
+    {t.label && <span className="infla-tap-label" style={{ left: cx, top: below ? cy + 62 : cy - 40 }}>{t.label}</span>}
     <style>{`
 .infla-ripple{position:fixed;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:3px solid #fb923c;animation:infla-rip 1.5s ease-out infinite;box-shadow:0 0 18px rgba(251,146,60,.7)}
 @keyframes infla-rip{0%{transform:scale(.4);opacity:1}100%{transform:scale(3.6);opacity:0}}
