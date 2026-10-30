@@ -1754,7 +1754,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
               extra={<>{fz.length > 0 && <span className={`text-[11px] font-bold truncate max-w-[120px] ${dark ? "text-gray-400" : "text-gray-500"}`}>👤 {fz.join(", ")}</span>}{np > 0 && <span className={`text-[11px] font-bold ${dark ? "text-gray-400" : "text-gray-500"}`}>📷 {np}</span>}</>} /></div>;
           }
           return (
-            <div data-card-open data-tour={row.stage !== "finalizado" ? "fin-open" : undefined} key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
+            <div data-card-open data-fin-card="1" data-tour={row.stage !== "finalizado" ? "fin-open" : undefined} key={`${row._itemId}-${i}`} className={`rounded-2xl border overflow-hidden animate-slide-up ${dark ? "bg-gray-900 border-orange-500/40" : "bg-white border-orange-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`}>
               <button onClick={toggle} className={`w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border-b ${dark ? "border-gray-800 text-gray-400 hover:text-white" : "border-gray-100 text-gray-500"}`}><ChevronUp size={16} />Fechar</button>
               <div className="flex items-start justify-between p-4 gap-3">
                 <div className="min-w-0 flex-1">
@@ -1787,7 +1787,7 @@ function FinalizationTab({ data, setData, dark, user, openPhotos }) {
                 <div className="w-full lg:w-auto flex flex-col items-stretch lg:items-end gap-1">
                   {row.stage === "finalizado" ? (
                     <div className="flex items-center justify-between lg:justify-end gap-3">
-                      <span className="flex items-center gap-2 px-5 py-3 rounded-xl font-black text-emerald-500 bg-emerald-500/15 border-2 border-emerald-500/40"><DoneIcon size={20} />Finalizado</span>
+                      <span data-tour="fin-done" className="flex items-center gap-2 px-5 py-3 rounded-xl font-black text-emerald-500 bg-emerald-500/15 border-2 border-emerald-500/40"><DoneIcon size={20} />Finalizado</span>
                       {canEdit && <button onClick={() => update(row._itemId, { stage: "finalizando", done: false, finDate: null })} className={`text-xs font-bold underline ${dark ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-700"}`}>desfazer</button>}
                     </div>
                   ) : (() => {
@@ -2524,12 +2524,16 @@ function MainApp() {
   // Ao trocar de aba, a tela começa do topo
   useEffect(() => { const el = document.querySelector('[data-main-scroll]'); if (el) el.scrollTop = 0; }, [tab]);
   const login = (u) => {
+    try { Object.keys(sessionStorage).filter(k => /^(brain-chat|float-chat|tour-chat)/.test(k)).forEach(k => sessionStorage.removeItem(k)); } catch { }
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(u)); localStorage.setItem("ags_last_company", u.company_id); } catch { }
     LOAD_OK = false; setData(emptyData()); setLoadingServer(true);
     setTab(firstTab(u));
     setUser(u);
   };
+  // conversas do Cérebro ficam só nesta aba: ao entrar/sair de uma conta, começam limpas
+  const clearChats = () => { try { Object.keys(sessionStorage).filter(k => /^(brain-chat|float-chat|tour-chat)/.test(k)).forEach(k => sessionStorage.removeItem(k)); } catch { } };
   const logout = () => {
+    clearChats();
     try { localStorage.removeItem(SESSION_KEY); } catch { }
     CURRENT_COMPANY_ID = null; LOAD_OK = false; PLAN = null; setPlan(null); setSuspended(""); setData(emptyData()); setUser(null);
   };

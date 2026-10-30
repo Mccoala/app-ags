@@ -99,7 +99,16 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
     const g = () => {
       const nb = step?.tab ? box(q(`[data-tour="nav-${step.tab}"]`)) : null;
       setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
-      if (done) { setRect(step?.id === "brain" ? box(q('[data-tour="brain"]')) : step?.id === "map" ? box(q('[data-tour="map-area"]')) : null); setTap(null); setSay(step?.id === "map" || step?.id === "photos" ? "" : "Feito! Toque em Próximo passo."); setFocusKey("done"); return; }
+      if (done) {
+        // terminou: mostra o resultado colorido e destaca a marcação de concluído
+        const doneEl = { brain: '[data-tour="brain"]', map: '[data-tour="map-area"]', photos: '[data-tour="photo-folder"]', production: '[data-tour="prod-first"]', finalization: '[data-fin-card="1"]' }[step?.id];
+        const area = doneEl ? q(doneEl) : null;
+        setRect(box(area));
+        let badge = null;
+        if (step?.id === "production" && area) badge = [...area.querySelectorAll("span,div")].find(e => e.children.length === 0 && /^conclu[ií]do$/i.test((e.textContent || "").trim()));
+        if (step?.id === "finalization") badge = q('[data-tour="fin-done"]');
+        const bb = box(badge); setTap(bb ? { ...bb, ring: true } : null);
+        setSay(step?.id === "map" || step?.id === "photos" ? "" : "Feito! Toque em Próximo passo."); setFocusKey("done"); return; }
       let el = null, t = null, ring = false, text = "", key = "";
       if (step.id === "order") {
         const form = q('[data-tour="order-form"]');
@@ -122,7 +131,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
         else if (!q('[data-tour="fin-open"] [data-tour="fin-worker"][data-on="1"]')) { el = q('[data-tour="fin-open"]'); t = q('[data-tour="fin-open"] [data-tour="fin-worker"]'); text = "Marque quem finalizou."; key = "f2"; }
         else { el = q('[data-tour="fin-open"]'); t = q('[data-tour="fin-btn"]'); text = "Toque em Concluir e tire a foto."; key = "f3"; }
       } else if (step.id === "brain") { el = q('[data-tour="brain"]'); text = el ? "Toque numa pergunta no Cérebro." : "Toque numa pergunta."; key = "b"; }
-      else if (step.id === "photos") { text = ""; key = "ph"; }
+      else if (step.id === "photos") { el = q('[data-tour="photo-folder"]'); text = ""; key = "ph"; }
       else if (step.id === "map") { el = q('[data-tour="map-area"]'); text = ""; key = "m"; }
       setRect(box(el));
       const tb = box(t || (ring ? el : null));
@@ -290,7 +299,7 @@ function BrainIntro({ onDone }) {
     const guard = setTimeout(() => setT(x => Math.max(x, 10.5)), 14000); // se o vídeo travar, libera o botão
     return () => { cancelAnimationFrame(r); clearTimeout(guard); };
   }, []);
-  const ended = t > 10.2;
+  const ended = true; // pode pular a animação a qualquer momento
   const glow = t > 3.4 && t < 6.6 ? Math.min(1, (t - 3.4) * 3, (6.6 - t) * 3) : 0;
   const conf = useRef([...Array(60)].map((_, i) => ({ x: 8 + Math.random() * 84, d: 1.6 + Math.random() * 1.6, s: 7 + Math.random() * 7, c: ["#fc6502", "#facc15", "#38bdf8", "#22c55e", "#f472b6", "#a78bfa"][i % 6], delay: 7.8 + Math.random() * 1.2, r: Math.random() * 360, dx: (Math.random() - .5) * 30 }))).current;
   return (

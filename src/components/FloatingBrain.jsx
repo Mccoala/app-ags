@@ -88,7 +88,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
   const [input, setInput] = useState("");
   const endRef = useRef(null);
   const isAdmin = user?.role === "admin";
-  const { msgs, setMsgs, ask, busy, scope } = useBrainAgent({ data, user, persist, allowSave: isAdmin, storageKey: `float-chat-${user?.id || "x"}` });
+  const { msgs, setMsgs, ask, busy, scope } = useBrainAgent({ data, user, persist, allowSave: isAdmin, storageKey: `float-chat-${user?.company_id || "x"}-${user?.id || "x"}` });
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy, open]);
   const [voiceOn, setVoiceOn] = useState(false);
   const voiceOk = useVoiceAvailable(); // botões de voz só com a voz natural ligada

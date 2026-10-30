@@ -52,7 +52,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   const endRef = useRef(null);
 
   const { msgs, setMsgs, ask: agentAsk, busy } = useBrainAgent({
-    data, user, persist, allowSave: canWrite, storageKey: "brain-chat",
+    data, user, persist, allowSave: canWrite, storageKey: `brain-chat-${user?.company_id || "x"}-${user?.id || "x"}`,
     onNoteSaved: (note) => { setFlash(f => [...f, `n:${note.id}`]); setTimeout(() => setFlash(f => f.filter(x => x !== `n:${note.id}`)), 6000); },
   });
   useEffect(() => { { const box = endRef.current?.parentElement; if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } }, [msgs, busy]);
@@ -60,6 +60,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   // Tutorial: as 3 perguntas aparecem aqui no chat; a resposta avisa o tutorial
   const [tour, setTour] = useState(() => !!window.__INFLA_BRAIN_TOUR);
   useEffect(() => { const f = () => setTour(!!window.__INFLA_BRAIN_TOUR); window.addEventListener("infla-tour", f); return () => window.removeEventListener("infla-tour", f); }, []);
+  useEffect(() => { if (tour) setMsgs([]); }, [tour]); // eslint-disable-line — no tutorial a conversa começa limpa
   const tourAsk = async (q) => { setSide("chat"); const a = await ask(q); window.dispatchEvent(new CustomEvent("infla-brain-answer", { detail: { q, a } })); };
   const [voiceOn, setVoiceOn] = useState(false);
   const canVoice = useVoiceAvailable(); // só aparece com a voz natural ligada

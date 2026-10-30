@@ -259,7 +259,7 @@ export default function PhotosTab({ data, persist, dark, user, canEditPhotos, fo
 
       {/* nível 3: fotos do pedido */}
       {!searchResults && seller && pedido && (
-        <div className={`rounded-2xl border p-4 ${card}`}>
+        <div data-tour="photo-folder" className={`rounded-2xl border p-4 ${card}`}>
           <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
             <div>
               <div className={`text-xl font-black ${txt}`}><span className="text-orange-500">Pedido</span> {pedido}</div>
