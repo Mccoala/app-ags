@@ -335,7 +335,7 @@ function Finale({ onClose }) {
         <div className="absolute left-1/2 top-16 -translate-x-1/2 w-72 h-72 rounded-full" style={{ background: "radial-gradient(circle, rgba(252,101,2,.45), transparent 65%)", filter: "blur(10px)", opacity: Math.min(1, t) }} />
         <div className="relative flex justify-center"><BrandMark size={150} /></div>
         <div className="relative mt-6 flex justify-center text-white" style={show(0.6)}><BrandWord height={46} /></div>
-        <p className="relative mt-5 text-2xl sm:text-3xl font-black text-white leading-tight" style={show(1.2)}>Sua fábrica no controle.<br /><span className="text-orange-400">Você com a sua família.</span></p>
+        <p className="relative mt-5 text-2xl sm:text-3xl font-black text-white leading-tight" style={show(1.2)}>Sua fábrica rodando sozinha.<br /><span className="text-orange-400">Tudo na palma da sua mão.</span></p>
         <div className="relative mt-7 mx-auto rounded-3xl p-5 border-2 border-orange-500/60 bg-gradient-to-br from-orange-500/20 to-amber-400/10" style={show(1.9)}>
           <div className="flex items-center justify-center gap-3">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 flex items-center justify-center text-white shadow-lg shadow-orange-500/40" style={{ animation: t > 2 ? "bi-bounce 1.2s ease 2" : "none" }}><Gift size={30} /></div>
