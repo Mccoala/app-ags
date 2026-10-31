@@ -35,7 +35,7 @@ function PlanTrace({ idx }) {
 }
 if (typeof document !== "undefined" && !document.getElementById("plan-trace-css")) {
   const st = document.createElement("style"); st.id = "plan-trace-css";
-  st.textContent = "@keyframes plan-trace-on{0%{opacity:0}3%{opacity:1}30%{opacity:1}33.3%{opacity:0}100%{opacity:0}}@keyframes plan-trace-run{0%{stroke-dashoffset:0}33.3%{stroke-dashoffset:-100}100%{stroke-dashoffset:-100}}";
+  st.textContent = "@keyframes plan-trace-on{0%{opacity:0}3%{opacity:1}30%{opacity:1}33.3%{opacity:0}100%{opacity:0}}@keyframes plan-icon-on{0%{color:inherit;filter:none;transform:scale(1)}6%{color:var(--c);filter:drop-shadow(0 0 6px var(--c)) drop-shadow(0 0 12px var(--c));transform:scale(1.08)}27%{color:var(--c);filter:drop-shadow(0 0 6px var(--c)) drop-shadow(0 0 12px var(--c));transform:scale(1.08)}33.3%{color:inherit;filter:none;transform:scale(1)}100%{color:inherit;filter:none;transform:scale(1)}}@keyframes plan-trace-run{0%{stroke-dashoffset:0}33.3%{stroke-dashoffset:-100}100%{stroke-dashoffset:-100}}";
   document.head.appendChild(st);
 }
 
@@ -117,7 +117,7 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
               <div key={id} className={`relative rounded-2xl border flex flex-col ${T.card}`}>
                 <PlanTrace idx={idx} />
                 <div className="p-6 pb-5">
-                  <Icon size={46} strokeWidth={1.1} className={dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"} />
+                  <span className={`inline-block ${dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"}`} style={{ "--c": TRACE[idx], animation: `plan-icon-on 9s linear ${idx * 3}s infinite` }}><Icon size={46} strokeWidth={1.1} /></span>
                   <div className="mt-4 text-xl font-bold">{p.label}</div>
                   <div className={`text-sm ${T.soft}`}>{c.tag}</div>
                   <div className="mt-5 flex items-end gap-2">
