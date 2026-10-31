@@ -21,14 +21,14 @@ export function UsageBar({ label, used, limit, icon: Icon, dark }) {
 }
 
 // Linha de luz que contorna os cards em sequência: Essencial (verde) → PRO (laranja) → Ultra (roxo).
-// Cada card brilha 3s; o ciclo completo leva 9s e recomeça.
+// Cada card brilha 4s; o ciclo completo leva 12s e recomeça.
 const TRACE = ["#22c55e", "#f97316", "#a855f7"];
 function PlanTrace({ idx }) {
   const c = TRACE[idx] || TRACE[0];
   return (
-    <svg aria-hidden="true" className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" style={{ animation: `plan-trace-on 9s linear ${idx * 3}s infinite`, opacity: 0 }}>
+    <svg aria-hidden="true" className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" style={{ animation: `plan-trace-on 12s linear ${idx * 4}s infinite`, opacity: 0 }}>
       <rect x="1" y="1" rx="16" ry="16" pathLength="100" fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round"
-        style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)", strokeDasharray: "22 78", animation: `plan-trace-run 9s linear ${idx * 3}s infinite`, filter: `drop-shadow(0 0 6px ${c}) drop-shadow(0 0 12px ${c})` }} />
+        style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)", strokeDasharray: "22 78", animation: `plan-trace-run 12s linear ${idx * 4}s infinite`, filter: `drop-shadow(0 0 6px ${c}) drop-shadow(0 0 12px ${c})` }} />
       <rect x="1" y="1" rx="16" ry="16" fill="none" stroke={c} strokeOpacity=".22" strokeWidth="1.5" style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }} />
     </svg>
   );
@@ -117,7 +117,7 @@ export function PlansModal({ plan, companyName, companyId, email, onClose, dark,
               <div key={id} className={`relative rounded-2xl border flex flex-col ${T.card}`}>
                 <PlanTrace idx={idx} />
                 <div className="p-6 pb-5">
-                  <span className={`inline-block ${dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"}`} style={{ "--c": TRACE[idx], animation: `plan-icon-on 9s linear ${idx * 3}s infinite` }}><Icon size={46} strokeWidth={1.1} /></span>
+                  <span className={`inline-block ${dark ? "text-[#d9d9d9]" : "text-[#2a2a2a]"}`} style={{ "--c": TRACE[idx], animation: `plan-icon-on 12s linear ${idx * 4}s infinite` }}><Icon size={46} strokeWidth={1.1} /></span>
                   <div className="mt-4 text-xl font-bold">{p.label}</div>
                   <div className={`text-sm ${T.soft}`}>{c.tag}</div>
                   <div className="mt-5 flex items-end gap-2">
