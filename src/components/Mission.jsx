@@ -167,6 +167,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   };
   const askQ = async (q) => { setAnswer({ q, a: null }); const a = await ask(q); setAnswer({ q, a: clean(a) || "Não consegui responder agora. Toque de novo na pergunta." }); };
 
+  if (st.i === 0 && !st.welcomed && !finale) return <Welcome name={user?.name} onDone={() => save({ ...st, welcomed: true })} />;
   if (step?.id === "brain" && !st.brainIntro) return <BrainIntro onDone={() => save({ ...st, brainIntro: true })} />;
   if (finale) return <Finale dark={dark} onClose={() => { clearMission(cid); onFinish?.(); }} />;
   if (!step) return null;
@@ -288,6 +289,26 @@ const Bar = ({ pct, dark, label }) => <div>
 </div>;
 
 // ── Animação do Infla colocando o cérebro (abre o passo do Cérebro) ─────────
+// ── Boas-vindas: o Infla acena antes do primeiro passo ──────────────────────
+function Welcome({ name, onDone }) {
+  const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  const first = String(name || "").trim().split(/\s+/)[0];
+  return (
+    <div className="fixed inset-0 z-[460] flex items-center justify-center p-4 overflow-hidden" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(124,45,18,.9), rgba(8,5,3,.96) 70%)", backdropFilter: "blur(4px)" }}>
+      <div className="relative w-full max-w-md text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
+        <div className="relative mx-auto" style={{ width: "min(46vw, 210px)", aspectRatio: "496 / 1052", maxHeight: "48vh" }}>
+          {safari ? <img src="/video/infla-oi.webp" alt="" className="w-full h-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.5)]" />
+            : <video src="/video/infla-oi.webm" muted playsInline autoPlay loop className="w-full h-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.5)]" />}
+        </div>
+        <div className="mt-3 text-[11px] font-black uppercase tracking-[.22em] text-orange-300">Tutorial na prática</div>
+        <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Oi{first ? `, ${first}` : ""}! Eu sou o Infla 👋</h2>
+        <p className="mt-2 text-sm sm:text-base text-orange-100/85 font-semibold">Em 7 passos rápidos você lança seu primeiro pedido e vê sua fábrica funcionando de verdade.</p>
+        <button onClick={onDone} className="mt-6 w-full py-3.5 rounded-2xl font-black text-white text-lg bg-gradient-to-r from-orange-500 to-orange-600 shadow-xl shadow-orange-500/30 hover:scale-[1.02] transition">Vamos lá!</button>
+      </div>
+    </div>
+  );
+}
+
 function BrainIntro({ onDone }) {
   // Safari não toca vídeo transparente (webm); lá usa a versão em imagem animada
   const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
