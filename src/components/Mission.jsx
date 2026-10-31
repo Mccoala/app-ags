@@ -101,7 +101,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
       setNav(nb && nb.x >= 0 && nb.x + nb.w > 40 && nb.y >= 0 && nb.y < window.innerHeight ? nb : null);
       if (done) {
         // terminou: mostra o resultado colorido e destaca a marcação de concluído
-        const doneEl = { team:'[data-tour="team-cols"]', brain: '[data-tour="brain"]', map: '[data-tour="map-area"]', photos: '[data-tour="photo-folder"]', production: '[data-tour="prod-first"]', finalization: '[data-fin-card="1"]' }[step?.id];
+        const doneEl = { order: order ? `[data-order-id="${String(order.id).replace(/"/g, '')}"]` : null, team:'[data-tour="team-cols"]', brain: '[data-tour="brain"]', map: '[data-tour="map-area"]', photos: '[data-tour="photo-folder"]', production: '[data-tour="prod-first"]', finalization: '[data-fin-card="1"]' }[step?.id];
         const isDone = (n) => [...n.querySelectorAll("span,div")].some(e => e.children.length === 0 && /^conclu[ií]do$/i.test((e.textContent || "").trim()));
         const area = !doneEl ? null : step?.id === "production" ? ([...document.querySelectorAll(doneEl)].find(isDone) || q(doneEl)) : q(doneEl);
         setRect(box(area));
