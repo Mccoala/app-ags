@@ -60,10 +60,11 @@ export function buildGraph(data) {
   });
   const orderToys = (o) => (o.items || []).filter(i => !i.isMotor && i.toy).map(i => `b:${norm(i.toy).replace(/\s+/g, " ")}`);
 
-  // brinquedos: ligados a CADA cliente que comprou (o mesmo brinquedo une clientes diferentes)
+  // brinquedos: ligados aos pedidos (o mesmo brinquedo une pedidos de clientes diferentes)
   Object.entries(toyCount).sort((a, b) => b[1].n - a[1].n).slice(0, 45).forEach(([k, t]) => {
     node(`b:${k}`, "toy", t.label, { w: 1 + t.n, sub: `${t.n} vendido(s) · ${t.clients.size} cliente(s)` }); link("g:toys", `b:${k}`, 0.5);
-    t.clients.forEach(ck => link(`c:${ck}`, `b:${k}`, 0.7));
+    // cliente → pedido → brinquedo. Ligação direta cliente→brinquedo só se o pedido não estiver no mapa
+    t.clients.forEach(ck => { const temPedido = orders.some(o => norm(o.clientName) === ck && nodes.has(`o:${o.id}`) && orderToys(o).includes(`b:${k}`)); if (!temPedido) link(`c:${ck}`, `b:${k}`, 0.7); });
   });
   orders.forEach(o => { if (nodes.has(`o:${o.id}`)) orderToys(o).forEach(tk => link(`o:${o.id}`, tk, 0.5)); });
   // quem trabalhou em quê

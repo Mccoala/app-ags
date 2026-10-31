@@ -216,7 +216,7 @@ export default function FloatingBrain({ data, user, persist, dark, companyId, op
               </div>
             )}
             {msgs.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start flex-col items-start"}`}>
+              <div key={i} className={`relative flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 {m.role !== "user" && i === msgs.length - 1 && <InflaIdea k={ideaK} />}
                 <div className={`max-w-[90%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${m.role === "user" ? "text-white rounded-br-md" : dark ? "bg-white/5 rounded-bl-md border border-white/5" : "bg-fuchsia-50 rounded-bl-md"} ${m.error ? "!text-red-400" : ""}`} style={m.role === "user" ? { background: "linear-gradient(135deg,#a855f7,#ec4899)" } : {}}>
                   {m.role === "user" ? m.content : <RichText text={m.content} />}

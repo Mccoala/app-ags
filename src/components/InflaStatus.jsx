@@ -28,10 +28,10 @@ export function useIdeaFlash(busy) {
   return idea;
 }
 
-// Lâmpada pequenininha em cima da resposta
+// Lâmpada pequenininha em cima da resposta, flutuando (não empurra a conversa)
 export function InflaIdea({ k }) {
   if (!k) return null;
-  return <img key={k} src={`/video/infla-ideia.webp?${k}`} alt="" className="block w-[46px] h-auto -mb-1 ml-1 drop-shadow-[0_4px_8px_rgba(0,0,0,.35)]" />;
+  return <img key={k} src={`/video/infla-ideia.webp?${k}`} alt="" className="absolute left-2 bottom-full -mb-2 z-10 w-[46px] h-auto pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,.35)]" />;
 }
 
 // Comemoração rápida (ex.: pedido finalizado com foto)
