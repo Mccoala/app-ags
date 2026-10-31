@@ -286,7 +286,7 @@ function InflaClip({ name, className, style }) {
   const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
   return safari
     ? <img src={`/video/${name}.webp`} alt="" className={className} style={style} />
-    : <video src={`/video/${name}.webm`} muted playsInline autoPlay loop className={className} style={style} />;
+    : <video src={`/video/${name}.webm`} muted playsInline autoPlay loop className={className} style={{ ...style, opacity: 0, transition: "opacity .4s" }} onPlaying={e => { e.currentTarget.style.opacity = 1; }} />; // só aparece quando já está tocando (evita caixa escura enquanto carrega)
 }
 function LoginMascots() {
   const sh = { filter: "drop-shadow(0 16px 24px rgba(0,0,0,.45))" };

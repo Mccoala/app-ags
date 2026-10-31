@@ -301,7 +301,7 @@ function Welcome({ name, onDone }) {
       <div className="relative w-full max-w-md text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
         <div className="relative mx-auto" style={{ width: "min(46vw, 210px)", aspectRatio: "496 / 1052", maxHeight: "48vh" }}>
           {safari ? <img src="/video/infla-oi.webp" alt="" className="w-full h-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.5)]" />
-            : <video src="/video/infla-oi.webm" muted playsInline autoPlay loop className="w-full h-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.5)]" />}
+            : <video src="/video/infla-oi.webm" muted playsInline autoPlay loop className="w-full h-full object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,.5)]" style={{ opacity: 0, transition: "opacity .4s" }} onPlaying={e => { e.currentTarget.style.opacity = 1; }} />}
         </div>
         <div className="mt-3 text-[11px] font-black uppercase tracking-[.22em] text-orange-300">Tutorial na prática</div>
         <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Oi{first ? `, ${first}` : ""}! Eu sou o Infla 👋</h2>
@@ -336,7 +336,7 @@ function BrainIntro({ onDone }) {
         <div className="relative mx-auto mt-2" style={{ width: "min(70vw, 300px)", aspectRatio: "520 / 650" }}>
           <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none" style={{ width: 300, height: 300, background: "radial-gradient(circle, rgba(236,72,153,.75), rgba(168,85,247,.35) 45%, transparent 70%)", opacity: glow, filter: "blur(6px)", transform: `translate(-50%,-50%) scale(${1 + glow * 0.15 + Math.sin(t * 9) * 0.04 * glow})` }} />
           {safari ? <img src="/video/infla-cerebro.webp" alt="" className="relative w-full h-full object-contain" />
-            : <video ref={v} src="/video/infla-cerebro.webm" muted playsInline autoPlay loop className="relative w-full h-full object-contain" />}
+            : <video ref={v} src="/video/infla-cerebro.webm" muted playsInline autoPlay loop className="relative w-full h-full object-contain" style={{ opacity: 0, transition: "opacity .4s" }} onPlaying={e => { e.currentTarget.style.opacity = 1; }} />}
         </div>
         <p className="mt-2 text-sm sm:text-base text-purple-100/85 font-semibold">Tudo o que você lança — pedidos, equipe, produção e fotos — vira conhecimento. Agora é só perguntar.</p>
         <button onClick={onDone} disabled={!ended} className={`mt-5 w-full sm:w-auto px-8 py-3.5 rounded-2xl font-black text-white text-lg transition-all ${ended ? "bg-gradient-to-r from-purple-500 to-fuchsia-600 shadow-xl shadow-purple-500/30 hover:scale-[1.02]" : "bg-white/10 text-white/40"}`}>

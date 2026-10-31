@@ -96,7 +96,7 @@ function InflaSentado() {
   const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
   const cls = "absolute left-1/2 -translate-x-1/2 bottom-full -mb-[3px] w-[min(150px,18vh)] h-auto pointer-events-none select-none drop-shadow-[0_10px_14px_rgba(0,0,0,.4)]";
   return safari ? <img src="/video/infla-sentado.webp" alt="" aria-hidden="true" className={cls} />
-    : <video src="/video/infla-sentado.webm" muted playsInline autoPlay loop aria-hidden="true" className={cls} />;
+    : <video src="/video/infla-sentado.webm" muted playsInline autoPlay loop aria-hidden="true" className={cls} style={{ opacity: 0, transition: "opacity .4s" }} onPlaying={e => { e.currentTarget.style.opacity = 1; }} />;
 }
 
 // Primeira tela depois do cadastro: obrigatório colocar nome e logo
