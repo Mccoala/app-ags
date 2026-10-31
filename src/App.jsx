@@ -357,8 +357,12 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
       <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
       <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
+      <LoginMascots />
 
       <div className="relative z-10 w-full max-w-md mx-4 animate-slide-up">
+        <div className="flex justify-center -mb-2 pointer-events-none" aria-hidden="true">
+          <InflaClip name="login-motor" className="h-[clamp(120px,22vh,210px)] w-auto" style={{ filter: "drop-shadow(0 14px 20px rgba(0,0,0,.45))" }} />
+        </div>
         {mode === "employee" ? (
           <div className="text-center mb-6">
              <div className="px-4 py-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full inline-flex font-bold text-xs uppercase mb-4 tracking-widest">Acesso da Equipe</div>
