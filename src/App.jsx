@@ -279,25 +279,21 @@ function AppLogo({ collapsed = false, className = "" }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
-// Vitrine do login (computador): o Infla em vídeo, num cartão ao lado do formulário.
-// Os dois vídeos se revezam; no celular não aparece para não empurrar o formulário.
-const LOGIN_CLIPS = [
-  { src: "/video/login-encher.mp4", poster: "/video/login-encher.jpg", bg: "#e98aa7", title: "Do pedido ao brinquedo pronto.", sub: "Cada etapa da produção no seu controle." },
-  { src: "/video/login-puxar.mp4", poster: "/video/login-puxar.jpg", bg: "#c93430", title: "Chega de fazer força sozinho.", sub: "Sua equipe e seus pedidos num lugar só." },
-];
-function LoginShowcase() {
-  const [k, setK] = useState(0);
-  const c = LOGIN_CLIPS[k];
+// Infla animado no login, sem fundo: enchendo o escorregador (esquerda), puxando o
+// brinquedo (direita) e enchendo a si mesmo com o motor (em cima do formulário).
+// No iPhone (Safari não toca vídeo transparente) usa a versão em imagem animada.
+function InflaClip({ name, className, style }) {
+  const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  return safari
+    ? <img src={`/video/${name}.webp`} alt="" className={className} style={style} />
+    : <video src={`/video/${name}.webm`} muted playsInline autoPlay loop className={className} style={style} />;
+}
+function LoginMascots() {
+  const sh = { filter: "drop-shadow(0 16px 24px rgba(0,0,0,.45))" };
   return (
-    <div className="hidden lg:flex flex-col relative z-10 w-[min(46vw,620px)] mr-12" aria-hidden="true">
-      <div className="relative rounded-[28px] overflow-hidden shadow-2xl shadow-black/50 ring-1 ring-white/10" style={{ aspectRatio: "16 / 9", background: c.bg }}>
-        <video key={c.src} src={c.src} poster={c.poster} muted playsInline autoPlay onEnded={() => setK((k + 1) % LOGIN_CLIPS.length)} className="absolute inset-0 w-full h-full object-cover" style={{ animation: "fadeIn .5s ease both" }} />
-      </div>
-      <div key={k} className="mt-6 text-left" style={{ animation: "fadeIn .6s ease both" }}>
-        <h2 className="text-3xl font-black text-white leading-tight">{c.title}</h2>
-        <p className="mt-1.5 text-base font-semibold text-orange-300">{c.sub}</p>
-        <div className="mt-4 flex gap-1.5">{LOGIN_CLIPS.map((_, i) => <span key={i} className={`h-1.5 rounded-full transition-all ${i === k ? "w-8 bg-orange-500" : "w-3 bg-white/20"}`} />)}</div>
-      </div>
+    <div aria-hidden="true" className="pointer-events-none select-none">
+      <InflaClip name="login-encher" className="hidden lg:block fixed left-[1vw] bottom-[4vh] w-[min(36vw,560px)] h-auto" style={sh} />
+      <InflaClip name="login-puxar" className="hidden lg:block fixed right-[1vw] bottom-[4vh] w-[min(36vw,560px)] h-auto" style={sh} />
     </div>
   );
 }
@@ -361,9 +357,12 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
       <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
       <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
-      <LoginShowcase />
+      <LoginMascots />
 
       <div className="relative z-10 w-full max-w-md mx-4 animate-slide-up">
+        <div className="flex justify-center -mb-2 pointer-events-none" aria-hidden="true">
+          <InflaClip name="login-motor" className="h-[clamp(120px,22vh,210px)] w-auto" style={{ filter: "drop-shadow(0 14px 20px rgba(0,0,0,.45))" }} />
+        </div>
         {mode === "employee" ? (
           <div className="text-center mb-6">
              <div className="px-4 py-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full inline-flex font-bold text-xs uppercase mb-4 tracking-widest">Acesso da Equipe</div>

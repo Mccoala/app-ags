@@ -1,4 +1,4 @@
-import InflaStatus from "./InflaStatus";
+import InflaStatus, { InflaIdea, useIdeaFlash } from "./InflaStatus";
 import { QUESTIONS as TOUR_QUESTIONS } from "./Mission";
 import React, { useEffect, useRef, useState } from "react";
 import ChatBox from "./ChatBox";
@@ -60,6 +60,7 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
   // Tutorial: as 3 perguntas aparecem aqui no chat; a resposta avisa o tutorial
   const [tour, setTour] = useState(() => !!window.__INFLA_BRAIN_TOUR);
   useEffect(() => { const f = () => setTour(!!window.__INFLA_BRAIN_TOUR); window.addEventListener("infla-tour", f); return () => window.removeEventListener("infla-tour", f); }, []);
+  const ideaK = useIdeaFlash(busy);
   useEffect(() => { if (tour) setMsgs([]); }, [tour]); // eslint-disable-line — no tutorial a conversa começa limpa
   const tourAsk = async (q) => { setSide("chat"); const a = await ask(q); window.dispatchEvent(new CustomEvent("infla-brain-answer", { detail: { q, a } })); };
   const [voiceOn, setVoiceOn] = useState(false);
@@ -168,7 +169,8 @@ export default function BrainAI({ data, persist, dark, canWrite = true, user }) 
               </div>
             )}
             {msgs.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start flex-col items-start"}`}>
+                {m.role !== "user" && i === msgs.length - 1 && <InflaIdea k={ideaK} />}
                 <div className={`max-w-[92%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed break-words animate-slide-up ${m.role === "user" ? "text-white rounded-br-md" : dark ? "bg-white/5 text-slate-200 rounded-bl-md border border-white/5" : "bg-fuchsia-50 text-slate-800 rounded-bl-md"} ${m.error ? "!text-red-400" : ""}`} style={m.role === "user" ? { background: "linear-gradient(135deg,#a855f7,#ec4899)" } : {}}>
                   {m.role === "user" ? m.content : <RichText text={m.content} />}
                   {m.tools?.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{m.tools.map((t, j) => <span key={j} title={JSON.stringify(t.input)} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${t.name === "salvar_no_cerebro" ? "bg-fuchsia-500/20 text-fuchsia-300" : "bg-black/20 text-slate-400"}`}>{t.name === "salvar_no_cerebro" ? `🧠 guardou: ${t.input?.titulo || ""}` : `🔎 ${TOOL_LABEL[t.name] || t.name}`}</span>)}</div>}
