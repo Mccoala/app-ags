@@ -289,7 +289,7 @@ function InflaClip({ name, className, style }) {
     : <video src={`/video/${name}.webm`} muted playsInline autoPlay loop className={className} style={{ ...style, opacity: 0, transition: "opacity .4s" }} onPlaying={e => { e.currentTarget.style.opacity = 1; }} />; // só aparece quando já está tocando (evita caixa escura enquanto carrega)
 }
 function LoginMascots() {
-  const sh = { filter: "drop-shadow(0 16px 24px rgba(0,0,0,.45))" };
+  const sh = {};
   return (
     <div aria-hidden="true" className="pointer-events-none select-none">
       <InflaClip name="login-encher" className="hidden lg:block fixed left-[1vw] bottom-[4vh] w-[min(36vw,560px)] h-auto" style={sh} />
@@ -355,13 +355,13 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
-      <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
-      <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
+      <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.14) 0%,transparent 70%)",pointerEvents:"none" }} />
+      <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.10) 0%,transparent 70%)",pointerEvents:"none" }} />
       <LoginMascots />
 
       <div className="relative z-10 w-full max-w-md mx-4 animate-slide-up">
         <div className="flex justify-center -mb-2 pointer-events-none" aria-hidden="true">
-          <InflaClip name="login-motor" className="h-[clamp(120px,22vh,210px)] w-auto" style={{ filter: "drop-shadow(0 14px 20px rgba(0,0,0,.45))" }} />
+          <InflaClip name="login-motor" className="h-[clamp(120px,22vh,210px)] w-auto" style={{}} />
         </div>
         {mode === "employee" ? (
           <div className="text-center mb-6">
@@ -378,7 +378,7 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
 
         <div className="glass-card rounded-2xl p-8" style={{ border:"1px solid rgba(255,255,255,0.09)" }}>
           <div className="text-center mb-8">
-            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.28) 0%,transparent 70%)",filter:"blur(18px)" }} /><AppLogo collapsed={false} className={dark === false ? "text-gray-900" : "text-white"} /></div></div>
+            <div className="flex justify-center mb-5"><div className="relative"><div style={{ position:"absolute",inset:-8,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.22) 0%,transparent 70%)" }} /><AppLogo collapsed={false} className={dark === false ? "text-gray-900" : "text-white"} /></div></div>
 
           </div>
 
