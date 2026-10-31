@@ -1443,7 +1443,7 @@ function CompactRow({ row, data, dark, pct, color, onOpen, steps, extra }) {
   const sc = sellerColor(data, row.seller);
   const s = statusBadge(row.deadline, row.done);
   return (
-    <button data-compact onClick={onOpen} className={`w-full text-left rounded-2xl border px-3 py-2.5 flex items-center gap-3 transition-colors ${dark ? "bg-gray-900 border-gray-800 hover:border-gray-700" : "bg-white border-gray-200 hover:border-gray-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`} style={{ borderLeft: `4px solid ${sc}` }}>
+    <button data-compact onClick={onOpen} className={`w-full text-left rounded-2xl border px-3 py-2.5 flex items-center gap-3 transition-colors ${dark ? "bg-gray-900 border-gray-800 hover:border-gray-700" : "bg-white border-gray-200 hover:border-gray-300"} ${row.priority ? "ring-2 ring-red-500/40" : ""}`} style={{ borderLeft: `4px solid ${pct >= 100 ? "#10b981" : sc}` }}>{/* pronto (100%): cantinho verde igual ao círculo */}
       <ProgressRing pct={pct} color={color} dark={dark} size={44} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 min-w-0">
