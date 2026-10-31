@@ -9,8 +9,8 @@ const NONE = { photos: false, clients: false, sellers: false, crm: false, dashbo
 export const PLANS = {
   // Teste grátis: 7 dias com TUDO do Ultra liberado. No 8º dia trava e leva para os planos.
   free: { id: "free", label: "Teste grátis (Ultra)", price: 0, orders: Infinity, users: Infinity, photos: Infinity, trialDays: 7, features: { ...ALL } },
-  essencial: { id: "essencial", label: "Essencial", price: 147, orders: 300, users: 5, photos: 0, features: { ...NONE } },
-  pro: { id: "pro", label: "PRO", price: 297, orders: 1000, users: 10, photos: 3000, features: { ...NONE, photos: true, clients: true, sellers: true } },
+  essencial: { id: "essencial", label: "Essencial", price: 147, orders: 60, users: 5, photos: 0, features: { ...NONE } },
+  pro: { id: "pro", label: "PRO", price: 297, orders: 150, users: 10, photos: 3000, features: { ...NONE, photos: true, clients: true, sellers: true } },
   ultra: { id: "ultra", label: "Ultra", price: 497, orders: Infinity, users: Infinity, photos: Infinity, features: { ...ALL } },
   creator: { id: "creator", label: "Criador", price: 0, orders: Infinity, users: Infinity, photos: Infinity, features: { ...ALL } },
 };
@@ -78,11 +78,16 @@ export function planState(company) {
   };
 }
 
+// Mês atual no horário de Brasília (o limite de pedidos é por mês e zera todo dia 1º)
+export const monthKey = (d = new Date()) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 7);
+// Pedidos lançados neste mês (contador do servidor; excluir pedido não devolve a vaga)
+export const ordersThisMonth = (usage) => usage?.month === monthKey() ? Number(usage?.orders_month) || 0 : 0;
+
 // Uso atual da empresa
 export function usageOf(appData, usage) {
   const users = (appData?.users || []).length + 1; // todos os logins (vendedores também) + o dono
   return {
-    orders: Math.max(Number(usage?.orders_created) || 0, (appData?.orders || []).length),
+    orders: ordersThisMonth(usage),
     photos: (appData?.photos || []).length + (appData?.readyStock || []).reduce((a, r) => a + (r.photos || []).length, 0),
     users,
   };

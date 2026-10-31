@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { db, SECURE, signToken, verifyToken, tokenFromEvent, hashPassword, checkPassword, httpError, json, fail, loadCompany, isCreatorCo, isLegacy, effective, NO_PLAN } from "../lib/server.js";
-import { planState, usageOf, normPlan, PLANS } from "../../src/lib/plans.js";
+import { planState, usageOf, normPlan, PLANS, monthKey } from "../../src/lib/plans.js";
 import { externalize, signForClient, hasInlineImages, hasPublicLinks, signOne } from "../lib/media.js";
 import { scrubForUser } from "../../src/lib/core.js";
 
@@ -189,6 +189,7 @@ const actions = {
     const srv = { orders_created: 0, ...(cur._srv || {}) };
     if (!cur._srv && c.app_data) srv.legacyPlan = c.plan_id ?? NO_PLAN; // empresa antiga: guarda o plano de agora
     srv.orders_created = Math.max(srv.orders_created || 0, (cur.orders || []).length);
+    if (srv.month !== monthKey()) { srv.month = monthKey(); srv.orders_month = 0; } // limite de pedidos é mensal
     const curIds = new Set((cur.orders || []).map(o => String(o.id)));
     const newOrders = (app_data.orders || []).filter(o => !curIds.has(String(o.id))).length;
     // Pedidos excluídos ficam guardados na lixeira (dá para recuperar)
@@ -204,11 +205,12 @@ const actions = {
       next.users = cur.users || []; // funcionário não mexe em logins e senhas
     } else next.users = mergeUsers(app_data.users, cur.users); // senha nova → embaralhada; sem senha na tela → mantém a guardada
     // limites do plano (só bloqueia o que aumenta)
-    if (newOrders > 0 && srv.orders_created + newOrders > st.limits.orders) throw httpError(403, "Você chegou ao limite de pedidos do seu plano.", { code: "limit_orders", limit: st.limits.orders });
+    if (newOrders > 0 && (srv.orders_month || 0) + newOrders > st.limits.orders) throw httpError(403, "Você chegou ao limite de pedidos do mês no seu plano.", { code: "limit_orders", limit: st.limits.orders });
     const before = usageOf(cur, srv), after = usageOf(next, srv);
     if (after.users > before.users && after.users > st.limits.users) throw httpError(403, "Você chegou ao limite de usuários do seu plano.", { code: "limit_users", limit: st.limits.users });
     if (after.photos > before.photos && after.photos > st.limits.photos) throw httpError(403, "Você chegou ao limite de fotos do seu plano.", { code: "limit_photos", limit: st.limits.photos });
     srv.orders_created += newOrders;
+    srv.orders_month = (srv.orders_month || 0) + newOrders;
     next._srv = srv;
     const { error } = await db().from("companies").update({ app_data: next }).eq("id", s.cid);
     if (error) throw httpError(500, "Não foi possível salvar agora.");
