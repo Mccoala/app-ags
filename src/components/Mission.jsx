@@ -167,7 +167,7 @@ export default function Mission({ data, dark, tab, setTab, user, persist, openPh
   };
   const askQ = async (q) => { setAnswer({ q, a: null }); const a = await ask(q); setAnswer({ q, a: clean(a) || "Não consegui responder agora. Toque de novo na pergunta." }); };
 
-  if (st.i === 0 && !st.welcomed && !finale) return <Welcome name={user?.name} onDone={() => save({ ...st, welcomed: true })} />;
+  if (SHOW_WELCOME && st.i === 0 && !st.welcomed && !finale) return <Welcome name={user?.name} onDone={() => save({ ...st, welcomed: true })} />;
   if (step?.id === "brain" && !st.brainIntro) return <BrainIntro onDone={() => save({ ...st, brainIntro: true })} />;
   if (finale) return <Finale dark={dark} onClose={() => { clearMission(cid); onFinish?.(); }} />;
   if (!step) return null;
@@ -289,6 +289,9 @@ const Bar = ({ pct, dark, label }) => <div>
 </div>;
 
 // ── Animação do Infla colocando o cérebro (abre o passo do Cérebro) ─────────
+// Tela de boas-vindas guardada (desligada): o Infla agora fica sentado na caixa da marca.
+// Para voltar com ela, troque para true.
+const SHOW_WELCOME = false;
 // ── Boas-vindas: o Infla acena antes do primeiro passo ──────────────────────
 function Welcome({ name, onDone }) {
   const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);

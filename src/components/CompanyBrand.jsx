@@ -91,11 +91,20 @@ export function BrandEditor({ brand, onSave, dark, compact = false, cta = "Salva
   );
 }
 
+// Infla sentado em cima da caixa (pula, acena e volta a sentar)
+function InflaSentado() {
+  const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  const cls = "absolute left-1/2 -translate-x-1/2 bottom-full -mb-[3px] w-[min(150px,18vh)] h-auto pointer-events-none select-none drop-shadow-[0_10px_14px_rgba(0,0,0,.4)]";
+  return safari ? <img src="/video/infla-sentado.webp" alt="" aria-hidden="true" className={cls} />
+    : <video src="/video/infla-sentado.webm" muted playsInline autoPlay loop aria-hidden="true" className={cls} />;
+}
+
 // Primeira tela depois do cadastro: obrigatório colocar nome e logo
 export function BrandSetupModal({ brand, onSave, dark, companyName }) {
   return (
     <div className="fixed inset-0 z-[420] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`w-full max-w-md rounded-3xl p-6 sm:p-7 shadow-2xl ${dark ? "bg-gray-900 text-white border border-gray-800" : "bg-white text-gray-900"}`} style={{ animation: "bi-inflate .7s cubic-bezier(.34,1.56,.64,1) both" }}>
+      <div className={`relative w-full max-w-md mt-[min(150px,18vh)] rounded-3xl p-6 sm:p-7 shadow-2xl ${dark ? "bg-gray-900 text-white border border-gray-800" : "bg-white text-gray-900"}`} style={{ animation: "bi-inflate .7s cubic-bezier(.34,1.56,.64,1) both" }}>
+        <InflaSentado />
         <div className="text-center mb-5">
           <div className="text-[11px] font-black uppercase tracking-[.2em] text-orange-500">Passo 1 · Sua marca</div>
           <h2 className="text-2xl font-black mt-1">Deixe o sistema com a cara da sua fábrica</h2>
