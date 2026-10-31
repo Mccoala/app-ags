@@ -333,7 +333,7 @@ function BrainIntro({ onDone }) {
       <div className="relative w-full max-w-xl text-center" style={{ animation: "bi-inflate .6s cubic-bezier(.34,1.56,.64,1) both" }}>
         <div className="text-[11px] font-black uppercase tracking-[.22em] text-purple-300">Tutorial na prática · o Cérebro</div>
         <h2 className="mt-1 text-2xl sm:text-3xl font-black text-white">Seu pedido acabou de alimentar o Cérebro 🧠</h2>
-        <div className="relative mx-auto mt-2" style={{ width: "min(70vw, 300px)", aspectRatio: "518 / 648" }}>
+        <div className="relative mx-auto mt-2" style={{ width: "min(70vw, 300px)", aspectRatio: "520 / 650" }}>
           <div className="absolute left-1/2 top-[48%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none" style={{ width: 300, height: 300, background: "radial-gradient(circle, rgba(236,72,153,.75), rgba(168,85,247,.35) 45%, transparent 70%)", opacity: glow, filter: "blur(6px)", transform: `translate(-50%,-50%) scale(${1 + glow * 0.15 + Math.sin(t * 9) * 0.04 * glow})` }} />
           {safari ? <img src="/video/infla-cerebro.webp" alt="" className="relative w-full h-full object-contain" />
             : <video ref={v} src="/video/infla-cerebro.webm" muted playsInline autoPlay loop className="relative w-full h-full object-contain" />}
