@@ -279,6 +279,23 @@ function AppLogo({ collapsed = false, className = "" }) {
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
+// Infla animado no login: enchendo o escorregador (esquerda) e puxando o brinquedo (direita).
+// Ficam "no chão" da tela, atrás do formulário; no celular não aparecem (tela pequena).
+function LoginMascots() {
+  const safari = typeof navigator !== "undefined" && /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const Clip = ({ name, className, style }) => safari || reduce
+    ? <img src={`/video/${name}.webp`} alt="" className={className} style={style} />
+    : <video src={`/video/${name}.webm`} muted playsInline autoPlay loop className={className} style={style} />;
+  return (
+    <div aria-hidden="true" className="pointer-events-none select-none">
+      <div className="fixed left-0 right-0 bottom-0 h-[16vh]" style={{ background: "linear-gradient(to top, rgba(249,115,22,.10), transparent)", borderTop: "1px solid rgba(255,255,255,.04)" }} />
+      <Clip name="infla-encher" className="hidden lg:block fixed left-0 bottom-[3vh] h-[min(44vh,420px)] w-auto opacity-95" style={{ filter: "drop-shadow(0 14px 22px rgba(0,0,0,.45))" }} />
+      <Clip name="infla-puxar" className="hidden lg:block fixed right-0 bottom-[3vh] w-[min(34vw,560px)] h-auto opacity-95" style={{ filter: "drop-shadow(0 14px 22px rgba(0,0,0,.45))" }} />
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin, dark, data: propsData }) {
   const params = new URLSearchParams(window.location.search);
   const qsCompanyId = params.get('empresa');
@@ -338,8 +355,9 @@ function LoginScreen({ onLogin, dark, data: propsData }) {
     <div className="min-h-screen flex items-center justify-center login-bg" style={{ fontFamily: "'Inter','DM Sans',system-ui,sans-serif" }}>
       <div style={{ position:"absolute",top:"15%",left:"10%",width:320,height:320,borderRadius:"50%",background:"radial-gradient(circle,rgba(249,115,22,0.18) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
       <div style={{ position:"absolute",bottom:"20%",right:"12%",width:280,height:280,borderRadius:"50%",background:"radial-gradient(circle,rgba(14,165,233,0.14) 0%,transparent 70%)",filter:"blur(40px)",pointerEvents:"none" }} />
+      <LoginMascots />
 
-      <div className="w-full max-w-md mx-4 animate-slide-up">
+      <div className="relative z-10 w-full max-w-md mx-4 animate-slide-up">
         {mode === "employee" ? (
           <div className="text-center mb-6">
              <div className="px-4 py-2 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full inline-flex font-bold text-xs uppercase mb-4 tracking-widest">Acesso da Equipe</div>
